@@ -1,34 +1,25 @@
 import { test, expect } from "bun:test";
-import { PIXELS_PER_TILE } from "./types";
-import { computeCameraPx, screenCellToTile } from "./camera";
+import { isoCamera, pickTile } from "./camera";
+import { rasterizeIso } from "./rasterize";
+import type { MapData } from "@termenor/protocol";
+import type { RenderPlayer } from "../game-state";
 
-test("PIXELS_PER_TILE is 4", () => {
-  expect(PIXELS_PER_TILE).toBe(4);
+test("isoCamera centers the viewport on a screen point", () => {
+  expect(isoCamera(100, 50, 80, 40)).toEqual({ ox: 60, oy: 30 });
 });
 
-test("camera centers on target and clamps to map bounds", () => {
-  // map 100px wide, viewport 20px → centered at 50 → origin 40
-  expect(computeCameraPx(50, 50, 20, 20, 100, 100)).toEqual({ ox: 40, oy: 40 });
-  // near left edge clamps origin to 0
-  expect(computeCameraPx(2, 2, 20, 20, 100, 100)).toEqual({ ox: 0, oy: 0 });
-  // near right edge clamps origin to mapPx - viewport
-  expect(computeCameraPx(99, 99, 20, 20, 100, 100)).toEqual({ ox: 80, oy: 80 });
+test("pick round trip: a rendered tile is pickable at its center pixel", () => {
+  const m: MapData = { width: 3, height: 3, tiles: new Array(9).fill(0), heights: new Array(9).fill(0) };
+  const players: RenderPlayer[] = [{ id: "me", x: 1, y: 1, facing: "south", h: 0 }];
+  const f = rasterizeIso(m, players, -32, -8, 64, 48, "me");
+  const idx = f.pick.findIndex((t) => t === 4); // center tile (1,1) → index 4
+  expect(idx).toBeGreaterThanOrEqual(0);
+  const px = idx % 64, py = Math.floor(idx / 64);
+  expect(pickTile(f, px, py, m.width)).toEqual({ x: 1, y: 1 });
 });
 
-test("camera origin is 0 when map smaller than viewport", () => {
-  expect(computeCameraPx(5, 5, 40, 40, 20, 20)).toEqual({ ox: 0, oy: 0 });
-});
-
-test("screenCellToTile inverts camera for halfblock (row→2px)", () => {
-  const cam = { ox: 40, oy: 40 };
-  // halfblock: pixelY = oy + row*2
-  // cell (col=2,row=3) → px (42, 46) → tile (10, 11) with PPT=4
-  expect(screenCellToTile(2, 3, cam, "halfblock")).toEqual({ x: 10, y: 11 });
-});
-
-test("screenCellToTile inverts camera for ascii (row→1px)", () => {
-  const cam = { ox: 0, oy: 0 };
-  // ascii: pixelY = oy + row
-  // cell (col=8,row=8) → px (8,8) → tile (2,2)
-  expect(screenCellToTile(8, 8, cam, "ascii")).toEqual({ x: 2, y: 2 });
+test("pickTile returns null off-scene", () => {
+  const m: MapData = { width: 3, height: 3, tiles: new Array(9).fill(0), heights: new Array(9).fill(0) };
+  const f = rasterizeIso(m, [], -32, -8, 64, 48, null);
+  expect(pickTile(f, 0, 0, m.width)).toBeNull(); // top-left corner is empty sky
 });

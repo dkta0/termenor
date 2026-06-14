@@ -3,6 +3,12 @@ import type { MapData } from "@termenor/protocol";
 const W = 48;
 const H = 48;
 
+/** Smooth rolling ground elevation; low frequency keeps adjacent deltas <= 1. */
+function terrainHeight(x: number, y: number): number {
+  const v = 1.6 + 1.4 * Math.sin(x / 10) + 0.9 * Math.cos(y / 12);
+  return Math.max(0, Math.round(v));
+}
+
 /** Static map for the slice: walled border plus a few rectangular obstacles. */
 export function createDefaultMap(): MapData {
   const tiles = new Array(W * H).fill(0);
@@ -23,7 +29,11 @@ export function createDefaultMap(): MapData {
     for (let yy = b.y; yy < b.y + b.h; yy++)
       for (let xx = b.x; xx < b.x + b.w; xx++) set(xx, yy);
 
-  return { width: W, height: H, tiles };
+  const heights = new Array(W * H).fill(0);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) heights[y * W + x] = terrainHeight(x, y);
+
+  return { width: W, height: H, tiles, heights };
 }
 
 /** Default spawn — guaranteed walkable in the map above. */

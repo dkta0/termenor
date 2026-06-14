@@ -4,27 +4,16 @@
 import { startServer } from "../packages/server/src/server";
 import { GameState } from "../packages/client/src/game-state";
 import { Connection } from "../packages/client/src/connection";
-import { computeCameraPx } from "../packages/client/src/render/camera";
-import { rasterize } from "../packages/client/src/render/rasterize";
-import { Kind, PIXELS_PER_TILE as PPT, type KindValue } from "../packages/client/src/render/types";
-
-const PALETTE: Record<KindValue, [number, number, number]> = {
-  [Kind.EMPTY]: [0, 0, 0],
-  [Kind.FLOOR]: [34, 68, 34],
-  [Kind.WALL]: [90, 90, 100],
-  [Kind.PLAYER]: [80, 140, 255],
-  [Kind.LOCAL]: [255, 210, 60],
-};
+import { isoCamera } from "../packages/client/src/render/camera";
+import { rasterizeIso } from "../packages/client/src/render/rasterize";
+import { tileToScreen } from "../packages/client/src/render/iso";
 
 const PXW = 80, PXH = 60; // viewport in pixels (20x15 tiles)
 
-function writePPM(path: string, w: number, h: number, kinds: Uint8Array) {
+function writePPM(path: string, w: number, h: number, rgb: Uint8Array) {
   const header = new TextEncoder().encode(`P6\n${w} ${h}\n255\n`);
   const body = new Uint8Array(w * h * 3);
-  for (let i = 0; i < kinds.length; i++) {
-    const [r, g, b] = PALETTE[(kinds[i] as KindValue)] ?? PALETTE[Kind.EMPTY];
-    body[i * 3] = r; body[i * 3 + 1] = g; body[i * 3 + 2] = b;
-  }
+  body.set(rgb);
   const out = new Uint8Array(header.length + body.length);
   out.set(header, 0); out.set(body, header.length);
   return Bun.write(path, out);
@@ -49,12 +38,11 @@ for (let i = 0; i < N; i++) {
   const players = state.samplePositions(performance.now());
   const map = state.map!;
   const me = players.find((p) => p.id === state.localId);
-  const cx = me ? me.x * PPT + PPT / 2 : (map.width * PPT) / 2;
-  const cy = me ? me.y * PPT + PPT / 2 : (map.height * PPT) / 2;
-  const cam = computeCameraPx(cx, cy, PXW, PXH, map.width * PPT, map.height * PPT);
-  const buf = rasterize(map, players, cam, PXW, PXH, state.localId);
+  const center = me ? tileToScreen(me.x, me.y, me.h) : tileToScreen(map.width / 2, map.height / 2, 0);
+  const cam = isoCamera(center.sx, center.sy, PXW, PXH);
+  const frame = rasterizeIso(map, players, cam.ox, cam.oy, PXW, PXH, state.localId);
   const ppm = `/tmp/termenor-f${String(i).padStart(2, "0")}.ppm`;
-  await writePPM(ppm, PXW, PXH, buf.kinds);
+  await writePPM(ppm, PXW, PXH, frame.buf.rgb);
   frames.push(ppm);
   console.log(`frame ${i}: ${players.map((p) => `${p.id}@(${p.x.toFixed(2)},${p.y.toFixed(2)})`).join(" ")}`);
 }

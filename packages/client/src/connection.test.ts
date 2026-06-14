@@ -43,7 +43,7 @@ test("welcome populates map and local id", () => {
   const { sock, gs } = setup();
   sock.fireOpen();
   sock.fireMessage(encode({ t: "welcome", playerId: "me", tickRate: 15,
-    map: { width: 3, height: 1, tiles: [0,0,0] } }));
+    map: { width: 3, height: 1, tiles: [0,0,0], heights: [0,0,0] } }));
   expect(gs.localId).toBe("me");
   expect(gs.map?.width).toBe(3);
 });

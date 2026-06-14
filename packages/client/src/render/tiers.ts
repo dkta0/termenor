@@ -2,23 +2,19 @@ import { Kind, type Cell, type CellGrid, type KindValue, type PixelBuffer, type 
 
 type RGB = [number, number, number];
 
-const COLOR: Record<KindValue, RGB> = {
-  [Kind.EMPTY]: [0, 0, 0],
-  [Kind.FLOOR]: [34, 68, 34],
-  [Kind.WALL]: [90, 90, 100],
-  [Kind.PLAYER]: [80, 140, 255],
-  [Kind.LOCAL]: [255, 210, 60],
-};
-
 const GLYPH: Record<KindValue, string> = {
   [Kind.EMPTY]: " ",
   [Kind.FLOOR]: "·",
   [Kind.WALL]: "#",
   [Kind.PLAYER]: "o",
   [Kind.LOCAL]: "@",
+  [Kind.SHADOW]: ",",
 };
 
-const colorOf = (k: number): RGB => COLOR[(k as KindValue)] ?? COLOR[Kind.EMPTY];
+const pxRgb = (buf: PixelBuffer, i: number): RGB => {
+  const o = i * 3;
+  return [buf.rgb[o], buf.rgb[o + 1], buf.rgb[o + 2]];
+};
 
 /** Half-block: each cell = two stacked pixels via ▀ (fg=top, bg=bottom). */
 export function toHalfBlockCells(buf: PixelBuffer): CellGrid {
@@ -27,24 +23,23 @@ export function toHalfBlockCells(buf: PixelBuffer): CellGrid {
   const cells: Cell[] = new Array(cols * rows);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const topY = r * 2;
-      const botY = topY + 1;
-      const top = buf.kinds[topY * cols + c];
-      const bot = botY < buf.height ? buf.kinds[botY * cols + c] : Kind.EMPTY;
-      cells[r * cols + c] = { char: "▀", fg: colorOf(top), bg: colorOf(bot) };
+      const topI = (r * 2) * cols + c;
+      const botY = r * 2 + 1;
+      const top = pxRgb(buf, topI);
+      const bot = botY < buf.height ? pxRgb(buf, botY * cols + c) : ([0, 0, 0] as RGB);
+      cells[r * cols + c] = { char: "▀", fg: top, bg: bot };
     }
   }
   return { cols, rows, cells };
 }
 
-/** ASCII: one glyph per pixel; color carried too for color-capable fallback. */
+/** ASCII: one glyph per pixel; glyph from kinds, color from rgb. */
 export function toAsciiCells(buf: PixelBuffer): CellGrid {
   const cols = buf.width;
   const rows = buf.height;
   const cells: Cell[] = new Array(cols * rows);
   for (let i = 0; i < buf.kinds.length; i++) {
-    const k = buf.kinds[i];
-    cells[i] = { char: GLYPH[(k as KindValue)] ?? " ", fg: colorOf(k), bg: [0, 0, 0] };
+    cells[i] = { char: GLYPH[(buf.kinds[i] as KindValue)] ?? " ", fg: pxRgb(buf, i), bg: [0, 0, 0] };
   }
   return { cols, rows, cells };
 }

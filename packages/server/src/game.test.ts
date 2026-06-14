@@ -3,7 +3,7 @@ import type { MapData } from "@termenor/protocol";
 import { Game } from "./game";
 
 // open 10x1 corridor
-const corridor: MapData = { width: 10, height: 1, tiles: new Array(10).fill(0) };
+const corridor: MapData = { width: 10, height: 1, tiles: new Array(10).fill(0), heights: new Array(10).fill(0) };
 
 test("addPlayer spawns at given tile and appears in snapshot", () => {
   const g = new Game(corridor, { x: 0, y: 0 });
@@ -33,7 +33,7 @@ test("facing updates toward movement direction", () => {
 });
 
 test("queueMove to unwalkable tile is ignored", () => {
-  const map: MapData = { width: 3, height: 1, tiles: [0, 1, 0] };
+  const map: MapData = { width: 3, height: 1, tiles: [0, 1, 0], heights: [0, 0, 0] };
   const g = new Game(map, { x: 0, y: 0 });
   g.addPlayer("p1");
   g.queueMove("p1", 1, 0); // blocked

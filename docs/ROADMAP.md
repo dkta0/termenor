@@ -6,9 +6,9 @@ The whole game, built as ordered vertical slices. Each row is one `/spec → /pl
 ## Foundation (engine & presence)
 
 1. ✅ **Smooth multiplayer movement** — tile world, interpolated movement, server-authoritative. *(merged)*
-2. ⏭ **Isometric renderer** — 2:1 dimetric projection, rolling terrain elevation, extruded
-   walls/objects with walk-behind, face-normal directional lighting, entity billboards +
-   shadows, z-interpolation, iso picking. *(design approved — spec next)*
+2. ✅ **Isometric renderer** — 2:1 dimetric projection, rolling terrain elevation (+ climb
+   collision), extruded walls with walk-behind, face-normal lighting + terrain skirts, entity
+   billboards + shadows, z-interpolation, pick-buffer picking. *(merged)*
 3. **Accounts + persistence** — login, save/load player state (SQLite/Postgres, Docker).
 4. **Chat + nearby-player presence** — names, public chat.
 

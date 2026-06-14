@@ -7,11 +7,12 @@ import {
   type OptimizedBuffer,
 } from "@opentui/core";
 import type { GameState } from "../game-state";
-import { computeCameraPx, screenCellToTile } from "./camera";
-import { rasterize } from "./rasterize";
+import { isoCamera, pickTile } from "./camera";
+import { rasterizeIso, type IsoFrame } from "./rasterize";
 import { cellGridFor, selectTier, type CapsLike } from "./tiers";
 import { arrowDelta } from "./input";
-import { PIXELS_PER_TILE as PPT, type Camera, type CellGrid, type Tier } from "./types";
+import { tileToScreen } from "./iso";
+import { type CellGrid, type Tier } from "./types";
 
 export interface RendererHandle {
   stop(): void;
@@ -33,7 +34,7 @@ export async function startRenderer(state: GameState, hooks: RendererHooks): Pro
   const renderer: CliRenderer = await createCliRenderer({ targetFps: 60, useMouse: true });
   const tier: Tier = selectTier((renderer.capabilities as CapsLike | null) ?? null);
 
-  let lastCam: Camera = { ox: 0, oy: 0 };
+  let lastFrame: IsoFrame | null = null;
 
   renderer.setFrameCallback(async () => {
     const buffer = renderer.nextRenderBuffer;
@@ -47,20 +48,21 @@ export async function startRenderer(state: GameState, hooks: RendererHooks): Pro
 
     const players = state.samplePositions(performance.now());
     const me = players.find((p) => p.id === state.localId);
-    const centerX = me ? me.x * PPT + PPT / 2 : (map.width * PPT) / 2;
-    const centerY = me ? me.y * PPT + PPT / 2 : (map.height * PPT) / 2;
-    const cam = computeCameraPx(centerX, centerY, pxW, pxH, map.width * PPT, map.height * PPT);
-    lastCam = cam;
+    const center = me ? tileToScreen(me.x, me.y, me.h) : tileToScreen(map.width / 2, map.height / 2, 0);
+    const cam = isoCamera(center.sx, center.sy, pxW, pxH);
 
-    const buf = rasterize(map, players, cam, pxW, pxH, state.localId);
-    const grid = cellGridFor(tier, buf);
+    const frame = rasterizeIso(map, players, cam.ox, cam.oy, pxW, pxH, state.localId);
+    lastFrame = frame;
+    const grid = cellGridFor(tier, frame.buf);
     blit(buffer, grid);
   });
 
-  // mouse click → move
   renderer.root.onMouseDown = (e: TuiMouseEvent) => {
-    const t = screenCellToTile(e.x, e.y, lastCam, tier);
-    hooks.onMoveTo(t.x, t.y);
+    if (!lastFrame || !state.map) return;
+    const px = e.x;
+    const py = tier === "halfblock" ? e.y * 2 : e.y;
+    const t = pickTile(lastFrame, px, py, state.map.width);
+    if (t) hooks.onMoveTo(t.x, t.y);
   };
 
   // arrow keys → step one tile from current rounded position

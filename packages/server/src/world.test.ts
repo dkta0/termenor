@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
-import { createDefaultMap } from "./world";
-import { isWalkable } from "./pathfinding";
+import { createDefaultMap, SPAWN } from "./world";
+import { isWalkable, heightAt } from "./pathfinding";
 
 test("default map has expected dimensions", () => {
   const map = createDefaultMap();
@@ -23,4 +23,26 @@ test("center is walkable", () => {
 test("tiles are only 0 or 1", () => {
   const map = createDefaultMap();
   for (const t of map.tiles) expect(t === 0 || t === 1).toBe(true);
+});
+
+test("default map has a heights array matching tiles length", () => {
+  const m = createDefaultMap();
+  expect(m.heights.length).toBe(m.tiles.length);
+});
+
+test("terrain rolls gently — adjacent walkable tiles differ by <= 1", () => {
+  const m = createDefaultMap();
+  for (let y = 1; y < m.height - 1; y++) {
+    for (let x = 1; x < m.width - 1; x++) {
+      if (m.tiles[y * m.width + x] === 1) continue;            // skip walls
+      if (m.tiles[y * m.width + x + 1] === 1) continue;
+      const d = Math.abs(heightAt(m, x, y) - heightAt(m, x + 1, y));
+      expect(d).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+test("spawn tile is walkable", () => {
+  const m = createDefaultMap();
+  expect(m.tiles[SPAWN.y * m.width + SPAWN.x]).toBe(0);
 });

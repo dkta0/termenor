@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
-import type { SnapshotMsg } from "@termenor/protocol";
-import { GameState, INTERP_DELAY_MS } from "./game-state";
+import type { MapData, SnapshotMsg } from "@termenor/protocol";
+import { GameState, INTERP_DELAY_MS, sampleElevation } from "./game-state";
 
 const snap = (tick: number, x: number): SnapshotMsg => ({
   t: "snapshot", tick, players: [{ id: "a", x, y: 0, facing: "east" }],
@@ -61,8 +61,20 @@ test("interpolates within an OLDER bracketing pair instead of clamping to newest
 
 test("setMap / setLocalId expose state", () => {
   const gs = new GameState();
-  gs.setMap({ width: 2, height: 1, tiles: [0, 0] });
+  gs.setMap({ width: 2, height: 1, tiles: [0, 0], heights: [0, 0] });
   gs.setLocalId("a");
   expect(gs.map?.width).toBe(2);
   expect(gs.localId).toBe("a");
+});
+
+const ramp: MapData = { width: 2, height: 1, tiles: [0, 0], heights: [0, 2] };
+
+test("sampleElevation bilinearly interpolates terrain height", () => {
+  expect(sampleElevation(ramp, 0, 0)).toBeCloseTo(0, 9);
+  expect(sampleElevation(ramp, 1, 0)).toBeCloseTo(2, 9);
+  expect(sampleElevation(ramp, 0.5, 0)).toBeCloseTo(1, 9); // smooth midpoint
+});
+
+test("sampleElevation returns 0 out of bounds", () => {
+  expect(sampleElevation(ramp, -5, -5)).toBeCloseTo(0, 9);
 });
