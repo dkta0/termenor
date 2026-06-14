@@ -42,9 +42,9 @@ export function plot(f: IsoFrame, px: number, py: number, depth: number, kind: n
 
 function fillDiamond(f: IsoFrame, cx: number, cy: number, depth: number, kind: number, rgb: RGB, tile: number): void {
   const hw = TILE_W / 2, hh = TILE_H / 2;
-  for (let dy = -hh; dy < hh; dy++) {
+  for (let dy = -hh; dy <= hh; dy++) {
     const t = 1 - Math.abs(dy) / hh;
-    const halfw = Math.round(hw * t);
+    const halfw = Math.ceil(hw * t); // ceil + inclusive range → diamonds overlap, no seams
     for (let dx = -halfw; dx <= halfw; dx++) plot(f, Math.round(cx + dx), Math.round(cy + dy), depth, kind, rgb, tile);
   }
 }
@@ -61,6 +61,18 @@ function drawBlock(f: IsoFrame, cx: number, cyGround: number, depth: number, til
     for (let y = cyTop + edge; y <= cyGround + edge; y++) plot(f, Math.round(cx + dx), Math.round(y), depth, Kind.WALL, rgb, tile);
   }
   fillDiamond(f, cx, cyTop, depth, Kind.WALL, shade(WALL_RGB, "top"), tile);
+}
+
+/** Short shaded skirt below a ground tile's front edges — fills the vertical face of a
+ * height step so adjacent tiles at different elevations don't leave black seams.
+ * Overdraw on flat ground is harmless: the front tile's top (greater depth) covers it. */
+function drawSkirt(f: IsoFrame, cx: number, cyGround: number, skirtPx: number, rgb: RGB, depth: number, tile: number): void {
+  const hw = TILE_W / 2, hh = TILE_H / 2;
+  for (let dx = -hw; dx <= hw; dx++) {
+    const edge = Math.round(hh * (1 - Math.abs(dx) / hw));
+    const top = cyGround + edge;
+    for (let y = top; y < top + skirtPx; y++) plot(f, Math.round(cx + dx), y, depth, Kind.FLOOR, rgb, tile);
+  }
 }
 
 function drawBillboard(f: IsoFrame, cx: number, cyFeet: number, depth: number, kind: number, rgb: RGB): void {
@@ -95,6 +107,7 @@ export function rasterizeIso(
     const ground: RGB = [Math.round(GROUND_RGB[0] * tint), Math.round(GROUND_RGB[1] * tint), Math.round(GROUND_RGB[2] * tint)];
     fillDiamond(f, cx, cy, depth, Kind.FLOOR, ground, i);
     if (map.tiles[i] === 1) drawBlock(f, cx, cy, depth, i);
+    else drawSkirt(f, cx, cy, ELEV_PX, shade(ground, "left"), depth, i); // fill elevation steps
   }
 
   // entities after tiles → depth test yields walk-behind
