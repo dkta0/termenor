@@ -23,7 +23,7 @@ export function createDefaultMap(): MapData {
     for (let yy = b.y; yy < b.y + b.h; yy++)
       for (let xx = b.x; xx < b.x + b.w; xx++) set(xx, yy);
 
-  return { width: W, height: H, tiles };
+  return { width: W, height: H, tiles, heights: new Array(W * H).fill(0) };
 }
 
 /** Default spawn — guaranteed walkable in the map above. */

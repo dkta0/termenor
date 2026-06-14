@@ -61,7 +61,7 @@ test("interpolates within an OLDER bracketing pair instead of clamping to newest
 
 test("setMap / setLocalId expose state", () => {
   const gs = new GameState();
-  gs.setMap({ width: 2, height: 1, tiles: [0, 0] });
+  gs.setMap({ width: 2, height: 1, tiles: [0, 0], heights: [0, 0] });
   gs.setLocalId("a");
   expect(gs.map?.width).toBe(2);
   expect(gs.localId).toBe("a");

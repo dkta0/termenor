@@ -3,7 +3,7 @@ import type { MapData } from "@termenor/protocol";
 import { findPath, isWalkable } from "./pathfinding";
 
 // 3x3 open grid
-const open: MapData = { width: 3, height: 3, tiles: [0,0,0, 0,0,0, 0,0,0] };
+const open: MapData = { width: 3, height: 3, tiles: [0,0,0, 0,0,0, 0,0,0], heights: new Array(9).fill(0) };
 
 test("straight path returns steps excluding origin, including target", () => {
   const path = findPath(open, { x: 0, y: 0 }, { x: 2, y: 0 });
@@ -12,7 +12,7 @@ test("straight path returns steps excluding origin, including target", () => {
 
 test("path routes around a wall", () => {
   // wall down the middle column except bottom row
-  const map: MapData = { width: 3, height: 3, tiles: [0,1,0, 0,1,0, 0,0,0] };
+  const map: MapData = { width: 3, height: 3, tiles: [0,1,0, 0,1,0, 0,0,0], heights: new Array(9).fill(0) };
   const path = findPath(map, { x: 0, y: 0 }, { x: 2, y: 0 })!;
   expect(path.at(-1)).toEqual({ x: 2, y: 0 });
   // every step must be walkable
@@ -21,12 +21,12 @@ test("path routes around a wall", () => {
 
 test("unreachable target returns null", () => {
   // target fully walled off
-  const map: MapData = { width: 3, height: 3, tiles: [0,1,0, 1,1,0, 0,1,0] };
+  const map: MapData = { width: 3, height: 3, tiles: [0,1,0, 1,1,0, 0,1,0], heights: new Array(9).fill(0) };
   expect(findPath(map, { x: 0, y: 0 }, { x: 2, y: 0 })).toBeNull();
 });
 
 test("blocked target returns null", () => {
-  const map: MapData = { width: 3, height: 3, tiles: [0,0,0, 0,1,0, 0,0,0] };
+  const map: MapData = { width: 3, height: 3, tiles: [0,0,0, 0,1,0, 0,0,0], heights: new Array(9).fill(0) };
   expect(findPath(map, { x: 0, y: 0 }, { x: 1, y: 1 })).toBeNull();
 });
 

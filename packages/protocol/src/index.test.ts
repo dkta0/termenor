@@ -22,7 +22,7 @@ test("server snapshot round-trips", () => {
 test("welcome round-trips", () => {
   const msg: ServerMsg = {
     t: "welcome", playerId: "a", tickRate: 15,
-    map: { width: 2, height: 1, tiles: [0, 1] },
+    map: { width: 2, height: 1, tiles: [0, 1], heights: [0, 0] },
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
