@@ -1,11 +1,15 @@
 export type Facing = "north" | "south" | "east" | "west";
 
-/** Row-major grid. 0 = walkable, 1 = blocked. */
+/** Row-major grid. 0 = walkable, 1 = blocked. `heights` is per-tile ground elevation. */
 export interface MapData {
   width: number;
   height: number;
   tiles: number[];
+  heights: number[];
 }
+
+/** Max walkable height delta between two adjacent tiles. */
+export const MAX_CLIMB = 1;
 
 /** x/y are continuous tile coords (floats) so clients can interpolate. */
 export interface PlayerState {

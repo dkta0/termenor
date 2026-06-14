@@ -30,3 +30,15 @@ test("welcome round-trips", () => {
 test("decodeClient rejects unknown type", () => {
   expect(() => decodeClient(JSON.stringify({ t: "nope" }))).toThrow();
 });
+
+import { MAX_CLIMB } from "./index";
+import type { MapData } from "./index";
+
+test("MapData carries a per-tile heights array", () => {
+  const m: MapData = { width: 2, height: 1, tiles: [0, 0], heights: [0, 1] };
+  expect(m.heights.length).toBe(m.tiles.length);
+});
+
+test("MAX_CLIMB is 1 (one height unit per step)", () => {
+  expect(MAX_CLIMB).toBe(1);
+});
