@@ -23,7 +23,7 @@ export interface RendererHooks {
   onMoveTo(x: number, y: number): void;
 }
 
-const BLACK = RGBA.fromValues(0, 0, 0, 255);
+const BLACK = RGBA.fromInts(0, 0, 0, 255);
 
 /**
  * Boots OpenTUI, drives a 60fps frame callback that samples GameState and
@@ -82,8 +82,9 @@ function blit(buffer: OptimizedBuffer, grid: CellGrid): void {
   for (let r = 0; r < grid.rows; r++) {
     for (let c = 0; c < grid.cols; c++) {
       const cell = grid.cells[r * grid.cols + c];
-      const fg = RGBA.fromValues(cell.fg[0], cell.fg[1], cell.fg[2], 255);
-      const bg = RGBA.fromValues(cell.bg[0], cell.bg[1], cell.bg[2], 255);
+      // fromInts: 0–255 channels. (fromValues expects normalized 0–1 floats.)
+      const fg = RGBA.fromInts(cell.fg[0], cell.fg[1], cell.fg[2], 255);
+      const bg = RGBA.fromInts(cell.bg[0], cell.bg[1], cell.bg[2], 255);
       buffer.setCell(c, r, cell.char, fg, bg);
     }
   }

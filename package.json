@@ -6,7 +6,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "server": "bun run packages/server/src/index.ts",
-    "client": "bun run packages/client/src/index.ts"
+    "client": "bun run packages/client/src/index.ts",
+    "verify:render": "python3 scripts/pty-render-check.py"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

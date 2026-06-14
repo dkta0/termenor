@@ -59,7 +59,14 @@ bun test                       # unit + integration (protocol, server, client, r
 bun run typecheck              # tsc --noEmit
 bun run scripts/smoke.ts       # headless: two clients see each other move
 bun run scripts/render-smoke.ts# headless: full render pipeline → ASCII frame
+bun run verify:render          # PTY: two real OpenTUI clients, verify the actual
+                               #   escape-byte output (truecolor half-block,
+                               #   both players, animation on movement)
 ```
+
+`verify:render` drives two real clients in pseudo-terminals and inspects the
+exact bytes a terminal would paint — the closest automated proxy for "looks good
+in ghostty/kitty" without a human at the keyboard. (Requires `python3`.)
 
 ## Deploy (Docker)
 
