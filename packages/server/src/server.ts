@@ -16,7 +16,7 @@ export function startServer(port: number): RunningServer {
   const game = new Game(map, SPAWN);
   let nextId = 1;
 
-  const server = Bun.serve<Conn, {}>({
+  const server = Bun.serve<Conn>({
     port,
     fetch(req, srv) {
       if (srv.upgrade(req, { data: { id: `p${nextId++}` } })) return;
@@ -46,7 +46,7 @@ export function startServer(port: number): RunningServer {
   }, 1000 / TICK_RATE);
 
   return {
-    port: server.port,
+    port: server.port ?? port,
     stop() { clearInterval(interval); server.stop(true); },
   };
 }

@@ -3,5 +3,8 @@
   "version": "0.0.0",
   "type": "module",
   "main": "src/index.ts",
-  "dependencies": { "@termenor/protocol": "workspace:*" }
+  "dependencies": {
+    "@opentui/core": "^0.4.1",
+    "@termenor/protocol": "workspace:*"
+  }
 }
