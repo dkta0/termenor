@@ -4,10 +4,9 @@
     "module": "esnext",
     "target": "esnext",
     "moduleResolution": "bundler",
-    "types": ["bun-types"],
     "skipLibCheck": true,
     "noEmit": true,
-    "baseUrl": ".",
+    "types": ["bun-types"],
     "paths": {
       "@termenor/protocol": ["./packages/protocol/src/index.ts"]
     }
