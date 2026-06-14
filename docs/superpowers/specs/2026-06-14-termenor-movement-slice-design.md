@@ -96,20 +96,40 @@ Three sub-components with one-way data flow: **net → model → renderer**.
 
 #### Renderer tiers (capability detection at startup)
 
-Detection order, falling back on no support:
-1. **Kitty graphics protocol** — query terminal; if supported, sprites are real
-   images placed by image id, map uploaded once. Best fidelity, primary target
-   (ghostty/kitty).
-2. **Sixel** — DA query; raster sprites via sixel.
-3. **Unicode half-block** — colored half-block cells (2 vertical px per cell).
-4. **ASCII** — plain glyphs (`.` floor, `#` wall, `@` you, `o` others).
+**Amended 2026-06-14 (implementation reality):** The original design specified
+four tiers — Kitty graphics → Sixel → half-block → ASCII. During implementation
+we confirmed that **OpenTUI 0.4.1 exposes Kitty-graphics and Sixel only as
+capability-detection flags; it provides no API to upload or place images** (it
+renders to terminal cells only). Driving those protocols would require writing raw
+escape sequences to stdout in parallel with OpenTUI, contending for screen control
+— contrary to the "do not re-litigate the stack / OpenTUI for iteration speed"
+decision and the pre-accepted risk that "image-protocol support is still maturing,
+so the renderer MUST degrade gracefully." We therefore scope this slice to the
+**two cell-based tiers OpenTUI can drive today**, with detection wired so image
+tiers drop in unchanged when OpenTUI adds the API. This is the graceful
+degradation the design called for.
 
-All four must run; fidelity scales with the terminal. A `Renderer` interface
-(`init(map)`, `draw(players, camera)`, `dispose()`) has one implementation per tier.
-Detection logic and the ASCII tier's output are unit-tested (render-to-string);
-graphics tiers are validated manually in target terminals. For the slice, sprites
-are **simple generated art** (colored shapes/glyphs per facing), not authored RS
-assets — keeps scope tight while proving the pipeline.
+Detection order, falling back on no support:
+1. **Half-block (truecolor / 256-color)** — primary tier. World rasterized to a
+   pixel buffer at 4 px/tile; `▀` renders two independently-colored vertical pixels
+   per cell, so interpolated fractional positions glide smoothly. Best achievable
+   fidelity in ghostty/kitty (and any truecolor terminal).
+2. **ASCII** — plain glyphs (`·` floor, `#` wall, `@` you, `o` others). Always
+   playable; the no-color fallback.
+
+Capability detection (`selectTier`, reading OpenTUI's `TerminalCapabilities`)
+inspects `rgb` / `ansi256` to choose half-block, else ASCII. The `kitty_graphics`
+and `sixel` flags are detected and, lacking a drawing API, currently resolve to
+half-block — the seam where future image tiers attach.
+
+**Design substitution (intentional):** rather than an OO `Renderer` interface with
+one class per tier, the renderer is built as **pure, independently-testable
+functions** — `rasterize(map, players, camera) → PixelBuffer`, per-tier converters
+`toHalfBlockCells` / `toAsciiCells → CellGrid`, and `selectTier(caps)` — with a
+thin OpenTUI glue (`startRenderer`) that blits the cell grid. This keeps the bulk
+of the renderer unit-tested (the spec's testability requirement) and isolates the
+only TTY-dependent code to one small file. Sprites are **simple generated art**
+(colored kind-based cells), not authored RS assets — scope-tight, pipeline-proving.
 
 Input: mouse click → map screen cell to tile → send `MoveTo`. SGR mouse reporting
 works across all four target terminals (kitty, ghostty, foot, Alacritty). Arrow keys
