@@ -1,0 +1,82 @@
+import { decodeServer, encode, type MoveToMsg } from "@termenor/protocol";
+import type { GameState } from "./game-state";
+
+/** Minimal socket surface so tests can inject a mock. */
+export interface SocketLike {
+  onopen?: () => void;
+  onmessage?: (data: string) => void;
+  onclose?: () => void;
+  send(data: string): void;
+  close(): void;
+}
+export type SocketFactory = (url: string) => SocketLike;
+
+export interface ConnectionOpts {
+  socketFactory?: SocketFactory;
+  now?: () => number;
+  reconnectDelayMs?: number;
+}
+
+/** Adapts the browser/Bun WebSocket to SocketLike. */
+function defaultFactory(url: string): SocketLike {
+  const ws = new WebSocket(url);
+  const adapter: SocketLike = {
+    send: (d) => ws.send(d),
+    close: () => ws.close(),
+  };
+  ws.addEventListener("open", () => adapter.onopen?.());
+  ws.addEventListener("message", (e) => adapter.onmessage?.(String(e.data)));
+  ws.addEventListener("close", () => adapter.onclose?.());
+  return adapter;
+}
+
+export class Connection {
+  private sock: SocketLike | null = null;
+  private readonly factory: SocketFactory;
+  private readonly now: () => number;
+  private readonly reconnectDelayMs: number;
+  private closedByUser = false;
+
+  constructor(
+    private readonly url: string,
+    private readonly state: GameState,
+    opts: ConnectionOpts = {},
+  ) {
+    this.factory = opts.socketFactory ?? defaultFactory;
+    this.now = opts.now ?? (() => performance.now());
+    this.reconnectDelayMs = opts.reconnectDelayMs ?? 500;
+  }
+
+  connect(): void {
+    const sock = this.factory(this.url);
+    this.sock = sock;
+    sock.onopen = () => sock.send(encode({ t: "hello" }));
+    sock.onmessage = (data) => this.handle(data);
+    sock.onclose = () => {
+      if (this.closedByUser) return;
+      if (this.reconnectDelayMs <= 0) this.connect();
+      else setTimeout(() => this.connect(), this.reconnectDelayMs);
+    };
+  }
+
+  sendMoveTo(x: number, y: number): void {
+    const msg: MoveToMsg = { t: "moveTo", x, y };
+    this.sock?.send(encode(msg));
+  }
+
+  disconnect(): void {
+    this.closedByUser = true;
+    this.sock?.close();
+  }
+
+  private handle(data: string): void {
+    let msg;
+    try { msg = decodeServer(data); } catch { return; }
+    if (msg.t === "welcome") {
+      this.state.setLocalId(msg.playerId);
+      this.state.setMap(msg.map);
+    } else if (msg.t === "snapshot") {
+      this.state.applySnapshot(msg, this.now());
+    }
+  }
+}
