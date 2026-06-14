@@ -1,0 +1,9 @@
+{
+  "name": "termenor",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "bun test",
+    "server": "bun run packages/server/src/index.ts"
+  }
+}
