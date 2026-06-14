@@ -19,20 +19,29 @@ export interface PlayerState {
   facing: Facing;
 }
 
-export interface HelloMsg { t: "hello"; }
+export interface LoginMsg { t: "login"; username: string; password: string; }
 export interface MoveToMsg { t: "moveTo"; x: number; y: number; }
-export type ClientMsg = HelloMsg | MoveToMsg;
+export type ClientMsg = LoginMsg | MoveToMsg;
 
-export interface WelcomeMsg { t: "welcome"; playerId: string; map: MapData; tickRate: number; }
+export interface WelcomeMsg {
+  t: "welcome";
+  playerId: string;
+  map: MapData;
+  tickRate: number;
+  x: number;
+  y: number;
+  facing: Facing;
+}
 export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; }
-export type ServerMsg = WelcomeMsg | SnapshotMsg;
+export interface LoginErrorMsg { t: "loginError"; reason: string; }
+export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg;
 
 export function encode(msg: ClientMsg | ServerMsg): string {
   return JSON.stringify(msg);
 }
 
-const CLIENT_TYPES = new Set(["hello", "moveTo"]);
-const SERVER_TYPES = new Set(["welcome", "snapshot"]);
+const CLIENT_TYPES = new Set(["login", "moveTo"]);
+const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError"]);
 
 export function decodeClient(data: string): ClientMsg {
   const obj = JSON.parse(data);
