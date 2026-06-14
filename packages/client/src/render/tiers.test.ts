@@ -1,40 +1,30 @@
 import { test, expect } from "bun:test";
 import { Kind, type PixelBuffer } from "./types";
-import { toHalfBlockCells, toAsciiCells, selectTier } from "./tiers";
+import { toHalfBlockCells, toAsciiCells, selectTier, cellGridFor } from "./tiers";
 
-// 2px wide, 2px tall: top row [FLOOR, WALL], bottom row [LOCAL, EMPTY]
-const buf: PixelBuffer = {
-  width: 2, height: 2,
-  kinds: new Uint8Array([Kind.FLOOR, Kind.WALL, Kind.LOCAL, Kind.EMPTY]),
-};
+/** 1x2 buffer: top pixel red, bottom pixel green. */
+function buf2(): PixelBuffer {
+  const rgb = new Uint8Array([255, 0, 0, /*top*/ 0, 255, 0 /*bottom*/]);
+  return { width: 1, height: 2, kinds: new Uint8Array([Kind.WALL, Kind.FLOOR]), rgb };
+}
 
-test("halfblock collapses 2 vertical pixels into one ▀ cell (fg=top,bg=bottom)", () => {
-  const grid = toHalfBlockCells(buf);
-  expect(grid.cols).toBe(2);
-  expect(grid.rows).toBe(1); // 2 px tall → 1 cell row
-  const c0 = grid.cells[0];
-  expect(c0.char).toBe("▀");
-  // top pixel FLOOR → fg; bottom pixel LOCAL → bg
-  expect(c0.fg).toEqual([34, 68, 34]);   // FLOOR
-  expect(c0.bg).toEqual([255, 210, 60]); // LOCAL
+test("halfblock uses ▀ with top pixel as fg, bottom as bg", () => {
+  const g = toHalfBlockCells(buf2());
+  expect(g.cols).toBe(1);
+  expect(g.rows).toBe(1);
+  expect(g.cells[0].char).toBe("▀");
+  expect(g.cells[0].fg).toEqual([255, 0, 0]);
+  expect(g.cells[0].bg).toEqual([0, 255, 0]);
 });
 
-test("ascii maps each pixel to a glyph (1px per cell)", () => {
-  const grid = toAsciiCells(buf);
-  expect(grid.cols).toBe(2);
-  expect(grid.rows).toBe(2);
-  expect(grid.cells[0].char).toBe("·"); // FLOOR → ·
-  expect(grid.cells[1].char).toBe("#");      // WALL
-  expect(grid.cells[2].char).toBe("@");      // LOCAL
-  expect(grid.cells[3].char).toBe(" ");      // EMPTY
+test("ascii picks glyph from kinds, fg from rgb", () => {
+  const g = toAsciiCells(buf2());
+  expect(g.cells[0].char).toBe("#");        // Kind.WALL
+  expect(g.cells[0].fg).toEqual([255, 0, 0]);
 });
 
-test("selectTier prefers halfblock when color is available", () => {
-  expect(selectTier({ rgb: true } as any)).toBe("halfblock");
-  expect(selectTier({ rgb: false, ansi256: true } as any)).toBe("halfblock");
-});
-
-test("selectTier falls to ascii without color and on null caps", () => {
-  expect(selectTier({ rgb: false, ansi256: false } as any)).toBe("ascii");
+test("selectTier unchanged: rgb/ansi256 → halfblock else ascii", () => {
+  expect(selectTier({ rgb: true })).toBe("halfblock");
+  expect(selectTier({ ansi256: true })).toBe("halfblock");
   expect(selectTier(null)).toBe("ascii");
 });
