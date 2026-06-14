@@ -73,3 +73,28 @@ test("tick counter increments each step", () => {
   g.step(1 / 15);
   expect(g.snapshot().tick).toBe(2);
 });
+
+test("addPlayer with saved state restores x, y, facing", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addPlayer("alice", { x: 7, y: 0, facing: "west" });
+  const snap = g.snapshot();
+  expect(snap.players[0]).toMatchObject({ id: "alice", x: 7, y: 0, facing: "west" });
+});
+
+test("addPlayer with no state falls back to spawn", () => {
+  const g = new Game(corridor, { x: 3, y: 0 });
+  g.addPlayer("bob");
+  expect(g.snapshot().players[0]).toMatchObject({ x: 3, y: 0, facing: "south" });
+});
+
+test("getPlayerState returns current x, y, facing", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addPlayer("alice", { x: 5, y: 0, facing: "east" });
+  const state = g.getPlayerState("alice");
+  expect(state).toMatchObject({ x: 5, y: 0, facing: "east" });
+});
+
+test("getPlayerState returns null for unknown player", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  expect(g.getPlayerState("nobody")).toBeNull();
+});

@@ -17,6 +17,12 @@ function facingTo(dx: number, dy: number, fallback: Facing): Facing {
   return fallback;
 }
 
+export interface RestoredState {
+  x: number;
+  y: number;
+  facing: Facing;
+}
+
 export class Game {
   readonly map: MapData;
   private spawn: Point;
@@ -28,14 +34,21 @@ export class Game {
     this.spawn = spawn;
   }
 
-  addPlayer(id: string): void {
-    this.players.set(id, {
-      id, x: this.spawn.x, y: this.spawn.y, facing: "south", path: [],
-    });
+  addPlayer(id: string, state?: RestoredState): void {
+    const x = state?.x ?? this.spawn.x;
+    const y = state?.y ?? this.spawn.y;
+    const facing = state?.facing ?? "south";
+    this.players.set(id, { id, x, y, facing, path: [] });
   }
 
   removePlayer(id: string): void {
     this.players.delete(id);
+  }
+
+  getPlayerState(id: string): RestoredState | null {
+    const p = this.players.get(id);
+    if (!p) return null;
+    return { x: p.x, y: p.y, facing: p.facing };
   }
 
   queueMove(id: string, x: number, y: number): void {
