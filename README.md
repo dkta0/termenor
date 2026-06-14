@@ -21,6 +21,13 @@ bun run client                 # connects to ws://localhost:3000
 # or: SERVER_URL=ws://host:3000 bun run client
 ```
 
+**Or one command** (server + two clients side-by-side in tmux — run it in
+ghostty/kitty):
+
+```bash
+./scripts/demo.sh
+```
+
 **Click a tile** to walk there (the server pathfinds around walls);
 **arrow keys** step one tile. Each client sees the other player move in real time.
 
