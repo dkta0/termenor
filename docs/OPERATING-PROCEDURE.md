@@ -32,4 +32,5 @@ driven by `/goal`, one slice at a time.
 ## State
 
 - Slice 1: ✅ smooth multiplayer movement (merged to main).
-- Slice 2: isometric renderer — design approved, spec next.
+- Slice 2: ✅ isometric renderer — elevation + collision, walk-behind, billboards (merged to main).
+- Slice 3: accounts + persistence — next.
