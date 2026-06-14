@@ -4,10 +4,10 @@
 import { startServer } from "../packages/server/src/server";
 import { GameState } from "../packages/client/src/game-state";
 import { Connection } from "../packages/client/src/connection";
-import { computeCameraPx } from "../packages/client/src/render/camera";
-import { rasterize } from "../packages/client/src/render/rasterize";
+import { isoCamera } from "../packages/client/src/render/camera";
+import { rasterizeIso } from "../packages/client/src/render/rasterize";
 import { toAsciiCells } from "../packages/client/src/render/tiers";
-import { PIXELS_PER_TILE as PPT } from "../packages/client/src/render/types";
+import { tileToScreen } from "../packages/client/src/render/iso";
 
 const COLS = 64; // 16 tiles wide at 4px/tile
 const ROWS = 32; // 8 tiles tall
@@ -31,19 +31,18 @@ await Bun.sleep(1200);
 const map = state.map!;
 const players = state.samplePositions(performance.now());
 const me = players.find((p) => p.id === state.localId);
-const cx = me ? me.x * PPT + PPT / 2 : (map.width * PPT) / 2;
-const cy = me ? me.y * PPT + PPT / 2 : (map.height * PPT) / 2;
-const cam = computeCameraPx(cx, cy, COLS, ROWS, map.width * PPT, map.height * PPT);
-const buf = rasterize(map, players, cam, COLS, ROWS, state.localId);
-const grid = toAsciiCells(buf);
+const center = me ? tileToScreen(me.x, me.y, me.h) : tileToScreen(map.width / 2, map.height / 2, 0);
+const cam = isoCamera(center.sx, center.sy, COLS, ROWS);
+const frame = rasterizeIso(map, players, cam.ox, cam.oy, COLS, ROWS, state.localId);
+const grid = toAsciiCells(frame.buf);
 
-let frame = "";
+let frameStr = "";
 for (let r = 0; r < grid.rows; r++) {
   let line = "";
   for (let c = 0; c < grid.cols; c++) line += grid.cells[r * grid.cols + c].char;
-  frame += line + "\n";
+  frameStr += line + "\n";
 }
-console.log(frame);
+console.log(frameStr);
 
 const text = grid.cells.map((c) => c.char).join("");
 const hasLocal = text.includes("@");
