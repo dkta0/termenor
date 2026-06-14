@@ -41,7 +41,10 @@ export class Game {
   queueMove(id: string, x: number, y: number): void {
     const p = this.players.get(id);
     if (!p) return;
-    const path = findPath(this.map, { x: Math.round(p.x), y: Math.round(p.y) }, { x, y });
+    // tiles are integer-addressed; floor any fractional client input
+    const tx = Math.floor(x);
+    const ty = Math.floor(y);
+    const path = findPath(this.map, { x: Math.round(p.x), y: Math.round(p.y) }, { x: tx, y: ty });
     if (path === null) return; // unwalkable / unreachable — ignore
     p.path = path;
   }

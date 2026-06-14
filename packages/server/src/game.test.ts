@@ -41,6 +41,14 @@ test("queueMove to unwalkable tile is ignored", () => {
   expect(g.snapshot().players[0]).toMatchObject({ x: 0, y: 0 });
 });
 
+test("fractional moveTo is floored to a tile", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addPlayer("p1");
+  g.queueMove("p1", 3.9, 0.2); // → tile (3, 0)
+  for (let i = 0; i < 16; i++) g.step(1 / 15);
+  expect(g.snapshot().players[0].x).toBeCloseTo(3, 5);
+});
+
 test("two players tracked independently", () => {
   const g = new Game(corridor, { x: 0, y: 0 });
   g.addPlayer("a");

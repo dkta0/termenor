@@ -30,6 +30,35 @@ test("clamps to latest when render time is past newest snapshot", () => {
   expect(players[0].x).toBeCloseTo(10, 5);
 });
 
+test("REGRESSION: smooth interpolation at real 66.7ms tick cadence (no clamp-freeze)", () => {
+  // Snapshots arrive every ~66.7ms (15Hz), player moves 1 unit/tick.
+  const gs = new GameState();
+  const TICK = 1000 / 15;
+  for (let i = 0; i < 6; i++) gs.applySnapshot(snap(i, i), 1000 + i * TICK);
+  // Newest frame time = 1000 + 5*TICK. With INTERP_DELAY_MS=100 (~1.5 ticks),
+  // sweeping render time across a tick must yield strictly increasing x with no
+  // flat (frozen) stretch — the bug clamped to a stale frame for ~half each tick.
+  const newest = 1000 + 5 * TICK;
+  const xs: number[] = [];
+  for (let r = 0; r <= 10; r++) {
+    const players = gs.samplePositions(newest + (r / 10) * TICK);
+    xs.push(players[0].x);
+  }
+  // strictly non-decreasing and actually advances (not stuck on one value)
+  for (let i = 1; i < xs.length; i++) expect(xs[i]).toBeGreaterThanOrEqual(xs[i - 1]);
+  expect(xs[xs.length - 1]).toBeGreaterThan(xs[0]);
+});
+
+test("interpolates within an OLDER bracketing pair instead of clamping to newest", () => {
+  const gs = new GameState();
+  gs.applySnapshot(snap(0, 0), 1000);
+  gs.applySnapshot(snap(1, 10), 1100);
+  gs.applySnapshot(snap(2, 20), 1200); // newest
+  // target 1050 (between frame@1000 and frame@1100) → x=5, NOT clamped to 20
+  const players = gs.samplePositions(1050 + INTERP_DELAY_MS);
+  expect(players[0].x).toBeCloseTo(5, 5);
+});
+
 test("setMap / setLocalId expose state", () => {
   const gs = new GameState();
   gs.setMap({ width: 2, height: 1, tiles: [0, 0] });
