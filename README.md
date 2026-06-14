@@ -68,6 +68,12 @@ bun run verify:render          # PTY: two real OpenTUI clients, verify the actua
 exact bytes a terminal would paint — the closest automated proxy for "looks good
 in ghostty/kitty" without a human at the keyboard. (Requires `python3`.)
 
+```bash
+bun run scripts/render-png.ts  # renders client A's live view to PNG frames
+                               #   (/tmp/termenor-hero.png, -strip.png) as a
+                               #   remote player walks — visual smoke. (ImageMagick)
+```
+
 ## Deploy (Docker)
 
 ```bash
