@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "esnext",
+    "target": "esnext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["bun-types"],
+    "paths": {
+      "@termenor/protocol": ["./packages/protocol/src/index.ts"]
+    }
+  }
+}
