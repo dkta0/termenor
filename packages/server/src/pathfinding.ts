@@ -1,10 +1,22 @@
 import type { MapData } from "@termenor/protocol";
+import { MAX_CLIMB } from "@termenor/protocol";
 
 export interface Point { x: number; y: number; }
 
 export function isWalkable(map: MapData, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
   return map.tiles[y * map.width + x] === 0;
+}
+
+export function heightAt(map: MapData, x: number, y: number): number {
+  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return 0;
+  return map.heights?.[y * map.width + x] ?? 0;
+}
+
+/** Can an entity step from `from` to the adjacent tile `to`? */
+export function canStep(map: MapData, from: Point, to: Point): boolean {
+  if (!isWalkable(map, to.x, to.y)) return false;
+  return Math.abs(heightAt(map, to.x, to.y) - heightAt(map, from.x, from.y)) <= MAX_CLIMB;
 }
 
 const key = (x: number, y: number) => `${x},${y}`;
@@ -48,7 +60,7 @@ export function findPath(map: MapData, from: Point, to: Point): Point[] | null {
 
     for (const [dx, dy] of NEIGHBORS) {
       const nx = cur.x + dx, ny = cur.y + dy;
-      if (!isWalkable(map, nx, ny)) continue;
+      if (!canStep(map, { x: cur.x, y: cur.y }, { x: nx, y: ny })) continue;
       const nk = key(nx, ny);
       if (closed.has(nk)) continue;
       const tentative = cur.g + 1;
