@@ -655,16 +655,9 @@ test("cooking: use() on raw_shrimp with adjacent live fire → cooked_shrimp + x
   g.addPlayer("chef", { x: 2, y: 2, facing: "south", inventory: firemakeInv });
   // place fire at (2,2) via firemaking
   g.use("chef", "firemaking", 0);
-  // confirm fire at (2,2); player is at (2,2) — adjacent fire is at same tile or neighboring
-  // Move player to (3,2) so they are adjacent to the fire at (2,2)
-  // Actually (2,2) and (3,2): |dx|=1, |dy|=0 → isAdjacent = true
-  // We can directly call use with cooking from (2,2) – fire is at (2,2), same tile is not strictly "adjacent"
-  // Per isAdjacent: max(|dx|,|dy|) === 1 → (2,2) to (2,2) = 0, not adjacent
-  // So player must be at (3,2) or (2,3) with fire at (2,2).
-  // Easier: use a second player approach or spawn fire separately.
-  // The cleanest: add a fresh player at (3,2) with shrimp, and a fire at (2,2) via spawnFire indirectly.
-  // spawnFire is private; use "firemaking" from a helper player at (2,2) to create the fire.
-  // chef is at (2,2), fire spawned at (2,2). Use cooking from (3,2) player.
+  // chef's firemaking spawned a fire at (2,2). isAdjacent is Chebyshev <= 1, so a cook
+  // standing at the neighbouring tile (3,2) is adjacent to that fire and can cook on it.
+  // (spawnFire is private, so the fire is created through a real firemaking action above.)
   const cookInv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   cookInv[0] = { item: "raw_shrimp", qty: 3 };
   g.addPlayer("cook", { x: 3, y: 2, facing: "south", inventory: cookInv });
