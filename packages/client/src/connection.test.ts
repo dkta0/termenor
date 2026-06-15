@@ -16,20 +16,25 @@ class MockSocket implements SocketLike {
   lastDecoded(): ClientMsg { return JSON.parse(this.sent.at(-1)!); }
 }
 
-function setup() {
+function setup(overrides: { username?: string; password?: string } = {}) {
   const sock = new MockSocket();
   const factory: SocketFactory = () => sock;
   const gs = new GameState();
   let t = 1000;
-  const conn = new Connection("ws://x", gs, { socketFactory: factory, now: () => t });
+  const conn = new Connection("ws://x", gs, {
+    socketFactory: factory,
+    now: () => t,
+    username: overrides.username ?? "testuser",
+    password: overrides.password ?? "testpass",
+  });
   conn.connect();
   return { sock, gs, conn, advance: (ms: number) => { t += ms; } };
 }
 
-test("sends hello on open", () => {
-  const { sock } = setup();
+test("sends login on open", () => {
+  const { sock } = setup({ username: "alice", password: "s3cr3t" });
   sock.fireOpen();
-  expect(sock.lastDecoded()).toEqual({ t: "hello" });
+  expect(sock.lastDecoded()).toEqual({ t: "login", username: "alice", password: "s3cr3t" });
 });
 
 test("sendMoveTo serializes a moveTo message", () => {
@@ -42,8 +47,11 @@ test("sendMoveTo serializes a moveTo message", () => {
 test("welcome populates map and local id", () => {
   const { sock, gs } = setup();
   sock.fireOpen();
-  sock.fireMessage(encode({ t: "welcome", playerId: "me", tickRate: 15,
-    map: { width: 3, height: 1, tiles: [0,0,0], heights: [0,0,0] } }));
+  sock.fireMessage(encode({
+    t: "welcome", playerId: "me", tickRate: 15,
+    x: 3, y: 1, facing: "south",
+    map: { width: 3, height: 1, tiles: [0, 0, 0], heights: [0, 0, 0] },
+  }));
   expect(gs.localId).toBe("me");
   expect(gs.map?.width).toBe(3);
 });
@@ -61,9 +69,80 @@ test("reconnects after close", () => {
   const sockets: MockSocket[] = [];
   const factory: SocketFactory = () => { const s = new MockSocket(); sockets.push(s); return s; };
   const gs = new GameState();
-  const conn = new Connection("ws://x", gs, { socketFactory: factory, now: () => 0, reconnectDelayMs: 0 });
+  const conn = new Connection("ws://x", gs, {
+    socketFactory: factory,
+    now: () => 0,
+    reconnectDelayMs: 0,
+    username: "testuser",
+    password: "testpass",
+  });
   conn.connect();
   expect(sockets).toHaveLength(1);
   sockets[0].close();
   expect(sockets).toHaveLength(2); // reconnected immediately (delay 0)
+});
+
+test("connection sends login message on open", () => {
+  const sent: string[] = [];
+  const mockSock: SocketLike = {
+    send: (d) => sent.push(d),
+    close: () => {},
+  };
+  const state = new GameState();
+  const conn = new Connection("ws://x", state, {
+    socketFactory: () => mockSock,
+    username: "alice",
+    password: "s3cr3t",
+  });
+  conn.connect();
+  mockSock.onopen?.();
+  expect(sent).toHaveLength(1);
+  const msg = JSON.parse(sent[0]);
+  expect(msg.t).toBe("login");
+  expect(msg.username).toBe("alice");
+  expect(msg.password).toBe("s3cr3t");
+});
+
+test("loginError triggers onLoginError callback", () => {
+  let errorReason: string | undefined;
+  const mockSock: SocketLike = {
+    send: () => {},
+    close: () => {},
+  };
+  const state = new GameState();
+  const conn = new Connection("ws://x", state, {
+    socketFactory: () => mockSock,
+    username: "alice",
+    password: "wrong",
+    onLoginError: (reason: string) => { errorReason = reason; },
+  });
+  conn.connect();
+  mockSock.onopen?.();
+  mockSock.onmessage?.(JSON.stringify({ t: "loginError", reason: "bad password" }));
+  expect(errorReason).toBe("bad password");
+});
+
+test("welcome message seeds local position in GameState", () => {
+  const mockSock: SocketLike = {
+    send: () => {},
+    close: () => {},
+  };
+  const state = new GameState();
+  const conn = new Connection("ws://x", state, {
+    socketFactory: () => mockSock,
+    username: "alice",
+    password: "pw",
+  });
+  conn.connect();
+  mockSock.onopen?.();
+  mockSock.onmessage?.(JSON.stringify({
+    t: "welcome",
+    playerId: "alice",
+    tickRate: 15,
+    x: 10,
+    y: 5,
+    facing: "east",
+    map: { width: 2, height: 1, tiles: [0, 0], heights: [0, 0] },
+  }));
+  expect(state.localId).toBe("alice");
 });
