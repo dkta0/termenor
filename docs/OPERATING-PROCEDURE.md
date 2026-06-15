@@ -38,4 +38,5 @@ driven by `/goal`, one slice at a time.
 - Slice 5: ✅ inventory + ground items — pickup/drop, persisted inventory (merged to main).
 - Slice 6: ✅ NPCs — spawns + wander AI, tick-driven entity system (merged to main).
 - Slice 7: ✅ combat v1 — melee, HP, death/respawn, damage splats (merged to main).
-- Slice 8: first gathering skill (woodcutting) — next.
+- Slice 8: ✅ woodcutting — XP/levels, tool check, tree nodes + respawn, skill engine (merged to main).
+- Slice 9: skill framework generalized → mining, fishing, cooking, firemaking — next.
