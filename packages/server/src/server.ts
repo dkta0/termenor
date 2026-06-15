@@ -57,18 +57,21 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
             ws.close();
             return;
           }
+          // reserve the username synchronously (before the await) so a concurrent
+          // login for the same account can't slip past the check above (TOCTOU race)
+          online.add(username);
 
           const spawn = { x: SPAWN.x, y: SPAWN.y, facing: "south" as const };
           const result = await getOrCreateAccount(db, username, password, spawn);
 
           if (!result.ok) {
+            online.delete(username); // release the reservation on auth failure
             ws.send(encode({ t: "loginError", reason: result.reason }));
             ws.close();
             return;
           }
 
           ws.data.username = username;
-          online.add(username);
           game.addPlayer(username, result.state);
           ws.subscribe("world");
           ws.send(encode({
