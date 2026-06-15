@@ -33,6 +33,8 @@ export interface RendererHooks {
   onDrop?(slot: number): void;
   /** Called when the player presses 'a' to attack the nearest NPC. */
   onAttack?(targetId: string): void;
+  /** Called when the player presses 'c' to chop/gather the nearest resource. */
+  onGather?(id: string): void;
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
@@ -57,13 +59,15 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     const pxW = cols;
     const pxH = tier === "halfblock" ? rows * 2 : rows;
 
-    const players = state.samplePositions(performance.now());
-    const npcs = state.sampleNpcs(performance.now());
+    const now = performance.now();
+    const players = state.samplePositions(now);
+    const npcs = state.sampleNpcs(now);
+    const resources = state.sampleResources();
     const me = players.find((p) => p.id === state.localId);
     const center = me ? tileToScreen(me.x, me.y, me.h) : tileToScreen(map.width / 2, map.height / 2, 0);
     const cam = isoCamera(center.sx, center.sy, pxW, pxH);
 
-    const frame = rasterizeIso(map, players, cam.ox, cam.oy, pxW, pxH, state.localId, state.ground, npcs);
+    const frame = rasterizeIso(map, players, cam.ox, cam.oy, pxW, pxH, state.localId, state.ground, npcs, resources);
     lastFrame = frame;
     const grid = cellGridFor(tier, frame.buf);
     blit(buffer, grid);
@@ -108,7 +112,6 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
 
     // Damage splats: red number floating above hit entity
     const RED = RGBA.fromInts(255, 60, 60, 255);
-    const now = performance.now();
     for (const splat of state.activeSplats(now)) {
       // Find target in current sample (players + npcs); skip if not visible
       const targetPlayer = players.find((p) => p.id === splat.targetId);
@@ -145,6 +148,12 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       for (const cell of textCells(inputLine, 1, rows - 1, cols, rows)) {
         buffer.setCell(cell.col, cell.row, cell.char, CYAN, BLACK);
       }
+    }
+
+    // Skills HUD: top-left corner, one line
+    const SKILLS_COLOR = RGBA.fromInts(100, 220, 100, 255);
+    for (const cell of textCells(state.skillsLine(), 1, 0, cols, rows)) {
+      buffer.setCell(cell.col, cell.row, cell.char, SKILLS_COLOR, BLACK);
     }
 
     // Inventory panel: right edge, list non-empty slots
@@ -219,6 +228,23 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
           if (d < bestD) { bestD = d; best = n; }
         }
         hooks.onAttack?.(best.id);
+      }
+      return;
+    }
+
+    // Gather nearest resource
+    if (key.name === "c") {
+      const gatherNow = performance.now();
+      const gatherPlayers = state.samplePositions(gatherNow);
+      const gatherMe = gatherPlayers.find((p) => p.id === state.localId);
+      const gatherResources = state.sampleResources();
+      if (gatherMe && gatherResources.length > 0) {
+        let best = gatherResources[0], bestD = Infinity;
+        for (const r of gatherResources) {
+          const d = Math.hypot(r.x - gatherMe.x, r.y - gatherMe.y);
+          if (d < bestD) { bestD = d; best = r; }
+        }
+        hooks.onGather?.(best.id);
       }
       return;
     }

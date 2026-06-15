@@ -1,4 +1,4 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, ResourceState } from "@termenor/protocol";
 import { SPLAT_MS, type HitEvent } from "@termenor/protocol";
 
 /**
@@ -24,12 +24,15 @@ export class GameState {
   localId: string | null = null;
   ground: GroundItem[] = [];
   inventory: (ItemStack | null)[] = [];
+  resources: ResourceState[] = [];
+  skills: Record<string, { xp: number; level: number }> = {};
   private frames: Frame[] = []; // chronological, oldest → newest
   private splats: Splat[] = [];
 
   setMap(map: MapData): void { this.map = map; }
   setLocalId(id: string): void { this.localId = id; }
   setInventory(slots: (ItemStack | null)[]): void { this.inventory = slots; }
+  setSkills(s: Record<string, { xp: number; level: number }>): void { this.skills = s; }
 
   applySnapshot(snap: SnapshotMsg, now: number): void {
     const players = new Map(snap.players.map((p) => [p.id, p]));
@@ -37,7 +40,19 @@ export class GameState {
     this.frames.push({ time: now, players, npcs });
     if (this.frames.length > MAX_FRAMES) this.frames.shift();
     this.ground = snap.ground;
+    this.resources = snap.resources;
     for (const h of snap.hits) this.splats.push({ targetId: h.targetId, amount: h.amount, expires: now + SPLAT_MS });
+  }
+
+  /** Return resources with elevation attached (same pattern as sampleNpcs). */
+  sampleResources(): (ResourceState & { h: number })[] {
+    const map = this.map;
+    return this.resources.map((r) => ({ ...r, h: map ? sampleElevation(map, r.x, r.y) : 0 }));
+  }
+
+  /** Skills HUD line for the woodcutting skill. */
+  skillsLine(): string {
+    return `Woodcutting: ${this.skills.woodcutting?.level ?? 1} (${this.skills.woodcutting?.xp ?? 0} xp)`;
   }
 
   /** Return all splats that haven't expired yet, pruning stale ones in place. */
