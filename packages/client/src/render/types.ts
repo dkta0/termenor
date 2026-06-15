@@ -12,6 +12,7 @@ export const Kind = {
   PLAYER: 3,
   LOCAL: 4,
   SHADOW: 5,
+  ITEM: 6,
 } as const;
 export type KindValue = (typeof Kind)[keyof typeof Kind];
 

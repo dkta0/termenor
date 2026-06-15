@@ -48,3 +48,28 @@ test("walk-behind: a wall in front (greater x+y) occludes the player behind it",
   expect(localPixels(open)).toBeGreaterThan(0);
   expect(localPixels(behind)).toBeLessThan(localPixels(open));
 });
+
+import type { GroundItem } from "@termenor/protocol";
+
+test("rasterizeIso with ground item produces ITEM pixels at item tile", () => {
+  const map: import("@termenor/protocol").MapData = {
+    width: 5, height: 5,
+    tiles: new Array(25).fill(0),
+    heights: new Array(25).fill(0),
+  };
+  const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 5, x: 2, y: 2 }];
+  const frame = rasterizeIso(map, [], 0, 0, 200, 200, null, ground);
+  const hasItem = frame.buf.kinds.some((k) => k === Kind.ITEM);
+  expect(hasItem).toBe(true);
+});
+
+test("rasterizeIso with no ground items produces no ITEM pixels", () => {
+  const map: import("@termenor/protocol").MapData = {
+    width: 5, height: 5,
+    tiles: new Array(25).fill(0),
+    heights: new Array(25).fill(0),
+  };
+  const frame = rasterizeIso(map, [], 0, 0, 200, 200, null, []);
+  const hasItem = frame.buf.kinds.some((k) => k === Kind.ITEM);
+  expect(hasItem).toBe(false);
+});
