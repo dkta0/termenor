@@ -1,9 +1,10 @@
 import { test, expect } from "bun:test";
 import type { MapData, SnapshotMsg, GroundItem, ItemStack, NpcState } from "@termenor/protocol";
+import { SPLAT_MS } from "@termenor/protocol";
 import { GameState, INTERP_DELAY_MS, sampleElevation } from "./game-state";
 
 const snap = (tick: number, x: number): SnapshotMsg => ({
-  t: "snapshot", tick, players: [{ id: "a", x, y: 0, facing: "east" }], ground: [], npcs: [],
+  t: "snapshot", tick, players: [{ id: "a", x, y: 0, facing: "east", hp: 10, maxHp: 10 }], ground: [], npcs: [], hits: [],
 });
 
 test("samplePositions returns empty before any snapshot", () => {
@@ -82,7 +83,7 @@ test("sampleElevation returns 0 out of bounds", () => {
 test("applySnapshot stores ground items", () => {
   const gs = new GameState();
   const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 5, x: 3, y: 4 }];
-  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground, npcs: [] }, 1000);
+  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground, npcs: [], hits: [] }, 1000);
   expect(gs.ground).toEqual(ground);
 });
 
@@ -109,7 +110,8 @@ const snapWithNpcs = (tick: number, npcX: number): SnapshotMsg => ({
   t: "snapshot", tick,
   players: [],
   ground: [],
-  npcs: [{ id: "npc-1", type: "goblin", x: npcX, y: 0, facing: "east" }],
+  npcs: [{ id: "npc-1", type: "goblin", x: npcX, y: 0, facing: "east", hp: 5, maxHp: 5 }],
+  hits: [],
 });
 
 test("applySnapshot stores npcs", () => {
@@ -146,7 +148,7 @@ test("sampleNpcs clamps to latest when render time is past newest snapshot", () 
 
 test("sampleNpcs handles npc missing from first frame (uses newest position)", () => {
   const gs = new GameState();
-  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground: [], npcs: [] }, 1000);
+  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground: [], npcs: [], hits: [] }, 1000);
   gs.applySnapshot(snapWithNpcs(2, 8), 1100);
   const npcs = gs.sampleNpcs(1050 + INTERP_DELAY_MS);
   expect(npcs).toHaveLength(1);
@@ -167,4 +169,31 @@ test("samplePositions behavior unchanged after refactor (regression)", () => {
   gs.applySnapshot(snap(2, 10), 1100);
   const players = gs.samplePositions(1050 + INTERP_DELAY_MS);
   expect(players[0].x).toBeCloseTo(5, 5);
+});
+
+// ---- Combat / hp / splat tests ----
+
+function combatSnap(over: Partial<SnapshotMsg> = {}): SnapshotMsg {
+  return {
+    t: "snapshot", tick: 1,
+    players: [{ id: "me", x: 0, y: 0, facing: "south", hp: 8, maxHp: 10 }],
+    ground: [], npcs: [], hits: [], ...over,
+  };
+}
+
+test("hp is read from the newest frame (not interpolated)", () => {
+  const gs = new GameState();
+  gs.setMap({ width: 4, height: 4, tiles: new Array(16).fill(0), heights: new Array(16).fill(0) });
+  gs.setLocalId("me");
+  gs.applySnapshot(combatSnap({ tick: 1 }), 0);
+  gs.applySnapshot(combatSnap({ tick: 2, players: [{ id: "me", x: 0, y: 0, facing: "south", hp: 3, maxHp: 10 }] }), 100);
+  expect(gs.hpOf("me")).toBe(3);
+});
+
+test("hits become active splats that prune after SPLAT_MS", () => {
+  const gs = new GameState();
+  gs.applySnapshot(combatSnap({ hits: [{ targetId: "g1", amount: 2, tick: 1 }] }), 1000);
+  expect(gs.activeSplats(1000).length).toBe(1);
+  expect(gs.activeSplats(1000 + SPLAT_MS - 1).length).toBe(1);
+  expect(gs.activeSplats(1000 + SPLAT_MS + 1).length).toBe(0);
 });

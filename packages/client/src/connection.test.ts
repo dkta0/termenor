@@ -59,7 +59,7 @@ test("welcome populates map and local id", () => {
 test("snapshot is applied to game-state", () => {
   const { sock, gs, advance } = setup();
   sock.fireOpen();
-  sock.fireMessage(encode({ t: "snapshot", tick: 1, players: [{ id: "me", x: 1, y: 0, facing: "east" }], ground: [], npcs: [] }));
+  sock.fireMessage(encode({ t: "snapshot", tick: 1, players: [{ id: "me", x: 1, y: 0, facing: "east", hp: 10, maxHp: 10 }], ground: [], npcs: [], hits: [] }));
   advance(200);
   const players = gs.samplePositions(1200);
   expect(players[0].id).toBe("me");
@@ -186,6 +186,14 @@ test("sendDrop sends drop message with slot", () => {
   sock.sent.length = 0;
   conn.sendDrop(3);
   expect(JSON.parse(sock.sent[0])).toEqual({ t: "drop", slot: 3 });
+});
+
+test("sendAttack sends attack message with targetId", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  sock.sent.length = 0;
+  conn.sendAttack("npc-42");
+  expect(JSON.parse(sock.sent[0])).toEqual({ t: "attack", targetId: "npc-42" });
 });
 
 test("inventory message updates GameState", () => {
