@@ -6,7 +6,7 @@ import {
   type MouseEvent as TuiMouseEvent,
   type OptimizedBuffer,
 } from "@opentui/core";
-import { ITEMS } from "@termenor/protocol";
+import { ITEMS, NPC_TYPES } from "@termenor/protocol";
 import type { GameState } from "../game-state";
 import type { ChatState } from "../chat";
 import { isoCamera, pickTile } from "./camera";
@@ -56,11 +56,12 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     const pxH = tier === "halfblock" ? rows * 2 : rows;
 
     const players = state.samplePositions(performance.now());
+    const npcs = state.sampleNpcs(performance.now());
     const me = players.find((p) => p.id === state.localId);
     const center = me ? tileToScreen(me.x, me.y, me.h) : tileToScreen(map.width / 2, map.height / 2, 0);
     const cam = isoCamera(center.sx, center.sy, pxW, pxH);
 
-    const frame = rasterizeIso(map, players, cam.ox, cam.oy, pxW, pxH, state.localId, state.ground);
+    const frame = rasterizeIso(map, players, cam.ox, cam.oy, pxW, pxH, state.localId, state.ground, npcs);
     lastFrame = frame;
     const grid = cellGridFor(tier, frame.buf);
     blit(buffer, grid);
@@ -83,6 +84,22 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       const labelCol = Math.round(labelSx - p.id.length / 2);
       const color = p.id === state.localId ? YELLOW : WHITE;
       for (const cell of textCells(p.id, labelCol, labelRow, cols, rows)) {
+        buffer.setCell(cell.col, cell.row, cell.char, color, BLACK);
+      }
+    }
+
+    // NPC name labels: type name above each NPC's billboard
+    for (const npc of npcs) {
+      const { sx, sy } = tileToScreen(npc.x, npc.y, npc.h);
+      const labelSy = sy - cam.oy - 6;
+      const labelRow = tier === "halfblock" ? Math.round(labelSy / 2) - 1 : Math.round(labelSy) - 1;
+      const labelSx = sx - cam.ox;
+      const label = NPC_TYPES[npc.type]?.name ?? npc.type;
+      const labelCol = Math.round(labelSx - label.length / 2);
+      const entry = NPC_TYPES[npc.type];
+      const [r, g, b] = entry ? entry.color : [200, 200, 200];
+      const color = RGBA.fromInts(r, g, b, 255);
+      for (const cell of textCells(label, labelCol, labelRow, cols, rows)) {
         buffer.setCell(cell.col, cell.row, cell.char, color, BLACK);
       }
     }

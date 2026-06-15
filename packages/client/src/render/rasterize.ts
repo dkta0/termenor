@@ -1,6 +1,6 @@
-import { ITEMS } from "@termenor/protocol";
+import { ITEMS, NPC_TYPES } from "@termenor/protocol";
 import type { GroundItem, MapData } from "@termenor/protocol";
-import type { RenderPlayer } from "../game-state";
+import type { NpcRender, RenderPlayer } from "../game-state";
 import { Kind, type PixelBuffer } from "./types";
 import { TILE_W, TILE_H, ELEV_PX, tileToScreen } from "./iso";
 import { shade } from "./shade";
@@ -91,6 +91,7 @@ export function rasterizeIso(
   map: MapData, players: RenderPlayer[],
   camOx: number, camOy: number, pxW: number, pxH: number, localId: string | null,
   ground: GroundItem[] = [],
+  npcs: NpcRender[] = [],
 ): IsoFrame {
   const f = newIsoFrame(pxW, pxH);
 
@@ -135,6 +136,17 @@ export function rasterizeIso(
     for (let dy = 0; dy < 2; dy++)
       for (let dx = 0; dx < 2; dx++)
         plot(f, Math.round(cx + dx - 1), Math.round(cy + dy - 1), depth, Kind.ITEM, rgb, -1);
+  }
+
+  // NPCs — depth-tested billboards with shadow, same as players
+  for (const npc of npcs) {
+    const s = tileToScreen(npc.x, npc.y, npc.h);
+    const cx = s.sx - camOx, cy = s.sy - camOy;
+    const depth = npc.x + npc.y;
+    fillDiamond(f, cx, cy, depth, Kind.SHADOW, SHADOW_RGB, -1);
+    const entry = NPC_TYPES[npc.type];
+    const rgb: RGB = entry ? entry.color : [200, 200, 200];
+    drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
   }
 
   return f;

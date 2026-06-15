@@ -73,3 +73,27 @@ test("rasterizeIso with no ground items produces no ITEM pixels", () => {
   const hasItem = frame.buf.kinds.some((k) => k === Kind.ITEM);
   expect(hasItem).toBe(false);
 });
+
+import { NPC_TYPES } from "@termenor/protocol";
+import type { NpcRender } from "../game-state";
+
+test("rasterizeIso with npcs produces NPC pixels", () => {
+  const map: MapData = {
+    width: 5, height: 5,
+    tiles: new Array(25).fill(0),
+    heights: new Array(25).fill(0),
+  };
+  const npc: NpcRender = { id: "npc-1", type: "goblin", x: 2, y: 2, facing: "south", h: 0 };
+  const frame = rasterizeIso(map, [], 0, 0, 200, 200, null, [], [npc]);
+  expect(frame.buf.kinds.some((k) => k === Kind.NPC)).toBe(true);
+});
+
+test("rasterizeIso with no npcs produces no NPC pixels", () => {
+  const map: MapData = {
+    width: 5, height: 5,
+    tiles: new Array(25).fill(0),
+    heights: new Array(25).fill(0),
+  };
+  const frame = rasterizeIso(map, [], 0, 0, 200, 200, null, [], []);
+  expect(frame.buf.kinds.some((k) => k === Kind.NPC)).toBe(false);
+});
