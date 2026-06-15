@@ -1,3 +1,6 @@
+export type { ItemStack, GroundItem } from "./items";
+export { ITEMS, isItem, INV_SIZE } from "./items";
+
 export type Facing = "north" | "south" | "east" | "west";
 
 /** Row-major grid. 0 = walkable, 1 = blocked. `heights` is per-tile ground elevation. */
