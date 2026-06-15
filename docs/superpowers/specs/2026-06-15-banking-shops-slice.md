@@ -2,6 +2,14 @@
 
 Status: **spec** · Branch: `feat/banking-shops` · Date: 2026-06-15
 
+> **Architecture note (updated 2026-06-15):** this branch was rebased onto the
+> `refactor/game-systems` work. The server is now a `GameWorld` state store + focused
+> **System** modules (see [ADR-0002](../../adr/0002-systems-over-shared-world.md)), and types
+> follow the `*State`/`*Entity`/`*Kind` convention (see
+> [ADR-0001](../../adr/0001-three-layer-type-naming.md)). This spec reflects that: bank/shop
+> logic lives in dedicated systems over `GameWorld`, not in a `Game` god-object. Units 1–2
+> (protocol + persistence) are already implemented on this branch.
+
 ## 1. Goal
 
 Two item-economy features built on the slice-5 inventory + slice-3 persistence + slice-6 NPCs:
@@ -24,8 +32,8 @@ shop panel.
 - No equipment (slice 11). Bank/shop operate on plain inventory items.
 
 ## 2. Success criteria (concrete & checkable)
-1. **Bank store + protocol.** Player gains a `bank: ItemStack[]` (compact list, not fixed slots;
-   everything stacks regardless of `ITEMS.stackable`). Messages: client `BankActionMsg
+1. **Bank store + protocol.** `PlayerEntity` gains a `bank: ItemStack[]` (compact list, not fixed
+   slots; everything stacks regardless of `ITEM_KINDS.stackable`). Messages: client `BankActionMsg
    {t:"bankAction"; action:"deposit"|"withdraw"; slot:number; qty:number}` (slot indexes the
    inventory for deposit, the bank list for withdraw; `qty` may exceed available → clamp; a
    sentinel like `qty:-1` or a large number means "all"). Server `BankMsg {t:"bank"; items:
@@ -37,14 +45,14 @@ shop panel.
    open:boolean}`. Client `ShopActionMsg {t:"shopAction"; action:"buy"|"sell"; item:string;
    qty:number}`. Buy price = listed price; sell price = `floor(price * SELL_RATE)` (e.g. 0.5; items
    not stocked by the shop sell at a small default or are refused — pick one and test it).
-3. **Bank engine in Game (tested).** `openBank(playerId, boothId)` validates the player is adjacent
+3. **Bank engine (`bank-system.ts`, tested).** `openBank(playerId, boothId)` validates the player is adjacent
    to a bank booth → marks bank open + returns contents. `deposit(playerId, invSlot, qty)` moves up
    to qty of that inventory slot's item into the bank (merging stacks); `withdraw(playerId,
    bankIndex, qty)` moves up to qty from the bank into the inventory (respecting 28-slot capacity;
    partial if inventory fills). Coins work like any item. Tested: deposit merges + clears slot;
    withdraw respects capacity; qty clamping; deposit-all; bank persists in snapshot-independent
    state.
-4. **Shop engine in Game (tested).** `openShop(playerId, npcId)` validates adjacency to a shopkeeper
+4. **Shop engine (`shop-system.ts`, tested).** `openShop(playerId, npcId)` validates adjacency to a shopkeeper
    → returns shop. `buy(playerId, shopId, item, qty)`: requires coins ≥ price*qty and inventory room
    and stock; deduct coins, add item, decrement stock. `sell(playerId, shopId, item, qty)`: requires
    the item in inventory; remove up to qty, add coins = sellPrice*qty, increment stock. Tested: buy
@@ -77,27 +85,45 @@ shop panel.
   type sets: `OpenMsg`, `BankActionMsg`, `ShopActionMsg` (client); `BankMsg`, `ShopMsg` (server).
   Round-trip test each.
 
-### 3.2 Server (`game.ts`)
-- `Player` += `bank: ItemStack[]`. `addPlayer` seeds from `RestoredState.bank ?? []`.
-  `RestoredState` += `bank?`. `getPlayerState` returns `bank`.
-- Bank helpers (pure-ish, mutate player): `openBank`, `deposit`, `withdraw`, `getBank(id)`. Use
-  `addToInventory`/`removeSlot` for the inventory side; the bank side is a flat merge-by-item list.
-- Shop: in-memory `shops` map seeded from `SHOPS` (so stock can mutate). `openShop`, `buy`, `sell`,
-  `getShop(shopId)`. Coin item id is `coins`. Coin add/remove via inventory helpers.
-- Booth/keeper: add `bank`/`shopkeeper` as non-wandering NPC types (NPC_TYPES + spawnNpc with a
-  flag), or a resource. Whichever — opening validates `isAdjacent(player, target)`. Reuse `isAdjacent`.
-- Buffers for delivery: a per-tick `bankChanged`/`shopChanged` or just respond synchronously in
-  `server.ts` to the action messages (simpler: the action handlers return enough for server.ts to
-  send the updated Bank/Shop msg to that socket). Pick the simpler request/response approach.
-- `getPlayerState`/persistence includes `bank`.
+### 3.2 Server: `GameWorld` state + `bank-system.ts` / `shop-system.ts`
+
+Follow ADR-0002: `GameWorld` (in `game.ts`) owns the state and exposes thin command methods;
+the logic lives in **System** modules of functions over `GameWorld`. Bank and shop are
+**command-style systems** (no per-tick `step()`, like `InventorySystem`).
+
+- **`entities.ts`:** `PlayerEntity` += `bank: ItemStack[]`. `RestoredState` (in `game.ts`) += `bank?`.
+- **`GameWorld` state + commands (`game.ts`):** `addPlayer` seeds `bank` from `state?.bank ?? []`;
+  `getPlayerState` returns `bank`. Add an in-memory `shops` field (a deep copy of `SHOPS` so stock
+  mutates without touching the imported catalog), made accessible to the systems (`/** @internal */`,
+  same as the other system-shared fields). Thin command wrappers `openBank`, `deposit`, `withdraw`,
+  `getBank`, `openShop`, `buy`, `sell`, `getShop` delegate to the systems (signatures are the command
+  surface `server.ts` calls).
+- **`bank-system.ts`:** `openBank(w, playerId, boothId)`, `deposit(w, playerId, invSlot, qty)`,
+  `withdraw(w, playerId, bankIndex, qty)`, `getBank(w, playerId)`. Use `addToInventory`/`removeSlot`
+  (`./inventory`) for the inventory side; the bank side is a flat merge-by-item list. Validate
+  adjacency with `isAdjacent` (`./combat`).
+- **`shop-system.ts`:** `openShop(w, playerId, npcId)`, `buy(w, playerId, shopId, item, qty)`,
+  `sell(w, playerId, shopId, item, qty)`, `getShop(w, shopId)`, plus the coin helpers
+  (`coinCount`/`removeCoins`, coins added via `addToInventory`). Coin item id is `coins`. Reads
+  `w.shops`. Validate adjacency with `isAdjacent`.
+- **Booth/keeper:** static, non-gatherable `ResourceEntity`s (`bank_booth`, `general_store` kinds in
+  `RESOURCE_KINDS`) — they render as billboards, never wander/deplete, and aren't targeted by the
+  gather pass. Opening validates `isAdjacent(player, target)`.
+- **Notices/delivery:** refusals push to the unified event buffer `w.events.gatherNotices` (the
+  generic per-player notice channel drained when the server builds the snapshot). Bank/Shop contents
+  are delivered request/response: `server.ts` calls the command, then sends the requesting socket the
+  fresh `BankMsg`/`ShopMsg`. No new per-tick buffer needed.
+- **Persistence:** `getPlayerState` returns `bank`; the periodic `savePlayerState(...)` already takes
+  a trailing `bank` arg (Unit 2).
 
 ### 3.3 Server wiring (`server.ts`, `world.ts`, `db.ts`)
-- `db.ts`: `bank TEXT` column + migration guard; save/load `bank`; `RestoredState.bank`.
-- `world.ts`: spawn a `banker`/bank booth and a `shopkeeper` near spawn; seed the general store via
-  `SHOPS`.
-- `server.ts`: handle `open`/`bankAction`/`shopAction` → call game; after each, send the requesting
-  socket the fresh `BankMsg`/`ShopMsg` (with `open` set appropriately). Persist `bank` in the
-  periodic save (extend `savePlayerState`).
+- `db.ts`: `bank TEXT` column + migration guard; save/load `bank`; `RestoredState.bank`. **(done — Unit 2.)**
+- `world.ts`: add `RESOURCE_SPAWNS` entries for a `bank_booth` and a `general_store` near spawn; seed
+  the general store stock via `SHOPS`.
+- `server.ts`: handle `open`/`bankAction`/`shopAction` → call the matching `GameWorld` command; after
+  each, send the requesting socket the fresh `BankMsg`/`ShopMsg` (with `open` set appropriately).
+  `bank` is already passed to the periodic `savePlayerState(...)` (Unit 2) — switch the placeholder
+  `[]` to the player's real `bank` (`state.bank ?? []`).
 
 ### 3.4 Client
 - `game-state.ts`: store `bank: ItemStack[]`, `bankOpen:boolean`, `shop` (entries+name+id),
