@@ -1,12 +1,13 @@
 import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState } from "@termenor/protocol";
-import { NPC_KINDS, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
+import { NPC_KINDS, PLAYER_MAX_HP, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
 import { type Point } from "./pathfinding";
 import { emptyInventory, addToInventory, removeSlot } from "./inventory";
-import { rollDamage, isAdjacent } from "./combat";
+import { isAdjacent } from "./combat";
 import type { PlayerEntity, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
 import { awardXp } from "./skills-system";
 import * as invSys from "./inventory-system";
 import * as moveSys from "./movement-system";
+import * as combatSys from "./combat-system";
 
 const GATHER_COOLDOWN_TICKS = 30;
 const FIREMAKING_XP = 40;
@@ -22,7 +23,7 @@ export interface RestoredState {
 
 export class GameWorld {
   readonly map: MapData;
-  private spawn: Point;
+  spawn: Point;
   players = new Map<string, PlayerEntity>();
   tick = 0;
   groundItems: GroundItem[] = [];
@@ -30,7 +31,7 @@ export class GameWorld {
   npcs: NpcEntity[] = [];
   private nextNpcId = 1;
   rng: () => number;
-  private hits: HitEvent[] = [];
+  hits: HitEvent[] = [];
   private resources: ResourceEntity[] = [];
   private fires: FireEntity[] = [];
   private nextResourceId = 1;
@@ -85,12 +86,7 @@ export class GameWorld {
   }
 
   attack(playerId: string, targetId: string): void {
-    const p = this.players.get(playerId);
-    if (!p) return;
-    const npc = this.npcs.find((n) => n.id === targetId && n.respawnAt < 0);
-    if (!npc) return;
-    p.target = targetId;
-    npc.target = playerId;   // aggro: a targeted NPC pursues + stops wandering (spec 2.4)
+    combatSys.setTarget(this, playerId, targetId);
   }
 
   getPlayerState(id: string): RestoredState | null {
@@ -117,18 +113,9 @@ export class GameWorld {
 
     moveSys.stepMovement(this, dt);
 
-    // Combat pass: players attack npcs, npcs attack their target
-    for (const p of this.players.values()) {
-      if (p.attackCd > 0) p.attackCd--;
-      this.combatStep(p, (id) => this.npcs.find((n) => n.id === id && n.respawnAt < 0) ?? null, PLAYER_MAX_HIT);
-    }
-    for (const npc of this.npcs) {
-      if (npc.respawnAt >= 0) continue;
-      if (npc.attackCd > 0) npc.attackCd--;
-      this.combatStep(npc, (id) => this.players.get(id) ?? null, npc.maxHit);
-    }
+    combatSys.stepCombat(this);
 
-    this.resolveDeaths();
+    combatSys.resolveDeaths(this);
 
     // Respawn depleted gatherables
     for (const res of this.resources) {
@@ -179,58 +166,6 @@ export class GameWorld {
         }
       } else {
         moveSys.stepToward(this, p, res.x, res.y);
-      }
-    }
-  }
-
-  private combatStep(
-    actor: { x: number; y: number; facing: Facing; path: Point[]; target: string | null; attackCd: number },
-    findTarget: (id: string) => { id: string; x: number; y: number; hp: number } | null,
-    maxHit: number,
-  ): void {
-    if (!actor.target) return;
-    const tgt = findTarget(actor.target);
-    if (!tgt) { actor.target = null; return; }
-
-    if (isAdjacent(actor, tgt)) {
-      actor.path = [];
-      if (actor.attackCd === 0) {
-        const dmg = rollDamage(maxHit, this.rng);
-        tgt.hp = Math.max(0, tgt.hp - dmg);
-        actor.attackCd = ATTACK_COOLDOWN_TICKS;
-        this.hits.push({ targetId: tgt.id, amount: dmg, tick: this.tick });
-        // If the victim is an NPC, make it retaliate against the player attacker
-        const victimNpc = this.npcs.find((n) => n.id === tgt.id);
-        if (victimNpc && !victimNpc.target) {
-          const attackerId = this.idOf(actor);
-          if (attackerId) victimNpc.target = attackerId;
-        }
-      }
-    } else {
-      moveSys.stepToward(this, actor, tgt.x, tgt.y);
-    }
-  }
-
-  // Returns the player id for a player actor, or null for NPC actors.
-  private idOf(actor: object): string | null {
-    for (const [id, p] of this.players) if (p === actor) return id;
-    return null;
-  }
-
-  private resolveDeaths(): void {
-    for (const npc of this.npcs) {
-      if (npc.respawnAt < 0 && npc.hp <= 0) {
-        npc.respawnAt = this.tick + RESPAWN_TICKS;
-        npc.path = []; npc.target = null;
-        for (const p of this.players.values()) if (p.target === npc.id) p.target = null;
-        for (const other of this.npcs) if (other.target === npc.id) other.target = null;
-      }
-    }
-    for (const p of this.players.values()) {
-      if (p.hp <= 0) {
-        p.x = this.spawn.x; p.y = this.spawn.y; p.path = [];
-        p.hp = p.maxHp; p.target = null; p.attackCd = 0;
-        for (const npc of this.npcs) if (npc.target === p.id) npc.target = null;
       }
     }
   }
