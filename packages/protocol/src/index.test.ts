@@ -167,6 +167,47 @@ test("UseMsg round-trips through encode/decodeClient", () => {
   expect(decodeClient(encode(msg))).toEqual(msg);
 });
 
+import { SHOPS, SELL_RATE, BANK_CAP, type ShopEntry } from "./index";
+import { type OpenMsg, type BankActionMsg, type ShopActionMsg, type BankMsg, type ShopMsg } from "./index";
+
+test("SHOPS.general_store has entries and SELL_RATE is 0.5", () => {
+  expect(SHOPS.general_store).toBeDefined();
+  expect(SHOPS.general_store.entries.length).toBeGreaterThan(0);
+  expect(SELL_RATE).toBe(0.5);
+  expect(BANK_CAP).toBe(200);
+});
+
+test("OpenMsg (bank) round-trips through encode/decodeClient", () => {
+  const msg: ClientMsg = { t: "open", what: "bank", targetId: "booth-1" };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("OpenMsg (shop) round-trips through encode/decodeClient", () => {
+  const msg: ClientMsg = { t: "open", what: "shop", targetId: "store-1" };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("BankActionMsg round-trips through encode/decodeClient", () => {
+  const msg: ClientMsg = { t: "bankAction", action: "deposit", slot: 2, qty: 5 };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("ShopActionMsg round-trips through encode/decodeClient", () => {
+  const msg: ClientMsg = { t: "shopAction", action: "buy", item: "logs", qty: 1 };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("BankMsg round-trips through encode/decodeServer", () => {
+  const msg: ServerMsg = { t: "bank", items: [{ item: "coins", qty: 50 }], open: true };
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
+test("ShopMsg round-trips through encode/decodeServer", () => {
+  const entries: ShopEntry[] = [{ item: "logs", price: 4, stock: 100 }];
+  const msg: ServerMsg = { t: "shop", shopId: "general_store", name: "General Store", entries, open: true };
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
 test("snapshot with rock and fire resources round-trips", () => {
   const resources: ResourceState[] = [
     { id: "r1", type: "rock", x: 2, y: 2 },
