@@ -6,6 +6,7 @@ import { pickWanderTarget, NPC_SPEED } from "./npc";
 import { emptyInventory, addToInventory, removeSlot } from "./inventory";
 import { rollDamage, isAdjacent } from "./combat";
 import type { PlayerEntity, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
+import { awardXp } from "./skills-system";
 
 const SPEED = 5; // tiles per second  → ~200ms per tile
 const GATHER_COOLDOWN_TICKS = 30;
@@ -201,7 +202,7 @@ export class GameWorld {
             continue;
           }
           p.inventory = slots;
-          this.awardXp(p, cfg.skill, cfg.xp);
+          awardXp(this.events, p, cfg.skill, cfg.xp);
           p.gatherCd = cfg.cooldownTicks;
           if (!cfg.infinite) {
             res.charges--;
@@ -393,7 +394,7 @@ export class GameWorld {
         p.inventory[slot] = { item: stack.item, qty: stack.qty - 1 };
       }
       this.spawnFire(px, py);
-      this.awardXp(p, "firemaking", FIREMAKING_XP);
+      awardXp(this.events, p, "firemaking", FIREMAKING_XP);
       return;
     }
 
@@ -428,20 +429,10 @@ export class GameWorld {
       } else {
         p.inventory = cookedSlots;
       }
-      this.awardXp(p, "cooking", COOKING_XP);
+      awardXp(this.events, p, "cooking", COOKING_XP);
       return;
     }
     // unknown action: ignore
-  }
-
-  private awardXp(p: PlayerEntity, skill: string, amount: number): void {
-    const oldXp = p.skills[skill] ?? 0;
-    const newXp = oldXp + amount;
-    p.skills = { ...p.skills, [skill]: newXp };
-    if (levelForXp(newXp) > levelForXp(oldXp)) {
-      this.events.levelUps.push({ id: p.id, skill, level: levelForXp(newXp) });
-    }
-    this.events.skillChanged.add(p.id);
   }
 
   private hasItem(p: PlayerEntity, item: string): boolean {
