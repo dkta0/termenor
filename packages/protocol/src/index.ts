@@ -1,3 +1,4 @@
+import type { ItemStack, GroundItem } from "./items";
 export type { ItemStack, GroundItem } from "./items";
 export { ITEMS, isItem, INV_SIZE } from "./items";
 
@@ -25,7 +26,9 @@ export interface PlayerState {
 export interface LoginMsg { t: "login"; username: string; password: string; }
 export interface MoveToMsg { t: "moveTo"; x: number; y: number; }
 export interface ChatMsg { t: "chat"; text: string; }
-export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg;
+export interface PickupMsg { t: "pickup"; }
+export interface DropMsg { t: "drop"; slot: number; }
+export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg;
 
 export interface WelcomeMsg {
   t: "welcome";
@@ -36,10 +39,11 @@ export interface WelcomeMsg {
   y: number;
   facing: Facing;
 }
-export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; }
+export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; ground: GroundItem[]; }
 export interface LoginErrorMsg { t: "loginError"; reason: string; }
 export interface ChatBroadcastMsg { t: "chatMsg"; from: string; text: string; }
-export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg | ChatBroadcastMsg;
+export interface InventoryMsg { t: "inventory"; slots: (ItemStack | null)[]; }
+export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg | ChatBroadcastMsg | InventoryMsg;
 
 export function encode(msg: ClientMsg | ServerMsg): string {
   return JSON.stringify(msg);
@@ -47,8 +51,8 @@ export function encode(msg: ClientMsg | ServerMsg): string {
 
 export const MAX_CHAT_LEN = 200;
 
-const CLIENT_TYPES = new Set(["login", "moveTo", "chat"]);
-const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg"]);
+const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop"]);
+const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg", "inventory"]);
 
 export function decodeClient(data: string): ClientMsg {
   const obj = JSON.parse(data);
