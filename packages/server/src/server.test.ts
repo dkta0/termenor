@@ -1,37 +1,190 @@
-import { test, expect } from "bun:test";
-import { decodeServer, encode, type ServerMsg } from "@termenor/protocol";
+import { test, expect, afterEach } from "bun:test";
+import type { RunningServer } from "./server";
 import { startServer } from "./server";
 
-function nextMessage(ws: WebSocket): Promise<ServerMsg> {
-  return new Promise((resolve) => {
-    ws.addEventListener("message", (e) => resolve(decodeServer(String(e.data))), { once: true });
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Open a WebSocket and return a simple promise-based wrapper. */
+function wsClient(port: number): {
+  send(data: string): void;
+  messages: string[];
+  waitForOpen(timeoutMs?: number): Promise<void>;
+  waitForMessage(t: string, timeoutMs?: number): Promise<Record<string, unknown>>;
+  close(): void;
+} {
+  const messages: string[] = [];
+  const ws = new WebSocket(`ws://localhost:${port}`);
+  const listeners = new Map<string, Array<(msg: Record<string, unknown>) => void>>();
+  let openResolve: (() => void) | null = null;
+  let openReject: ((e: Error) => void) | null = null;
+
+  ws.addEventListener("open", () => { openResolve?.(); });
+  ws.addEventListener("error", () => { openReject?.(new Error("ws error")); });
+
+  ws.addEventListener("message", (e) => {
+    const raw = String(e.data);
+    messages.push(raw);
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    const t = String(obj.t);
+    const cbs = listeners.get(t);
+    if (cbs && cbs.length > 0) {
+      const cb = cbs.shift()!;
+      if (cbs.length === 0) listeners.delete(t);
+      cb(obj);
+    }
   });
+
+  return {
+    send: (d) => ws.send(d),
+    messages,
+    waitForOpen(timeoutMs = 3000): Promise<void> {
+      return new Promise((resolve, reject) => {
+        if (ws.readyState === WebSocket.OPEN) { resolve(); return; }
+        const timer = setTimeout(() => reject(new Error("timeout waiting for ws open")), timeoutMs);
+        openResolve = () => { clearTimeout(timer); resolve(); };
+        openReject = (e) => { clearTimeout(timer); reject(e); };
+      });
+    },
+    waitForMessage(t: string, timeoutMs = 3000): Promise<Record<string, unknown>> {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`timeout waiting for "${t}"`)), timeoutMs);
+        const existing = listeners.get(t) ?? [];
+        existing.push((msg) => { clearTimeout(timer); resolve(msg); });
+        listeners.set(t, existing);
+      });
+    },
+    close: () => ws.close(),
+  };
 }
 
-test("client receives welcome then snapshots and can move", async () => {
-  const server = startServer(0); // port 0 → ephemeral
-  const url = `ws://localhost:${server.port}`;
-  const ws = new WebSocket(url);
-  await new Promise((r) => ws.addEventListener("open", r, { once: true }));
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-  ws.send(encode({ t: "hello" }));
-  const welcome = await nextMessage(ws);
-  expect(welcome.t).toBe("welcome");
-  if (welcome.t !== "welcome") throw new Error("expected welcome");
-  expect(welcome.map.width).toBeGreaterThan(0);
-  const myId = welcome.playerId;
+// ---------------------------------------------------------------------------
+// Test state
+// ---------------------------------------------------------------------------
 
-  // move and confirm a later snapshot shows movement away from spawn
-  ws.send(encode({ t: "moveTo", x: welcome.map.width - 2, y: 24 }));
-  let moved = false;
-  for (let i = 0; i < 30 && !moved; i++) {
-    const snap = await nextMessage(ws);
-    if (snap.t !== "snapshot") continue;
-    const me = snap.players.find((p) => p.id === myId);
-    if (me && me.x !== 24) moved = true;
-  }
-  expect(moved).toBe(true);
+let srv: RunningServer;
 
-  ws.close();
-  server.stop();
+afterEach(() => { srv?.stop(); });
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+test("new login returns welcome at spawn (24, 24)", async () => {
+  srv = startServer(0, ":memory:");
+
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  client.send(JSON.stringify({ t: "login", username: "alice", password: "pw" }));
+  const welcome = await welcomeP;
+
+  expect(welcome.playerId).toBe("alice");
+  expect(Number(welcome.x)).toBeCloseTo(24, 5);
+  expect(Number(welcome.y)).toBeCloseTo(24, 5);
+  client.close();
+});
+
+test("wrong password returns loginError with no welcome", async () => {
+  srv = startServer(0, ":memory:");
+
+  // First: create account for "bob"
+  const c1 = wsClient(srv.port);
+  await c1.waitForOpen();
+  c1.send(JSON.stringify({ t: "login", username: "bob", password: "right" }));
+  await c1.waitForMessage("welcome");
+  c1.close();
+  await sleep(100); // let close propagate so bob is offline
+
+  // Second: wrong password
+  const c2 = wsClient(srv.port);
+  await c2.waitForOpen();
+  const errP = c2.waitForMessage("loginError");
+  c2.send(JSON.stringify({ t: "login", username: "bob", password: "wrong" }));
+  const err = await errP;
+
+  expect(typeof err.reason).toBe("string");
+  // must not have received a welcome
+  expect(c2.messages.every((m) => !m.includes('"welcome"'))).toBe(true);
+  c2.close();
+});
+
+test("duplicate login (account already online) returns loginError", async () => {
+  srv = startServer(0, ":memory:");
+
+  // c1 logs in and stays connected
+  const c1 = wsClient(srv.port);
+  await c1.waitForOpen();
+  c1.send(JSON.stringify({ t: "login", username: "carol", password: "pw" }));
+  await c1.waitForMessage("welcome");
+
+  // c2 tries to log in as the same user
+  const c2 = wsClient(srv.port);
+  await c2.waitForOpen();
+  const errP = c2.waitForMessage("loginError");
+  c2.send(JSON.stringify({ t: "login", username: "carol", password: "pw" }));
+  const err = await errP;
+
+  expect(String(err.reason)).toMatch(/already online/i);
+  c1.close();
+  c2.close();
+});
+
+test("position is restored after disconnect and reconnect", async () => {
+  srv = startServer(0, ":memory:");
+
+  // --- Session 1: login + move a short distance ---
+  const c1 = wsClient(srv.port);
+  await c1.waitForOpen();
+  c1.send(JSON.stringify({ t: "login", username: "dave", password: "pw" }));
+  await c1.waitForMessage("welcome"); // spawn at 24, 24
+
+  // Move to (21, 21) — ~4.2 tiles from spawn.
+  // At SPEED=5 tiles/s and TICK_RATE=15 Hz, 1000ms covers 5 tiles, plenty to arrive.
+  c1.send(JSON.stringify({ t: "moveTo", x: 21, y: 21 }));
+  await sleep(1200); // wait >1s to ensure arrival at (21, 21)
+
+  c1.close();
+  await sleep(150); // let the close handler run + save state
+
+  // --- Session 2: reconnect and check restored position ---
+  const c2 = wsClient(srv.port);
+  await c2.waitForOpen();
+  const welcomeP = c2.waitForMessage("welcome");
+  c2.send(JSON.stringify({ t: "login", username: "dave", password: "pw" }));
+  const welcome = await welcomeP;
+
+  // Should be near (21, 21), NOT spawn (24, 24)
+  expect(Number(welcome.x)).toBeCloseTo(21, 0);
+  expect(Number(welcome.y)).toBeCloseTo(21, 0);
+  c2.close();
+}, 10_000);
+
+test("moveTo before login is ignored — server does not crash; welcome shows spawn", async () => {
+  srv = startServer(0, ":memory:");
+
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+
+  // Send moveTo WITHOUT logging in first
+  client.send(JSON.stringify({ t: "moveTo", x: 10, y: 10 }));
+  await sleep(150); // give server time to process (or ignore) the message
+
+  // No welcome or loginError should have arrived
+  expect(client.messages).toHaveLength(0);
+
+  // Now log in — should still get spawn position, not the unauthenticated moveTo
+  const welcomeP = client.waitForMessage("welcome");
+  client.send(JSON.stringify({ t: "login", username: "eve", password: "pw" }));
+  const welcome = await welcomeP;
+
+  expect(welcome.playerId).toBe("eve");
+  expect(Number(welcome.x)).toBeCloseTo(24, 5);
+  expect(Number(welcome.y)).toBeCloseTo(24, 5);
+  client.close();
 });
