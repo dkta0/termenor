@@ -705,3 +705,50 @@ test("getPlayerSkills lists all five SKILLS with default xp 0 for a brand-new pl
     expect(skills[skill].level).toBe(1);
   }
 });
+
+test("integration: framework spans mining, fishing, firemaking, cooking", () => {
+  const g = new Game(open, { x: 0, y: 0 }, () => 0.5);
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "bronze_pickaxe", qty: 1 };
+  inv[1] = { item: "small_net", qty: 1 };
+  inv[2] = { item: "tinderbox", qty: 1 };
+  inv[3] = { item: "logs", qty: 5 };
+  inv[4] = { item: "raw_shrimp", qty: 3 };
+  g.addPlayer("hero", { x: 1, y: 1, facing: "south", inventory: inv });
+  const rockId = g.spawnResource("rock", 2, 1);
+  const spotId = g.spawnResource("fishing_spot", 1, 2);
+
+  // --- mining: deplete the rock ---
+  g.gather("hero", rockId);
+  let rockGone = false;
+  for (let i = 0; i < RESOURCE_TYPES.rock.charges * (RESOURCE_TYPES.rock.cooldownTicks + 2) && !rockGone; i++) {
+    g.step(1 / 15);
+    if (!g.snapshot().resources.find((r) => r.id === rockId)) rockGone = true;
+  }
+  expect(rockGone).toBe(true);
+  const oreCount = g.getInventory("hero")!.reduce((n, s) => n + (s?.item === "copper_ore" ? s.qty : 0), 0);
+  expect(oreCount).toBe(RESOURCE_TYPES.rock.charges);
+  expect(g.getPlayerSkills("hero").mining.xp).toBe(RESOURCE_TYPES.rock.charges * RESOURCE_TYPES.rock.xp);
+
+  // --- fishing: spot is infinite, never disappears ---
+  g.gather("hero", spotId);
+  for (let i = 0; i < 3 * (RESOURCE_TYPES.fishing_spot.cooldownTicks + 2); i++) g.step(1 / 15);
+  expect(g.snapshot().resources.find((r) => r.id === spotId)).toBeDefined();
+  expect(g.getPlayerSkills("hero").fishing.xp).toBeGreaterThan(0);
+
+  // --- firemaking: logs (slot 3) + tinderbox → a fire at the player's tile ---
+  g.use("hero", "firemaking", 3);
+  const fire = g.snapshot().resources.find((r) => r.type === "fire");
+  expect(fire).toMatchObject({ x: 1, y: 1 });
+  expect(g.getPlayerSkills("hero").firemaking.xp).toBeGreaterThan(0);
+
+  // --- cooking: raw_shrimp (slot 4) on the adjacent fire → cooked_shrimp ---
+  g.use("hero", "cooking", 4);
+  const cooked = g.getInventory("hero")!.reduce((n, s) => n + (s?.item === "cooked_shrimp" ? s.qty : 0), 0);
+  expect(cooked).toBe(1);
+  expect(g.getPlayerSkills("hero").cooking.xp).toBeGreaterThan(0);
+
+  // --- fire expires after its lifetime ---
+  for (let i = 0; i < FIRE_LIFETIME_TICKS + 2; i++) g.step(1 / 15);
+  expect(g.snapshot().resources.find((r) => r.type === "fire")).toBeUndefined();
+});
