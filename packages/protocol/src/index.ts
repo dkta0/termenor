@@ -38,7 +38,8 @@ export interface PickupMsg { t: "pickup"; }
 export interface DropMsg { t: "drop"; slot: number; }
 export interface AttackMsg { t: "attack"; targetId: string; }
 export interface GatherMsg { t: "gather"; targetId: string; }
-export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg;
+export interface UseMsg { t: "use"; action: string; slot: number; }
+export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg | UseMsg;
 
 export interface WelcomeMsg {
   t: "welcome";
@@ -63,7 +64,7 @@ export function encode(msg: ClientMsg | ServerMsg): string {
 
 export const MAX_CHAT_LEN = 200;
 
-const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack", "gather"]);
+const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack", "gather", "use"]);
 const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg", "inventory", "skills"]);
 
 export function decodeClient(data: string): ClientMsg {

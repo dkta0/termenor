@@ -1,5 +1,6 @@
 export const MAX_LEVEL = 99;
 export const WOODCUTTING_XP_PER_LOG = 25;
+export const SKILLS = ["woodcutting", "mining", "fishing", "firemaking", "cooking"] as const;
 
 // RuneScape XP table: points to reach level L = floor( sum_{i=1}^{L-1} floor(i + 300*2^(i/7)) / 4 ).
 function buildTable(): number[] {
