@@ -38,3 +38,12 @@ export function createDefaultMap(): MapData {
 
 /** Default spawn — guaranteed walkable in the map above. */
 export const SPAWN = { x: 24, y: 24 };
+
+export interface SeedItem { item: string; qty: number; x: number; y: number; }
+
+/** Ground items to seed near spawn at server start. */
+export const SEED_ITEMS: SeedItem[] = [
+  { item: "coins",  qty: 25, x: 25, y: 24 },
+  { item: "logs",   qty: 3,  x: 23, y: 24 },
+  { item: "shrimp", qty: 5,  x: 24, y: 25 },
+];

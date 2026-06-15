@@ -1,6 +1,6 @@
-import { decodeClient, encode, MAX_CHAT_LEN } from "@termenor/protocol";
+import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, type InventoryMsg } from "@termenor/protocol";
 import { Game } from "./game";
-import { createDefaultMap, SPAWN } from "./world";
+import { createDefaultMap, SPAWN, SEED_ITEMS } from "./world";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import { emptyInventory } from "./inventory";
 import type { Database } from "bun:sqlite";
@@ -23,6 +23,7 @@ export interface RunningServer {
 export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memory:"): RunningServer {
   const map = createDefaultMap();
   const game = new Game(map, SPAWN);
+  for (const s of SEED_ITEMS) game.addGroundItem(s.item, s.qty, s.x, s.y);
   const db: Database = openDb(dbPath);
   const online = new Set<string>(); // usernames currently connected
   let nextId = 1;
@@ -89,6 +90,8 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
             y: result.state.y,
             facing: result.state.facing,
           }));
+          const invMsg: InventoryMsg = { t: "inventory", slots: result.state.inventory };
+          ws.send(encode(invMsg));
           return;
         }
 
@@ -98,6 +101,20 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
         } else if (msg.t === "chat") {
           const text = sanitizeChat(msg.text);
           if (text) server.publish("world", encode({ t: "chatMsg", from: ws.data.username, text }));
+        } else if (msg.t === "pickup") {
+          const changed = game.pickup(ws.data.username);
+          if (changed) {
+            const inv = game.getInventory(ws.data.username);
+            if (inv) ws.send(encode({ t: "inventory", slots: inv } satisfies InventoryMsg));
+          }
+        } else if (msg.t === "drop") {
+          if (typeof msg.slot === "number" && msg.slot >= 0 && msg.slot < INV_SIZE) {
+            const changed = game.drop(ws.data.username, msg.slot);
+            if (changed) {
+              const inv = game.getInventory(ws.data.username);
+              if (inv) ws.send(encode({ t: "inventory", slots: inv } satisfies InventoryMsg));
+            }
+          }
         }
       },
       close(ws) {
