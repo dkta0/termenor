@@ -9,6 +9,7 @@ import * as invSys from "./inventory-system";
 import * as moveSys from "./movement-system";
 import * as combatSys from "./combat-system";
 import * as resourceSys from "./resource-system";
+import * as gatherSys from "./gather-system";
 
 const GATHER_COOLDOWN_TICKS = 30;
 const FIREMAKING_XP = 40;
@@ -120,47 +121,7 @@ export class GameWorld {
 
     resourceSys.stepResources(this);
 
-    // Gather pass
-    for (const p of this.players.values()) {
-      if (!p.gatherTarget) continue;
-      if (p.gatherCd > 0) p.gatherCd--;
-      const res = this.resources.find((r) => r.id === p.gatherTarget && r.respawnAt < 0);
-      if (!res) { p.gatherTarget = null; continue; }
-      const cfg = RESOURCE_KINDS[res.type];
-      if (!cfg || cfg.gatherable === false) { p.gatherTarget = null; continue; }
-      if (isAdjacent(p, res)) {
-        p.path = [];
-        if (p.gatherCd === 0) {
-          if (cfg.tool && !this.hasItem(p, cfg.tool)) {
-            p.gatherTarget = null;
-            this.events.gatherNotices.push({ id: p.id, text: "You need the right tool." });
-            continue;
-          }
-          const { slots, leftover } = addToInventory(p.inventory, { item: cfg.yield, qty: 1 });
-          if (leftover !== null) {
-            // inventory full — could not add item
-            p.gatherTarget = null;
-            this.events.gatherNotices.push({ id: p.id, text: "Your inventory is full." });
-            continue;
-          }
-          p.inventory = slots;
-          awardXp(this.events, p, cfg.skill, cfg.xp);
-          p.gatherCd = cfg.cooldownTicks;
-          if (!cfg.infinite) {
-            res.charges--;
-            if (res.charges <= 0) {
-              res.respawnAt = this.tick + cfg.respawnTicks;
-              // clear all players targeting this depleted resource
-              for (const other of this.players.values()) {
-                if (other.gatherTarget === res.id) other.gatherTarget = null;
-              }
-            }
-          }
-        }
-      } else {
-        moveSys.stepToward(this, p, res.x, res.y);
-      }
-    }
+    gatherSys.stepGather(this);
   }
 
   addGroundItem(item: string, qty: number, x: number, y: number): void {
@@ -195,11 +156,7 @@ export class GameWorld {
   }
 
   gather(playerId: string, targetId: string): void {
-    const p = this.players.get(playerId);
-    if (!p) return;
-    const res = this.resources.find((r) => r.id === targetId && r.respawnAt < 0);
-    if (!res) return;
-    p.gatherTarget = targetId;
+    gatherSys.setGatherTarget(this, playerId, targetId);
   }
 
   use(playerId: string, action: string, slot: number): void {
@@ -213,7 +170,7 @@ export class GameWorld {
         this.events.gatherNotices.push({ id: p.id, text: "You need logs to make a fire." });
         return;
       }
-      if (!this.hasItem(p, "tinderbox")) {
+      if (!gatherSys.hasItem(p, "tinderbox")) {
         this.events.gatherNotices.push({ id: p.id, text: "You need a tinderbox to make a fire." });
         return;
       }
@@ -273,10 +230,6 @@ export class GameWorld {
       return;
     }
     // unknown action: ignore
-  }
-
-  private hasItem(p: PlayerEntity, item: string): boolean {
-    return p.inventory.some((s) => s !== null && s.item === item);
   }
 
   getPlayerSkills(id: string): Record<string, { xp: number; level: number }> {
