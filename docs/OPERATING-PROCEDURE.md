@@ -37,4 +37,5 @@ driven by `/goal`, one slice at a time.
 - Slice 4: ✅ chat + presence — names + public chat (merged to main).
 - Slice 5: ✅ inventory + ground items — pickup/drop, persisted inventory (merged to main).
 - Slice 6: ✅ NPCs — spawns + wander AI, tick-driven entity system (merged to main).
-- Slice 7: combat v1 — next.
+- Slice 7: ✅ combat v1 — melee, HP, death/respawn, damage splats (merged to main).
+- Slice 8: first gathering skill (woodcutting) — next.
