@@ -126,6 +126,8 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
           game.attack(ws.data.username, msg.targetId);
         } else if (msg.t === "gather") {
           game.gather(ws.data.username, msg.targetId);
+        } else if (msg.t === "use") {
+          game.use(ws.data.username, msg.action, msg.slot);
         }
       },
       close(ws) {
