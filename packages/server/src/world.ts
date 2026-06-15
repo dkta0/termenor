@@ -55,3 +55,14 @@ export const NPC_SPAWNS: NpcSpawn[] = [
   { type: "goblin", x: 28, y: 22, radius: 4 },
   { type: "rat",    x: 21, y: 27, radius: 3 },
 ];
+
+export interface ResourceSpawn { type: string; x: number; y: number; }
+
+/** Resource node spawns near the player start. */
+export const RESOURCE_SPAWNS: ResourceSpawn[] = [
+  { type: "tree", x: 26, y: 26 },
+  { type: "tree", x: 22, y: 23 },
+];
+
+/** Starter axe item seeded on the ground near spawn so any player can grab one. */
+export const STARTER_AXE: SeedItem = { item: "bronze_axe", qty: 1, x: 25, y: 23 };
