@@ -1,8 +1,10 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent } from "@termenor/protocol";
+import { NPC_TYPES, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS } from "@termenor/protocol";
 import { findPath, type Point } from "./pathfinding";
 import { advanceAlongPath } from "./movement";
 import { pickWanderTarget, NPC_SPEED } from "./npc";
 import { emptyInventory, addToInventory, removeSlot } from "./inventory";
+import { rollDamage, isAdjacent } from "./combat";
 
 const SPEED = 5; // tiles per second  → ~200ms per tile
 
@@ -13,6 +15,10 @@ interface Player {
   facing: Facing;
   path: Point[]; // remaining waypoints (tile centers)
   inventory: (ItemStack | null)[];
+  hp: number;
+  maxHp: number;
+  target: string | null;
+  attackCd: number;
 }
 
 interface Npc {
@@ -25,6 +31,12 @@ interface Npc {
   home: Point;
   radius: number;
   nextWanderTick: number;
+  hp: number;
+  maxHp: number;
+  maxHit: number;
+  target: string | null;
+  attackCd: number;
+  deadUntil: number; // -1 = alive; >= 0 = respawn at this tick
 }
 
 export interface RestoredState {
@@ -44,6 +56,7 @@ export class Game {
   private npcs: Npc[] = [];
   private nextNpcId = 1;
   private rng: () => number;
+  private hits: HitEvent[] = [];
 
   constructor(map: MapData, spawn: Point, rng: () => number = Math.random) {
     this.map = map;
@@ -56,7 +69,7 @@ export class Game {
     const y = state?.y ?? this.spawn.y;
     const facing = state?.facing ?? "south";
     const inventory = state?.inventory ?? emptyInventory();
-    this.players.set(id, { id, x, y, facing, path: [], inventory });
+    this.players.set(id, { id, x, y, facing, path: [], inventory, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, target: null, attackCd: 0 });
   }
 
   removePlayer(id: string): void {
@@ -64,6 +77,9 @@ export class Game {
   }
 
   spawnNpc(type: string, x: number, y: number, radius: number): void {
+    const stats = NPC_TYPES[type];
+    const maxHp = stats?.maxHp ?? 3;
+    const maxHit = stats?.maxHit ?? 1;
     this.npcs.push({
       id: `npc-${this.nextNpcId++}`,
       type, x, y,
@@ -72,7 +88,22 @@ export class Game {
       home: { x, y },
       radius,
       nextWanderTick: 0,
+      hp: maxHp,
+      maxHp,
+      maxHit,
+      target: null,
+      attackCd: 0,
+      deadUntil: -1,
     });
+  }
+
+  attack(playerId: string, targetId: string): void {
+    const p = this.players.get(playerId);
+    if (!p) return;
+    const npc = this.npcs.find((n) => n.id === targetId && n.deadUntil < 0);
+    if (!npc) return;
+    p.target = targetId;
+    npc.target = playerId;   // aggro: a targeted NPC pursues + stops wandering (spec 2.4)
   }
 
   getPlayerState(id: string): RestoredState | null {
@@ -95,15 +126,29 @@ export class Game {
   /** Advance the world by dt seconds. */
   step(dt: number): void {
     this.tick++;
+
+    // Respawn dead NPCs whose timer has expired
+    for (const npc of this.npcs) {
+      if (npc.deadUntil >= 0 && this.tick >= npc.deadUntil) {
+        npc.x = npc.home.x; npc.y = npc.home.y; npc.path = [];
+        npc.hp = npc.maxHp; npc.target = null; npc.attackCd = 0; npc.deadUntil = -1;
+      }
+    }
+
+    // Movement
     for (const p of this.players.values()) {
       advanceAlongPath(p, SPEED * dt);
     }
-    // Advance NPC paths
     for (const npc of this.npcs) {
+      if (npc.deadUntil >= 0) continue;
       advanceAlongPath(npc, NPC_SPEED * dt);
     }
+
     // NPC wander AI: idle NPCs past their wander timer pick a new target
+    // Skip dead NPCs and NPCs that have a combat target
     for (const npc of this.npcs) {
+      if (npc.deadUntil >= 0) continue;
+      if (npc.target) continue;          // combat overrides wander
       if (npc.path.length > 0) continue; // still walking
       if (this.tick < npc.nextWanderTick) continue; // still idling
       const target = pickWanderTarget(this.map, npc.home, npc.radius, this.rng);
@@ -120,6 +165,72 @@ export class Game {
       npc.path = path;
       // idle interval after arriving: 1-4 seconds at 15Hz = 15-60 ticks
       npc.nextWanderTick = this.tick + Math.floor(this.rng() * 45) + 15;
+    }
+
+    // Combat pass: players attack npcs, npcs attack their target
+    for (const p of this.players.values()) {
+      if (p.attackCd > 0) p.attackCd--;
+      this.combatStep(p, (id) => this.npcs.find((n) => n.id === id && n.deadUntil < 0) ?? null, PLAYER_MAX_HIT);
+    }
+    for (const npc of this.npcs) {
+      if (npc.deadUntil >= 0) continue;
+      if (npc.attackCd > 0) npc.attackCd--;
+      this.combatStep(npc, (id) => this.players.get(id) ?? null, npc.maxHit);
+    }
+
+    this.resolveDeaths();
+  }
+
+  private combatStep(
+    actor: { x: number; y: number; facing: Facing; path: Point[]; target: string | null; attackCd: number },
+    findTarget: (id: string) => { id: string; x: number; y: number; hp: number } | null,
+    maxHit: number,
+  ): void {
+    if (!actor.target) return;
+    const tgt = findTarget(actor.target);
+    if (!tgt) { actor.target = null; return; }
+
+    if (isAdjacent(actor, tgt)) {
+      actor.path = [];
+      if (actor.attackCd === 0) {
+        const dmg = rollDamage(maxHit, this.rng);
+        tgt.hp = Math.max(0, tgt.hp - dmg);
+        actor.attackCd = ATTACK_COOLDOWN_TICKS;
+        this.hits.push({ targetId: tgt.id, amount: dmg, tick: this.tick });
+        // If the victim is an NPC, make it retaliate against the player attacker
+        const victimNpc = this.npcs.find((n) => n.id === tgt.id);
+        if (victimNpc && !victimNpc.target) {
+          const attackerId = this.idOf(actor);
+          if (attackerId) victimNpc.target = attackerId;
+        }
+      }
+    } else if (actor.path.length === 0) {
+      const path = findPath(this.map, { x: Math.round(actor.x), y: Math.round(actor.y) }, { x: Math.round(tgt.x), y: Math.round(tgt.y) });
+      if (path && path.length > 0) { path.pop(); actor.path = path; }
+    }
+  }
+
+  // Returns the player id for a player actor, or null for NPC actors.
+  private idOf(actor: object): string | null {
+    for (const [id, p] of this.players) if (p === actor) return id;
+    return null;
+  }
+
+  private resolveDeaths(): void {
+    for (const npc of this.npcs) {
+      if (npc.deadUntil < 0 && npc.hp <= 0) {
+        npc.deadUntil = this.tick + RESPAWN_TICKS;
+        npc.path = []; npc.target = null;
+        for (const p of this.players.values()) if (p.target === npc.id) p.target = null;
+        for (const other of this.npcs) if (other.target === npc.id) other.target = null;
+      }
+    }
+    for (const p of this.players.values()) {
+      if (p.hp <= 0) {
+        p.x = this.spawn.x; p.y = this.spawn.y; p.path = [];
+        p.hp = p.maxHp; p.target = null; p.attackCd = 0;
+        for (const npc of this.npcs) if (npc.target === p.id) npc.target = null;
+      }
     }
   }
 
@@ -186,11 +297,12 @@ export class Game {
 
   snapshot(): SnapshotMsg {
     const players: PlayerState[] = [...this.players.values()].map((p) => ({
-      id: p.id, x: p.x, y: p.y, facing: p.facing,
+      id: p.id, x: p.x, y: p.y, facing: p.facing, hp: p.hp, maxHp: p.maxHp,
     }));
-    const npcs: NpcState[] = this.npcs.map((n) => ({
-      id: n.id, type: n.type, x: n.x, y: n.y, facing: n.facing,
+    const npcs: NpcState[] = this.npcs.filter((n) => n.deadUntil < 0).map((n) => ({
+      id: n.id, type: n.type, x: n.x, y: n.y, facing: n.facing, hp: n.hp, maxHp: n.maxHp,
     }));
-    return { t: "snapshot", tick: this.tick, players, ground: this.groundItems.slice(), npcs };
+    const hits = this.hits; this.hits = [];
+    return { t: "snapshot", tick: this.tick, players, ground: this.groundItems.slice(), npcs, hits };
   }
 }
