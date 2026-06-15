@@ -293,3 +293,157 @@ test("integration: command attack, kill the goblin, it respawns at home", () => 
   }
   expect(respawned).toBe(true);
 });
+
+// ── Woodcutting tests ────────────────────────────────────────────────────────
+
+import { WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, xpForLevel } from "@termenor/protocol";
+
+test("new player has bronze_axe in starter inventory", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("p1");
+  const inv = g.getInventory("p1");
+  expect(inv?.some((s) => s?.item === "bronze_axe")).toBe(true);
+});
+
+test("restored player does not get a duplicate bronze_axe", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv = new Array(28).fill(null);
+  inv[0] = { item: "logs", qty: 1 };
+  g.addPlayer("p1", { x: 0, y: 0, facing: "south", inventory: inv });
+  const result = g.getInventory("p1");
+  expect(result?.filter((s) => s?.item === "bronze_axe").length).toBe(0);
+});
+
+test("chopping adjacent tree adds 1 log + WOODCUTTING_XP_PER_LOG xp and decrements charges", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("p1"); // gets bronze_axe
+  const resId = g.spawnResource("tree", 1, 0);
+  g.gather("p1", resId);
+  g.step(1 / 15);
+  const inv = g.getInventory("p1");
+  expect(inv?.some((s) => s?.item === "logs" && s.qty >= 1)).toBe(true);
+  expect(g.getPlayerSkills("p1").woodcutting.xp).toBe(WOODCUTTING_XP_PER_LOG);
+});
+
+test("gather cooldown gates cadence: two steps yield only one log", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("p1");
+  const resId = g.spawnResource("tree", 1, 0);
+  g.gather("p1", resId);
+  g.step(1 / 15);
+  g.step(1 / 15);
+  const inv = g.getInventory("p1");
+  const logsSlot = inv?.find((s) => s?.item === "logs");
+  expect(logsSlot?.qty).toBe(1);
+});
+
+test("no axe player: gather yields 0 logs, clears gatherTarget, emits gatherNotice", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  // restore with inventory that has no axe
+  g.addPlayer("p2", { x: 0, y: 0, facing: "south", inventory: new Array(28).fill(null) });
+  const resId = g.spawnResource("tree", 1, 0);
+  g.gather("p2", resId);
+  g.step(1 / 15);
+  const inv = g.getInventory("p2");
+  expect(inv?.every((s) => s === null || s.item !== "logs")).toBe(true);
+  const notices = g.consumeGatherNotices();
+  expect(notices.some((n) => n.id === "p2")).toBe(true);
+});
+
+test("full inventory: gather yields 0 logs, xp unchanged, emits gatherNotice", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  // 27 junk slots + axe in slot 27; no room for logs
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  for (let i = 0; i < 27; i++) inv[i] = { item: "coins", qty: 1 };
+  inv[27] = { item: "bronze_axe", qty: 1 };
+  g.addPlayer("p3", { x: 0, y: 0, facing: "south", inventory: inv });
+  const resId = g.spawnResource("tree", 1, 0);
+  g.gather("p3", resId);
+  g.step(1 / 15);
+  const inv2 = g.getInventory("p3");
+  expect(inv2?.every((s) => s === null || s.item !== "logs")).toBe(true);
+  expect(g.getPlayerSkills("p3").woodcutting.xp).toBe(0);
+  const notices = g.consumeGatherNotices();
+  expect(notices.some((n) => n.id === "p3")).toBe(true);
+});
+
+test("tree depletes after TREE_CHARGES chops then respawns after RESOURCE_RESPAWN_TICKS", () => {
+  const GATHER_COOLDOWN_TICKS = 30;
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("p1");
+  const resId = g.spawnResource("tree", 1, 0);
+  g.gather("p1", resId);
+  // chop TREE_CHARGES times; each chop needs GATHER_COOLDOWN_TICKS+1 ticks
+  for (let chop = 0; chop < TREE_CHARGES; chop++) {
+    for (let t = 0; t <= GATHER_COOLDOWN_TICKS; t++) g.step(1 / 15);
+  }
+  // tree should be depleted (absent from snapshot)
+  expect(g.snapshot().resources.find((r) => r.id === resId)).toBeUndefined();
+  // wait for respawn
+  for (let t = 0; t < RESOURCE_RESPAWN_TICKS + 2; t++) g.step(1 / 15);
+  expect(g.snapshot().resources.find((r) => r.id === resId)).toBeDefined();
+});
+
+test("out-of-range gatherer walks toward the tree before chopping", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("p1"); // starts at (0,0)
+  const resId = g.spawnResource("tree", 5, 0); // far away
+  g.gather("p1", resId);
+  g.step(1 / 15); // first step: not adjacent, no log
+  const invAfter1 = g.getInventory("p1");
+  expect(invAfter1?.every((s) => s === null || s.item !== "logs")).toBe(true);
+  // run enough steps for player to reach and chop
+  for (let i = 0; i < 60; i++) g.step(1 / 15);
+  const inv = g.getInventory("p1");
+  expect(inv?.some((s) => s?.item === "logs")).toBe(true);
+});
+
+test("xp crossing a level threshold raises woodcutting level and emits levelUp", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  // seed player with xp just below level 2 threshold
+  const xpNeededForL2 = xpForLevel(2);
+  const startXp = xpNeededForL2 - WOODCUTTING_XP_PER_LOG; // one chop away
+  const axeInv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  axeInv[0] = { item: "bronze_axe", qty: 1 };
+  g.addPlayer("p1", { x: 0, y: 0, facing: "south", skills: { woodcutting: startXp }, inventory: axeInv });
+  const resId = g.spawnResource("tree", 1, 0);
+  g.gather("p1", resId);
+  g.step(1 / 15);
+  const skills = g.getPlayerSkills("p1");
+  expect(skills.woodcutting.level).toBeGreaterThanOrEqual(2);
+  const levelUps = g.consumeLevelUps();
+  expect(levelUps.some((lu) => lu.id === "p1" && lu.skill === "woodcutting")).toBe(true);
+});
+
+test("getPlayerSkills always includes woodcutting key even for brand-new players", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("p1");
+  const skills = g.getPlayerSkills("p1");
+  expect(skills.woodcutting).toBeDefined();
+  expect(skills.woodcutting.xp).toBe(0);
+  expect(skills.woodcutting.level).toBe(1);
+});
+
+test("consumeSkillChanges returns ids of players whose skills changed this tick and clears", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("p1");
+  const resId = g.spawnResource("tree", 1, 0);
+  g.gather("p1", resId);
+  g.step(1 / 15);
+  const changed = g.consumeSkillChanges();
+  expect(changed).toContain("p1");
+  expect(g.consumeSkillChanges()).toHaveLength(0); // cleared
+});
+
+test("snapshot includes live resources but not depleted ones", () => {
+  const GATHER_COOLDOWN_TICKS = 30;
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("p1");
+  const resId = g.spawnResource("tree", 1, 0);
+  // deplete the tree
+  g.gather("p1", resId);
+  for (let chop = 0; chop < TREE_CHARGES; chop++) {
+    for (let t = 0; t <= GATHER_COOLDOWN_TICKS; t++) g.step(1 / 15);
+  }
+  expect(g.snapshot().resources.find((r) => r.id === resId)).toBeUndefined();
+});
