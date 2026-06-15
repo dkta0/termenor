@@ -5,4 +5,10 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
+      - DB_PATH=/app/data/termenor.db
+    volumes:
+      - termenor-data:/app/data
     restart: unless-stopped
+
+volumes:
+  termenor-data:
