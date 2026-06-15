@@ -1,9 +1,9 @@
 import { test, expect } from "bun:test";
-import type { MapData, SnapshotMsg } from "@termenor/protocol";
+import type { MapData, SnapshotMsg, GroundItem, ItemStack } from "@termenor/protocol";
 import { GameState, INTERP_DELAY_MS, sampleElevation } from "./game-state";
 
 const snap = (tick: number, x: number): SnapshotMsg => ({
-  t: "snapshot", tick, players: [{ id: "a", x, y: 0, facing: "east" }],
+  t: "snapshot", tick, players: [{ id: "a", x, y: 0, facing: "east" }], ground: [],
 });
 
 test("samplePositions returns empty before any snapshot", () => {
@@ -77,4 +77,28 @@ test("sampleElevation bilinearly interpolates terrain height", () => {
 
 test("sampleElevation returns 0 out of bounds", () => {
   expect(sampleElevation(ramp, -5, -5)).toBeCloseTo(0, 9);
+});
+
+test("applySnapshot stores ground items", () => {
+  const gs = new GameState();
+  const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 5, x: 3, y: 4 }];
+  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground }, 1000);
+  expect(gs.ground).toEqual(ground);
+});
+
+test("ground defaults to empty array before any snapshot", () => {
+  const gs = new GameState();
+  expect(gs.ground).toEqual([]);
+});
+
+test("setInventory stores slots", () => {
+  const gs = new GameState();
+  const slots: (ItemStack | null)[] = [{ item: "logs", qty: 2 }, null];
+  gs.setInventory(slots);
+  expect(gs.inventory[0]).toEqual({ item: "logs", qty: 2 });
+});
+
+test("inventory defaults to empty array before setInventory", () => {
+  const gs = new GameState();
+  expect(gs.inventory).toEqual([]);
 });

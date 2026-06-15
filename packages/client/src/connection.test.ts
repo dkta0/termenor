@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { encode, type ClientMsg } from "@termenor/protocol";
+import { encode, type ClientMsg, type ItemStack } from "@termenor/protocol";
 import { GameState } from "./game-state";
 import { Connection, type SocketLike, type SocketFactory } from "./connection";
 
@@ -59,7 +59,7 @@ test("welcome populates map and local id", () => {
 test("snapshot is applied to game-state", () => {
   const { sock, gs, advance } = setup();
   sock.fireOpen();
-  sock.fireMessage(encode({ t: "snapshot", tick: 1, players: [{ id: "me", x: 1, y: 0, facing: "east" }] }));
+  sock.fireMessage(encode({ t: "snapshot", tick: 1, players: [{ id: "me", x: 1, y: 0, facing: "east" }], ground: [] }));
   advance(200);
   const players = gs.samplePositions(1200);
   expect(players[0].id).toBe("me");
@@ -170,4 +170,33 @@ test("incoming chatMsg invokes onChatMsg callback", () => {
   sock.fireOpen();
   sock.fireMessage(encode({ t: "chatMsg", from: "bob", text: "hi alice" }));
   expect(received).toEqual([{ from: "bob", text: "hi alice" }]);
+});
+
+test("sendPickup sends pickup message", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  sock.sent.length = 0; // clear login msg
+  conn.sendPickup();
+  expect(JSON.parse(sock.sent[0])).toEqual({ t: "pickup" });
+});
+
+test("sendDrop sends drop message with slot", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  sock.sent.length = 0;
+  conn.sendDrop(3);
+  expect(JSON.parse(sock.sent[0])).toEqual({ t: "drop", slot: 3 });
+});
+
+test("inventory message updates GameState", () => {
+  const { sock, gs } = setup();
+  sock.fireOpen();
+  // simulate welcome first
+  sock.fireMessage(encode({
+    t: "welcome", playerId: "alice", map: { width: 2, height: 1, tiles: [0, 0], heights: [0, 0] },
+    tickRate: 15, x: 0, y: 0, facing: "south",
+  }));
+  const slots: (ItemStack | null)[] = [{ item: "coins", qty: 5 }, null];
+  sock.fireMessage(encode({ t: "inventory", slots }));
+  expect(gs.inventory[0]).toEqual({ item: "coins", qty: 5 });
 });

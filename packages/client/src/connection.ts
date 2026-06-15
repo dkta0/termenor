@@ -1,4 +1,5 @@
-import { decodeServer, encode, type MoveToMsg, type ChatMsg } from "@termenor/protocol";
+import { decodeServer, encode, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg } from "@termenor/protocol";
+import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
 /** Minimal socket surface so tests can inject a mock. */
@@ -19,6 +20,7 @@ export interface ConnectionOpts {
   password: string;
   onLoginError?: (reason: string) => void;
   onChatMsg?: (from: string, text: string) => void;
+  onInventory?: (slots: (ItemStack | null)[]) => void;
 }
 
 /** Adapts the browser/Bun WebSocket to SocketLike. */
@@ -43,6 +45,7 @@ export class Connection {
   private readonly password: string;
   private readonly onLoginError: (reason: string) => void;
   private readonly onChatMsg: (from: string, text: string) => void;
+  private readonly onInventory: ((slots: (ItemStack | null)[]) => void) | undefined;
   private closedByUser = false;
 
   constructor(
@@ -60,6 +63,7 @@ export class Connection {
       process.exit(1);
     });
     this.onChatMsg = opts.onChatMsg ?? (() => {});
+    this.onInventory = opts.onInventory;
   }
 
   connect(): void {
@@ -84,6 +88,16 @@ export class Connection {
     this.sock?.send(encode(msg));
   }
 
+  sendPickup(): void {
+    const msg: PickupMsg = { t: "pickup" };
+    this.sock?.send(encode(msg));
+  }
+
+  sendDrop(slot: number): void {
+    const msg: DropMsg = { t: "drop", slot };
+    this.sock?.send(encode(msg));
+  }
+
   disconnect(): void {
     this.closedByUser = true;
     this.sock?.close();
@@ -99,13 +113,16 @@ export class Connection {
       this.state.setMap(msg.map);
       // seed initial position so renderer has a starting frame before first snapshot
       this.state.applySnapshot(
-        { t: "snapshot", tick: 0, players: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing }] },
+        { t: "snapshot", tick: 0, players: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing }], ground: [] },
         this.now(),
       );
     } else if (msg.t === "snapshot") {
       this.state.applySnapshot(msg, this.now());
     } else if (msg.t === "chatMsg") {
       this.onChatMsg(msg.from, msg.text);
+    } else if (msg.t === "inventory") {
+      this.state.setInventory(msg.slots);
+      this.onInventory?.(msg.slots);
     }
   }
 }
