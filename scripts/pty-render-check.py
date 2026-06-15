@@ -97,6 +97,7 @@ def main():
         "frames animate (>20 repaints)": frames > 20,
         "frames change after B moves": len(a_moved) > 0 and a_moved[-4000:] != a_base[-4000:],
         "player name labels rendered": b"mover" in a_all or b"observer" in a_all,
+        "NPC rendered (goblin/rat label)": b"Goblin" in a_all or b"Rat" in a_all,
     }
     print(f"client A bytes: base={len(a_base)} moved={len(a_moved)} frames~={frames}")
     ok = True
