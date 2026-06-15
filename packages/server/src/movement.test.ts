@@ -40,7 +40,7 @@ test("advanceAlongPath arrives at waypoint and removes it from path", () => {
 });
 
 test("advanceAlongPath updates facing toward target", () => {
-  const e = { x: 0, y: 0, facing: "north" as const, path: [{ x: 3, y: 0 }] };
+  const e: { x: number; y: number; facing: import("@termenor/protocol").Facing; path: import("./pathfinding").Point[] } = { x: 0, y: 0, facing: "north", path: [{ x: 3, y: 0 }] };
   advanceAlongPath(e, 0.1);
   expect(e.facing).toBe("east");
 });
