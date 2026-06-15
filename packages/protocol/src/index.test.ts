@@ -98,7 +98,7 @@ test("SnapshotMsg includes ground array", () => {
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
-import { NPC_TYPES, type NpcState } from "./index";
+import { NPC_KINDS, type NpcState } from "./index";
 
 test("SnapshotMsg with npcs round-trips through encode/decodeServer", () => {
   const npcs: NpcState[] = [{ id: "npc-1", type: "goblin", x: 3.5, y: 7, facing: "south", hp: 5, maxHp: 5 }];
@@ -106,11 +106,11 @@ test("SnapshotMsg with npcs round-trips through encode/decodeServer", () => {
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
-test("NPC_TYPES has goblin and rat entries", () => {
-  expect(NPC_TYPES.goblin).toBeDefined();
-  expect(NPC_TYPES.rat).toBeDefined();
-  expect(NPC_TYPES.goblin.name).toBe("Goblin");
-  expect(NPC_TYPES.rat.name).toBe("Rat");
+test("NPC_KINDS has goblin and rat entries", () => {
+  expect(NPC_KINDS.goblin).toBeDefined();
+  expect(NPC_KINDS.rat).toBeDefined();
+  expect(NPC_KINDS.goblin.name).toBe("Goblin");
+  expect(NPC_KINDS.rat.name).toBe("Rat");
 });
 
 import { PLAYER_MAX_HP } from "./combat";

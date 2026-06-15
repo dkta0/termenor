@@ -74,7 +74,7 @@ test("rasterizeIso with no ground items produces no ITEM pixels", () => {
   expect(hasItem).toBe(false);
 });
 
-import { NPC_TYPES } from "@termenor/protocol";
+import { NPC_KINDS } from "@termenor/protocol";
 import type { NpcRender } from "../game-state";
 
 test("rasterizeIso with npcs produces NPC pixels", () => {

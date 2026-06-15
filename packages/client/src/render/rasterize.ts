@@ -1,4 +1,4 @@
-import { ITEM_KINDS, NPC_TYPES, RESOURCE_TYPES } from "@termenor/protocol";
+import { ITEM_KINDS, NPC_KINDS, RESOURCE_TYPES } from "@termenor/protocol";
 import type { GroundItem, MapData, ResourceState } from "@termenor/protocol";
 import type { NpcRender, RenderPlayer } from "../game-state";
 import { Kind, type PixelBuffer } from "./types";
@@ -167,7 +167,7 @@ export function rasterizeIso(
     const cx = s.sx - camOx, cy = s.sy - camOy;
     const depth = npc.x + npc.y;
     fillDiamond(f, cx, cy, depth, Kind.SHADOW, SHADOW_RGB, -1);
-    const entry = NPC_TYPES[npc.type];
+    const entry = NPC_KINDS[npc.type];
     const rgb: RGB = entry ? entry.color : [200, 200, 200];
     drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
     drawHpBar(f, cx, cy, depth, npc.hp, npc.maxHp);

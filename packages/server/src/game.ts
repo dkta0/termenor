@@ -1,5 +1,5 @@
 import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState } from "@termenor/protocol";
-import { NPC_TYPES, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_TYPES, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
+import { NPC_KINDS, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_TYPES, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
 import { findPath, type Point } from "./pathfinding";
 import { advanceAlongPath } from "./movement";
 import { pickWanderTarget, NPC_SPEED } from "./npc";
@@ -109,7 +109,7 @@ export class Game {
   }
 
   spawnNpc(type: string, x: number, y: number, radius: number): void {
-    const stats = NPC_TYPES[type];
+    const stats = NPC_KINDS[type];
     const maxHp = stats?.maxHp ?? 3;
     const maxHit = stats?.maxHit ?? 1;
     this.npcs.push({

@@ -10,7 +10,14 @@ export interface NpcState {
   maxHp: number;
 }
 
-export const NPC_TYPES: Record<string, { name: string; color: [number, number, number]; maxHp: number; maxHit: number }> = {
+export interface NpcKind {
+  name: string;
+  color: [number, number, number];
+  maxHp: number;
+  maxHit: number;
+}
+
+export const NPC_KINDS: Record<string, NpcKind> = {
   goblin: { name: "Goblin", color: [80, 160, 60],   maxHp: 5, maxHit: 1 },
   rat:    { name: "Rat",    color: [160, 130, 100],  maxHp: 3, maxHit: 1 },
 };

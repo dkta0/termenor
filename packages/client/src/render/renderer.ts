@@ -6,7 +6,7 @@ import {
   type MouseEvent as TuiMouseEvent,
   type OptimizedBuffer,
 } from "@opentui/core";
-import { ITEM_KINDS, NPC_TYPES, RESOURCE_TYPES } from "@termenor/protocol";
+import { ITEM_KINDS, NPC_KINDS, RESOURCE_TYPES } from "@termenor/protocol";
 import type { GameState } from "../game-state";
 import type { ChatState } from "../chat";
 import { isoCamera, pickTile } from "./camera";
@@ -102,9 +102,9 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       const labelSy = sy - cam.oy - 6;
       const labelRow = tier === "halfblock" ? Math.round(labelSy / 2) - 1 : Math.round(labelSy) - 1;
       const labelSx = sx - cam.ox;
-      const label = NPC_TYPES[npc.type]?.name ?? npc.type;
+      const label = NPC_KINDS[npc.type]?.name ?? npc.type;
       const labelCol = Math.round(labelSx - label.length / 2);
-      const entry = NPC_TYPES[npc.type];
+      const entry = NPC_KINDS[npc.type];
       const [r, g, b] = entry ? entry.color : [200, 200, 200];
       const color = RGBA.fromInts(r, g, b, 255);
       for (const cell of textCells(label, labelCol, labelRow, cols, rows)) {

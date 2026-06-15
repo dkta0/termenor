@@ -5,7 +5,7 @@ export type { ItemKind } from "./items";
 
 import type { NpcState } from "./npcs";
 export type { NpcState } from "./npcs";
-export { NPC_TYPES } from "./npcs";
+export { NPC_KINDS, type NpcKind } from "./npcs";
 
 import type { ResourceState } from "./resources";
 
