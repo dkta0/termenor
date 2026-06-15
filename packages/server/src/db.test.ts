@@ -41,7 +41,7 @@ test("wrong password is rejected", async () => {
 
 test("savePlayerState persists and restores position", async () => {
   await getOrCreateAccount(db, "diana", "pw", SPAWN);
-  savePlayerState(db, "diana", 10.5, 15.0, "east", emptyInventory());
+  savePlayerState(db, "diana", 10.5, 15.0, "east", emptyInventory(), {});
   const result = await getOrCreateAccount(db, "diana", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -77,7 +77,7 @@ test("new account returns empty inventory", async () => {
 test("savePlayerState persists inventory and restores it", async () => {
   await getOrCreateAccount(db, "inv2", "pw", SPAWN);
   const inv = [{ item: "coins", qty: 10 }, ...new Array(27).fill(null)];
-  savePlayerState(db, "inv2", SPAWN.x, SPAWN.y, SPAWN.facing, inv);
+  savePlayerState(db, "inv2", SPAWN.x, SPAWN.y, SPAWN.facing, inv, {});
   const result = await getOrCreateAccount(db, "inv2", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -103,4 +103,30 @@ test("openDb migrates existing db without inventory column", () => {
   // After migration, inventory column exists (null for existing rows is fine — login will default to emptyInventory)
   expect(row).toBeDefined();
   legacy.close();
+});
+
+test("new account returns empty skills", async () => {
+  const result = await getOrCreateAccount(db, "skilluser", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.skills).toEqual({});
+});
+
+test("savePlayerState persists skills and restores them", async () => {
+  await getOrCreateAccount(db, "woodcutter", "pw", SPAWN);
+  const skills = { woodcutting: 100 };
+  savePlayerState(db, "woodcutter", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), skills);
+  const result = await getOrCreateAccount(db, "woodcutter", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.skills).toEqual({ woodcutting: 100 });
+});
+
+test("NULL or corrupt skills column yields empty skills", async () => {
+  await getOrCreateAccount(db, "corrupt", "pw", SPAWN);
+  db.run("UPDATE accounts SET skills = 'not json' WHERE username = ?", ["corrupt"]);
+  const result = await getOrCreateAccount(db, "corrupt", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.skills).toEqual({});
 });
