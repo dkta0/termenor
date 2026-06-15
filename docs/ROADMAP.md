@@ -15,7 +15,7 @@ The whole game, built as ordered vertical slices. Each row is one `/spec → /pl
 ## Core loop
 
 5. ✅ **Inventory + ground items** — 28-slot inventory, server-authoritative ground items, pickup/drop, persisted inventory, rendered ground sprites + inventory panel. *(merged)*
-6. **NPCs** — spawns, wander AI, tick-driven entity system.
+6. ✅ **NPCs** — tick-driven entity system: server-authoritative spawns + wander AI (leash radius, pathfinding-aware), interpolated NPC billboards + labels. *(merged)*
 7. **Combat v1** — melee, HP, death/respawn, damage splats.
 8. **First gathering skill (woodcutting)** — XP, levels, tool checks, resource nodes/respawn.
 
