@@ -7,6 +7,7 @@ import { emptyInventory, addToInventory, removeSlot } from "./inventory";
 import { rollDamage, isAdjacent } from "./combat";
 import type { PlayerEntity, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
 import { awardXp } from "./skills-system";
+import * as invSys from "./inventory-system";
 
 const SPEED = 5; // tiles per second  → ~200ms per tile
 const GATHER_COOLDOWN_TICKS = 30;
@@ -24,10 +25,10 @@ export interface RestoredState {
 export class GameWorld {
   readonly map: MapData;
   private spawn: Point;
-  private players = new Map<string, PlayerEntity>();
+  players = new Map<string, PlayerEntity>();
   private tick = 0;
-  private groundItems: GroundItem[] = [];
-  private nextItemId = 1;
+  groundItems: GroundItem[] = [];
+  nextItemId = 1;
   private npcs: NpcEntity[] = [];
   private nextNpcId = 1;
   private rng: () => number;
@@ -281,7 +282,7 @@ export class GameWorld {
   }
 
   addGroundItem(item: string, qty: number, x: number, y: number): void {
-    this.groundItems.push({ id: this.nextItemId++, item, qty, x, y });
+    invSys.addGroundItem(this, item, qty, x, y);
   }
 
   getInventory(id: string): (ItemStack | null)[] | null {
@@ -291,54 +292,11 @@ export class GameWorld {
   }
 
   pickup(id: string): boolean {
-    const p = this.players.get(id);
-    if (!p) return false;
-
-    const px = Math.round(p.x);
-    const py = Math.round(p.y);
-    const matches = this.groundItems.filter(
-      (gi) => Math.round(gi.x) === px && Math.round(gi.y) === py,
-    );
-    if (matches.length === 0) return false;
-
-    let changed = false;
-    for (const gi of matches) {
-      const { slots, leftover } = addToInventory(p.inventory, { item: gi.item, qty: gi.qty });
-      if (leftover === null) {
-        // fully picked up
-        p.inventory = slots;
-        this.groundItems = this.groundItems.filter((g) => g.id !== gi.id);
-        changed = true;
-      } else if (leftover.qty < gi.qty) {
-        // partially picked up
-        p.inventory = slots;
-        gi.qty = leftover.qty;
-        changed = true;
-        break;
-      } else {
-        // nothing could be taken (inventory full for this item)
-        break;
-      }
-    }
-    return changed;
+    return invSys.pickup(this, id);
   }
 
   drop(id: string, slot: number): boolean {
-    const p = this.players.get(id);
-    if (!p) return false;
-
-    const { slots, removed } = removeSlot(p.inventory, slot);
-    if (removed === null) return false;
-
-    p.inventory = slots;
-    this.groundItems.push({
-      id: this.nextItemId++,
-      item: removed.item,
-      qty: removed.qty,
-      x: Math.round(p.x),
-      y: Math.round(p.y),
-    });
-    return true;
+    return invSys.drop(this, id, slot);
   }
 
   spawnResource(type: string, x: number, y: number): string {
