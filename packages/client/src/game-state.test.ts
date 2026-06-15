@@ -219,3 +219,46 @@ test("setSkills + skillsLine returns string containing level and Woodcutting", (
   expect(line).toContain("Woodcutting");
   expect(line).toContain("1");
 });
+
+// ---- Unit 4 new tests ----
+
+test("sampleResources returns rock and fire entries with numeric h", () => {
+  const gs = new GameState();
+  const resources: ResourceState[] = [
+    { id: "r1", type: "rock", x: 2, y: 2 },
+    { id: "f1", type: "fire", x: 3, y: 3 },
+  ];
+  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground: [], npcs: [], hits: [], resources }, 1000);
+  const sampled = gs.sampleResources();
+  expect(sampled).toHaveLength(2);
+  expect(sampled.find((r) => r.type === "rock")).toBeDefined();
+  expect(sampled.find((r) => r.type === "fire")).toBeDefined();
+  for (const r of sampled) expect(typeof r.h).toBe("number");
+});
+
+test("skillsLines returns 5 lines, one mentioning Mining", () => {
+  const gs = new GameState();
+  gs.setSkills({
+    woodcutting: { xp: 0, level: 1 },
+    mining:      { xp: 50, level: 1 },
+    fishing:     { xp: 0, level: 1 },
+    firemaking:  { xp: 0, level: 1 },
+    cooking:     { xp: 0, level: 1 },
+  });
+  const lines = gs.skillsLines();
+  expect(lines).toHaveLength(5);
+  expect(lines.some((l) => l.includes("Mining"))).toBe(true);
+  expect(lines.some((l) => l.includes("50"))).toBe(true);
+});
+
+test("firstSlotOf returns index of first matching item", () => {
+  const gs = new GameState();
+  gs.setInventory([null, { item: "logs", qty: 3 }, { item: "logs", qty: 1 }, null]);
+  expect(gs.firstSlotOf("logs")).toBe(1);
+});
+
+test("firstSlotOf returns -1 when item not in inventory", () => {
+  const gs = new GameState();
+  gs.setInventory([{ item: "bronze_axe", qty: 1 }, null]);
+  expect(gs.firstSlotOf("logs")).toBe(-1);
+});

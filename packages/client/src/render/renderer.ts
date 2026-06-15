@@ -6,7 +6,7 @@ import {
   type MouseEvent as TuiMouseEvent,
   type OptimizedBuffer,
 } from "@opentui/core";
-import { ITEMS, NPC_TYPES } from "@termenor/protocol";
+import { ITEMS, NPC_TYPES, RESOURCE_TYPES } from "@termenor/protocol";
 import type { GameState } from "../game-state";
 import type { ChatState } from "../chat";
 import { isoCamera, pickTile } from "./camera";
@@ -35,6 +35,8 @@ export interface RendererHooks {
   onAttack?(targetId: string): void;
   /** Called when the player presses 'c' to chop/gather the nearest resource. */
   onGather?(id: string): void;
+  /** Called when the player presses 'f' or 'k' to use a skill on an inventory slot. */
+  onUse?(action: string, slot: number): void;
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
@@ -150,10 +152,13 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       }
     }
 
-    // Skills HUD: top-left corner, one line
+    // Skills HUD: top-left corner, one line per skill
     const SKILLS_COLOR = RGBA.fromInts(100, 220, 100, 255);
-    for (const cell of textCells(state.skillsLine(), 1, 0, cols, rows)) {
-      buffer.setCell(cell.col, cell.row, cell.char, SKILLS_COLOR, BLACK);
+    const skillLines = state.skillsLines();
+    for (let si = 0; si < skillLines.length; si++) {
+      for (const cell of textCells(skillLines[si], 1, si, cols, rows)) {
+        buffer.setCell(cell.col, cell.row, cell.char, SKILLS_COLOR, BLACK);
+      }
     }
 
     // Inventory panel: right edge, list non-empty slots
@@ -232,12 +237,12 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       return;
     }
 
-    // Gather nearest resource
+    // Gather nearest gatherable resource (excludes fire)
     if (key.name === "c") {
       const gatherNow = performance.now();
       const gatherPlayers = state.samplePositions(gatherNow);
       const gatherMe = gatherPlayers.find((p) => p.id === state.localId);
-      const gatherResources = state.sampleResources();
+      const gatherResources = state.sampleResources().filter((r) => RESOURCE_TYPES[r.type]?.gatherable);
       if (gatherMe && gatherResources.length > 0) {
         let best = gatherResources[0], bestD = Infinity;
         for (const r of gatherResources) {
@@ -246,6 +251,20 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         }
         hooks.onGather?.(best.id);
       }
+      return;
+    }
+
+    // Firemaking: use logs from inventory
+    if (key.name === "f") {
+      const s = state.firstSlotOf("logs");
+      if (s >= 0) hooks.onUse?.("firemaking", s);
+      return;
+    }
+
+    // Cooking: use raw_shrimp from inventory
+    if (key.name === "k") {
+      const s = state.firstSlotOf("raw_shrimp");
+      if (s >= 0) hooks.onUse?.("cooking", s);
       return;
     }
 
