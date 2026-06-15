@@ -1,5 +1,5 @@
 import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState } from "@termenor/protocol";
-import { NPC_TYPES, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp } from "@termenor/protocol";
+import { NPC_TYPES, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_TYPES, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
 import { findPath, type Point } from "./pathfinding";
 import { advanceAlongPath } from "./movement";
 import { pickWanderTarget, NPC_SPEED } from "./npc";
@@ -8,6 +8,8 @@ import { rollDamage, isAdjacent } from "./combat";
 
 const SPEED = 5; // tiles per second  → ~200ms per tile
 const GATHER_COOLDOWN_TICKS = 30;
+const FIREMAKING_XP = 40;
+const COOKING_XP = 30;
 
 interface Player {
   id: string;
@@ -210,13 +212,14 @@ export class Game {
 
     this.resolveDeaths();
 
-    // Respawn depleted resources
+    // Respawn depleted gatherables; remove expired fires
     for (const res of this.resources) {
-      if (res.deadUntil >= 0 && this.tick >= res.deadUntil) {
+      if (res.type !== "fire" && res.deadUntil >= 0 && this.tick >= res.deadUntil) {
         res.charges = res.maxCharges;
         res.deadUntil = -1;
       }
     }
+    this.resources = this.resources.filter((r) => !(r.type === "fire" && this.tick >= r.deadUntil));
 
     // Gather pass
     for (const p of this.players.values()) {
@@ -224,36 +227,34 @@ export class Game {
       if (p.gatherCd > 0) p.gatherCd--;
       const res = this.resources.find((r) => r.id === p.gatherTarget && r.deadUntil < 0);
       if (!res) { p.gatherTarget = null; continue; }
+      const cfg = RESOURCE_TYPES[res.type];
+      if (!cfg || cfg.gatherable === false) { p.gatherTarget = null; continue; }
       if (isAdjacent(p, res)) {
         p.path = [];
         if (p.gatherCd === 0) {
-          if (!this.hasAxe(p)) {
+          if (cfg.tool && !this.hasItem(p, cfg.tool)) {
             p.gatherTarget = null;
-            this.gatherNotices.push({ id: p.id, text: "You need an axe to chop this." });
+            this.gatherNotices.push({ id: p.id, text: "You need the right tool." });
             continue;
           }
-          const { slots, leftover } = addToInventory(p.inventory, { item: "logs", qty: 1 });
+          const { slots, leftover } = addToInventory(p.inventory, { item: cfg.yield, qty: 1 });
           if (leftover !== null) {
-            // inventory full — could not add log
+            // inventory full — could not add item
             p.gatherTarget = null;
             this.gatherNotices.push({ id: p.id, text: "Your inventory is full." });
             continue;
           }
           p.inventory = slots;
-          const oldXp = p.skills.woodcutting ?? 0;
-          const newXp = oldXp + WOODCUTTING_XP_PER_LOG;
-          p.skills = { ...p.skills, woodcutting: newXp };
-          if (levelForXp(newXp) > levelForXp(oldXp)) {
-            this.levelUps.push({ id: p.id, skill: "woodcutting", level: levelForXp(newXp) });
-          }
-          this.skillChanged.add(p.id);
-          p.gatherCd = GATHER_COOLDOWN_TICKS;
-          res.charges--;
-          if (res.charges <= 0) {
-            res.deadUntil = this.tick + RESOURCE_RESPAWN_TICKS;
-            // clear all players targeting this depleted resource
-            for (const other of this.players.values()) {
-              if (other.gatherTarget === res.id) other.gatherTarget = null;
+          this.awardXp(p, cfg.skill, cfg.xp);
+          p.gatherCd = cfg.cooldownTicks;
+          if (!cfg.infinite) {
+            res.charges--;
+            if (res.charges <= 0) {
+              res.deadUntil = this.tick + cfg.respawnTicks;
+              // clear all players targeting this depleted resource
+              for (const other of this.players.values()) {
+                if (other.gatherTarget === res.id) other.gatherTarget = null;
+              }
             }
           }
         }
@@ -385,8 +386,15 @@ export class Game {
 
   spawnResource(type: string, x: number, y: number): string {
     const id = `res-${this.nextResourceId++}`;
-    this.resources.push({ id, type, x, y, home: { x, y }, charges: TREE_CHARGES, maxCharges: TREE_CHARGES, deadUntil: -1 });
+    const cfg = RESOURCE_TYPES[type];
+    const charges = cfg?.charges ?? 0;
+    this.resources.push({ id, type, x, y, home: { x, y }, charges, maxCharges: charges, deadUntil: -1 });
     return id;
+  }
+
+  private spawnFire(x: number, y: number): void {
+    const id = `res-${this.nextResourceId++}`;
+    this.resources.push({ id, type: "fire", x, y, home: { x, y }, charges: 0, maxCharges: 0, deadUntil: this.tick + FIRE_LIFETIME_TICKS });
   }
 
   gather(playerId: string, targetId: string): void {
@@ -397,19 +405,100 @@ export class Game {
     p.gatherTarget = targetId;
   }
 
-  private hasAxe(p: Player): boolean {
-    return p.inventory.some((s) => s !== null && s.item === "bronze_axe");
+  use(playerId: string, action: string, slot: number): void {
+    const p = this.players.get(playerId);
+    if (!p) return;
+    if (slot < 0 || slot >= p.inventory.length) return;
+    const stack = p.inventory[slot];
+
+    if (action === "firemaking") {
+      if (stack?.item !== "logs") {
+        this.gatherNotices.push({ id: p.id, text: "You need logs to make a fire." });
+        return;
+      }
+      if (!this.hasItem(p, "tinderbox")) {
+        this.gatherNotices.push({ id: p.id, text: "You need a tinderbox to make a fire." });
+        return;
+      }
+      const px = Math.round(p.x);
+      const py = Math.round(p.y);
+      const fireAlreadyHere = this.resources.some(
+        (r) => r.type === "fire" && r.x === px && r.y === py && this.tick < r.deadUntil,
+      );
+      if (fireAlreadyHere) {
+        this.gatherNotices.push({ id: p.id, text: "There is already a fire here." });
+        return;
+      }
+      // Consume one log
+      if (stack.qty === 1) {
+        const { slots } = removeSlot(p.inventory, slot);
+        p.inventory = slots;
+      } else {
+        p.inventory[slot] = { item: stack.item, qty: stack.qty - 1 };
+      }
+      this.spawnFire(px, py);
+      this.awardXp(p, "firemaking", FIREMAKING_XP);
+      return;
+    }
+
+    if (action === "cooking") {
+      if (stack?.item !== "raw_shrimp") {
+        this.gatherNotices.push({ id: p.id, text: "You need raw shrimp to cook." });
+        return;
+      }
+      const hasAdjacentFire = this.resources.some(
+        (r) => r.type === "fire" && this.tick < r.deadUntil && isAdjacent(p, r),
+      );
+      if (!hasAdjacentFire) {
+        this.gatherNotices.push({ id: p.id, text: "You need to be next to a fire to cook." });
+        return;
+      }
+      const { slots: cookedSlots, leftover } = addToInventory(p.inventory, { item: "cooked_shrimp", qty: 1 });
+      if (leftover !== null) {
+        this.gatherNotices.push({ id: p.id, text: "Your inventory is full." });
+        return;
+      }
+      // Consume one raw_shrimp from the updated slots (cooked_shrimp already added)
+      const rawIdx = cookedSlots.findIndex((s) => s?.item === "raw_shrimp");
+      if (rawIdx !== -1) {
+        const rawStack = cookedSlots[rawIdx]!;
+        if (rawStack.qty === 1) {
+          const { slots: finalSlots } = removeSlot(cookedSlots, rawIdx);
+          p.inventory = finalSlots;
+        } else {
+          cookedSlots[rawIdx] = { item: rawStack.item, qty: rawStack.qty - 1 };
+          p.inventory = cookedSlots;
+        }
+      } else {
+        p.inventory = cookedSlots;
+      }
+      this.awardXp(p, "cooking", COOKING_XP);
+      return;
+    }
+    // unknown action: ignore
+  }
+
+  private awardXp(p: Player, skill: string, amount: number): void {
+    const oldXp = p.skills[skill] ?? 0;
+    const newXp = oldXp + amount;
+    p.skills = { ...p.skills, [skill]: newXp };
+    if (levelForXp(newXp) > levelForXp(oldXp)) {
+      this.levelUps.push({ id: p.id, skill, level: levelForXp(newXp) });
+    }
+    this.skillChanged.add(p.id);
+  }
+
+  private hasItem(p: Player, item: string): boolean {
+    return p.inventory.some((s) => s !== null && s.item === item);
   }
 
   getPlayerSkills(id: string): Record<string, { xp: number; level: number }> {
     const p = this.players.get(id);
     const rawSkills = p?.skills ?? {};
-    const woodcuttingXp = rawSkills.woodcutting ?? 0;
-    const result: Record<string, { xp: number; level: number }> = {
-      woodcutting: { xp: woodcuttingXp, level: levelForXp(woodcuttingXp) },
-    };
-    for (const [skill, xp] of Object.entries(rawSkills)) {
-      if (skill !== "woodcutting") result[skill] = { xp, level: levelForXp(xp) };
+    const result: Record<string, { xp: number; level: number }> = {};
+    for (const skill of SKILLS) {
+      const xp = rawSkills[skill] ?? 0;
+      result[skill] = { xp, level: levelForXp(xp) };
     }
     return result;
   }
@@ -440,7 +529,7 @@ export class Game {
       id: n.id, type: n.type, x: n.x, y: n.y, facing: n.facing, hp: n.hp, maxHp: n.maxHp,
     }));
     const resources: ResourceState[] = this.resources
-      .filter((r) => r.deadUntil < 0)
+      .filter((r) => r.type === "fire" ? this.tick < r.deadUntil : r.deadUntil < 0)
       .map((r) => ({ id: r.id, type: r.type, x: r.x, y: r.y }));
     const hits = this.hits; this.hits = [];
     return { t: "snapshot", tick: this.tick, players, ground: this.groundItems.slice(), npcs, hits, resources };

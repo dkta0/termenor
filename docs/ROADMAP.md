@@ -21,7 +21,7 @@ The whole game, built as ordered vertical slices. Each row is one `/spec → /pl
 
 ## Content scale-out (reuse the engines)
 
-9. **Skill framework** generalized → mining, fishing, cooking, firemaking.
+9. ✅ **Skill framework** generalized → mining, fishing, cooking, firemaking. *(merged)*
 10. **Banking + shops.**
 11. **Equipment + combat v2** — ranged/magic, prayer.
 12. **Quests** — scripting/state-machine system + one real quest.

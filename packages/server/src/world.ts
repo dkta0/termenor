@@ -43,9 +43,15 @@ export interface SeedItem { item: string; qty: number; x: number; y: number; }
 
 /** Ground items to seed near spawn at server start. */
 export const SEED_ITEMS: SeedItem[] = [
-  { item: "coins",  qty: 25, x: 25, y: 24 },
-  { item: "logs",   qty: 3,  x: 23, y: 24 },
-  { item: "shrimp", qty: 5,  x: 24, y: 25 },
+  { item: "coins",           qty: 25, x: 25, y: 24 },
+  { item: "logs",            qty: 3,  x: 23, y: 24 },
+  { item: "shrimp",          qty: 5,  x: 24, y: 25 },
+  // starter kit for new skills (mining, fishing, firemaking, cooking)
+  { item: "bronze_pickaxe",  qty: 1,  x: 26, y: 24 },
+  { item: "small_net",       qty: 1,  x: 24, y: 23 },
+  { item: "tinderbox",       qty: 1,  x: 26, y: 25 },
+  { item: "logs",            qty: 5,  x: 22, y: 25 },
+  { item: "raw_shrimp",      qty: 3,  x: 23, y: 25 },
 ];
 
 export interface NpcSpawn { type: string; x: number; y: number; radius: number; }
@@ -60,8 +66,10 @@ export interface ResourceSpawn { type: string; x: number; y: number; }
 
 /** Resource node spawns near the player start. */
 export const RESOURCE_SPAWNS: ResourceSpawn[] = [
-  { type: "tree", x: 26, y: 26 },
-  { type: "tree", x: 22, y: 23 },
+  { type: "tree",         x: 26, y: 26 },
+  { type: "tree",         x: 22, y: 23 },
+  { type: "rock",         x: 27, y: 25 },
+  { type: "fishing_spot", x: 23, y: 26 },
 ];
 
 /** Starter axe item seeded on the ground near spawn so any player can grab one. */

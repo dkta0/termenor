@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { xpForLevel, levelForXp, WOODCUTTING_XP_PER_LOG, MAX_LEVEL } from "./skills";
+import { xpForLevel, levelForXp, WOODCUTTING_XP_PER_LOG, MAX_LEVEL, SKILLS } from "./skills";
 
 test("xpForLevel(1) === 0", () => {
   expect(xpForLevel(1)).toBe(0);
@@ -27,4 +27,13 @@ test("levelForXp(huge number) === 99 (cap)", () => {
 
 test("WOODCUTTING_XP_PER_LOG is a positive number", () => {
   expect(WOODCUTTING_XP_PER_LOG).toBeGreaterThan(0);
+});
+
+test("SKILLS contains all five skill names", () => {
+  expect(SKILLS).toContain("woodcutting");
+  expect(SKILLS).toContain("mining");
+  expect(SKILLS).toContain("fishing");
+  expect(SKILLS).toContain("firemaking");
+  expect(SKILLS).toContain("cooking");
+  expect(SKILLS.length).toBe(5);
 });

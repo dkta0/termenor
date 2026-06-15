@@ -1,5 +1,5 @@
 import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, ResourceState } from "@termenor/protocol";
-import { SPLAT_MS, type HitEvent } from "@termenor/protocol";
+import { SPLAT_MS, SKILLS, type HitEvent } from "@termenor/protocol";
 
 /**
  * How far behind real time we render. ~1.5 server ticks at 15 Hz (~66.7 ms/tick),
@@ -50,9 +50,28 @@ export class GameState {
     return this.resources.map((r) => ({ ...r, h: map ? sampleElevation(map, r.x, r.y) : 0 }));
   }
 
-  /** Skills HUD line for the woodcutting skill. */
+  /** Skills HUD line for the woodcutting skill (kept for back-compat). */
   skillsLine(): string {
     return `Woodcutting: ${this.skills.woodcutting?.level ?? 1} (${this.skills.woodcutting?.xp ?? 0} xp)`;
+  }
+
+  /** One line per skill in SKILLS order, e.g. "Mining: 1 (50 xp)". */
+  skillsLines(): string[] {
+    return SKILLS.map((name) => {
+      const capitalized = name.charAt(0).toUpperCase() + name.slice(1);
+      const entry = this.skills[name];
+      const level = entry?.level ?? 1;
+      const xp = entry?.xp ?? 0;
+      return `${capitalized}: ${level} (${xp} xp)`;
+    });
+  }
+
+  /** Index of the first inventory slot whose item matches `item`, or -1. */
+  firstSlotOf(item: string): number {
+    for (let i = 0; i < this.inventory.length; i++) {
+      if (this.inventory[i]?.item === item) return i;
+    }
+    return -1;
   }
 
   /** Return all splats that haven't expired yet, pruning stale ones in place. */

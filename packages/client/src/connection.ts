@@ -1,4 +1,4 @@
-import { decodeServer, encode, PLAYER_MAX_HP, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type SkillsMsg } from "@termenor/protocol";
+import { decodeServer, encode, PLAYER_MAX_HP, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
@@ -108,6 +108,11 @@ export class Connection {
 
   sendGather(targetId: string): void {
     const msg: GatherMsg = { t: "gather", targetId };
+    this.sock?.send(encode(msg));
+  }
+
+  sendUse(action: string, slot: number): void {
+    const msg: UseMsg = { t: "use", action, slot };
     this.sock?.send(encode(msg));
   }
 

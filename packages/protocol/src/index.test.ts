@@ -159,3 +159,26 @@ test("snapshot with resources round-trips", () => {
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
+
+import { type UseMsg } from "./index";
+
+test("UseMsg round-trips through encode/decodeClient", () => {
+  const msg: ClientMsg = { t: "use", action: "firemaking", slot: 2 };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("snapshot with rock and fire resources round-trips", () => {
+  const resources: ResourceState[] = [
+    { id: "r1", type: "rock", x: 2, y: 2 },
+    { id: "f1", type: "fire", x: 3, y: 3 },
+  ];
+  const msg: ServerMsg = {
+    t: "snapshot", tick: 20,
+    players: [],
+    ground: [],
+    npcs: [],
+    hits: [],
+    resources,
+  };
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});

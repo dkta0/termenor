@@ -39,4 +39,5 @@ driven by `/goal`, one slice at a time.
 - Slice 6: ✅ NPCs — spawns + wander AI, tick-driven entity system (merged to main).
 - Slice 7: ✅ combat v1 — melee, HP, death/respawn, damage splats (merged to main).
 - Slice 8: ✅ woodcutting — XP/levels, tool check, tree nodes + respawn, skill engine (merged to main).
-- Slice 9: skill framework generalized → mining, fishing, cooking, firemaking — next.
+- Slice 9: ✅ skill framework — data-driven RESOURCE_TYPES + use() action; mining, fishing, firemaking, cooking (merged to main).
+- Slice 10: banking + shops — next.

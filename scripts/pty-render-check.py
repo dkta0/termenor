@@ -10,7 +10,7 @@ arrow-key input to move one player, and inspects the escape-sequence bytes the
   - frames animate over time (continuous repaints),
   - the moved player's frames change after input (real-time mirroring).
 """
-import os, pty, sys, time, fcntl, termios, struct, subprocess, select, signal
+import os, pty, sys, time, fcntl, termios, struct, subprocess, select, signal, tempfile
 
 PORT = 3137
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,9 +59,14 @@ def drain(fds, duration, feed=None):
     return out
 
 def main():
+    # Hermetic DB: a fresh temp file per run so both accounts spawn co-located at
+    # SPAWN (and we never read or pollute ./data/termenor.db). Without this, a prior
+    # run's saved "mover" position drifts the players apart and A never sees B.
+    db_dir = tempfile.mkdtemp(prefix="termenor-pty-")
+    db_path = os.path.join(db_dir, "render-check.db")
     server = subprocess.Popen(
         ["bun", "run", "packages/server/src/index.ts"],
-        cwd=ROOT, env={**os.environ, "PORT": str(PORT)},
+        cwd=ROOT, env={**os.environ, "PORT": str(PORT), "DB_PATH": db_path},
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     time.sleep(1.5)
