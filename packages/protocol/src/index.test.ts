@@ -13,6 +13,7 @@ test("server snapshot round-trips", () => {
     ground: [],
     npcs: [],
     hits: [],
+    resources: [],
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
@@ -93,7 +94,7 @@ test("InventoryMsg round-trips", () => {
 
 test("SnapshotMsg includes ground array", () => {
   const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 10, x: 3, y: 4 }];
-  const msg: ServerMsg = { t: "snapshot", tick: 1, players: [], ground, npcs: [], hits: [] };
+  const msg: ServerMsg = { t: "snapshot", tick: 1, players: [], ground, npcs: [], hits: [], resources: [] };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
@@ -101,7 +102,7 @@ import { NPC_TYPES, type NpcState } from "./index";
 
 test("SnapshotMsg with npcs round-trips through encode/decodeServer", () => {
   const npcs: NpcState[] = [{ id: "npc-1", type: "goblin", x: 3.5, y: 7, facing: "south", hp: 5, maxHp: 5 }];
-  const msg: ServerMsg = { t: "snapshot", tick: 42, players: [], ground: [], npcs, hits: [] };
+  const msg: ServerMsg = { t: "snapshot", tick: 42, players: [], ground: [], npcs, hits: [], resources: [] };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
@@ -126,6 +127,35 @@ test("snapshot with hp + hits round-trips", () => {
     ground: [],
     npcs: [{ id: "n1", type: "goblin", x: 5, y: 5, facing: "south", hp: 3, maxHp: 5 }],
     hits: [{ targetId: "n1", amount: 2, tick: 9 }],
+    resources: [],
+  };
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
+import { type ResourceState } from "./index";
+
+test("gather ClientMsg round-trips", () => {
+  const msg: ClientMsg = { t: "gather", targetId: "res-1" };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("skills ServerMsg round-trips", () => {
+  const msg: ServerMsg = {
+    t: "skills",
+    skills: { woodcutting: { xp: 25, level: 1 } },
+  };
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
+test("snapshot with resources round-trips", () => {
+  const resources: ResourceState[] = [{ id: "r1", type: "tree", x: 3, y: 4 }];
+  const msg: ServerMsg = {
+    t: "snapshot", tick: 10,
+    players: [],
+    ground: [],
+    npcs: [],
+    hits: [],
+    resources,
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
