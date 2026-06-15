@@ -10,7 +10,7 @@ The whole game, built as ordered vertical slices. Each row is one `/spec → /pl
    collision), extruded walls with walk-behind, face-normal lighting + terrain skirts, entity
    billboards + shadows, z-interpolation, pick-buffer picking. *(merged)*
 3. ✅ **Accounts + persistence** — login (hashed pw), save/load player state via SQLite (bun:sqlite) on a Docker volume. *(merged)*
-4. **Chat + nearby-player presence** — names, public chat.
+4. ✅ **Chat + nearby-player presence** — name labels above players, public chat (broadcast, sanitized), in-TUI chat input. *(merged)*
 
 ## Core loop
 
