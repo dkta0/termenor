@@ -2,6 +2,10 @@ import type { ItemStack, GroundItem } from "./items";
 export type { ItemStack, GroundItem } from "./items";
 export { ITEMS, isItem, INV_SIZE } from "./items";
 
+import type { NpcState } from "./npcs";
+export type { NpcState } from "./npcs";
+export { NPC_TYPES } from "./npcs";
+
 export type Facing = "north" | "south" | "east" | "west";
 
 /** Row-major grid. 0 = walkable, 1 = blocked. `heights` is per-tile ground elevation. */
@@ -39,7 +43,7 @@ export interface WelcomeMsg {
   y: number;
   facing: Facing;
 }
-export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; ground: GroundItem[]; }
+export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; ground: GroundItem[]; npcs: NpcState[]; }
 export interface LoginErrorMsg { t: "loginError"; reason: string; }
 export interface ChatBroadcastMsg { t: "chatMsg"; from: string; text: string; }
 export interface InventoryMsg { t: "inventory"; slots: (ItemStack | null)[]; }
