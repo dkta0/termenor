@@ -296,7 +296,7 @@ test("integration: command attack, kill the goblin, it respawns at home", () => 
 
 // ── Woodcutting tests ────────────────────────────────────────────────────────
 
-import { WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, xpForLevel } from "@termenor/protocol";
+import { WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, xpForLevel, RESOURCE_TYPES, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
 
 test("new player has bronze_axe in starter inventory", () => {
   const g = new Game(open, { x: 0, y: 0 });
@@ -472,4 +472,236 @@ test("integration: new player chops a tree to depletion, gains logs+xp, tree res
     if (r && r.x === 1 && r.y === 0) respawned = true;
   }
   expect(respawned).toBe(true);
+});
+
+// ── Mining tests ─────────────────────────────────────────────────────────────
+
+test("mining: player with bronze_pickaxe adjacent to rock gains copper_ore + Mining xp", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "bronze_pickaxe", qty: 1 };
+  g.addPlayer("miner", { x: 0, y: 0, facing: "south", inventory: inv });
+  const resId = g.spawnResource("rock", 1, 0);
+  g.gather("miner", resId);
+  g.step(1 / 15);
+  const playerInv = g.getInventory("miner");
+  expect(playerInv?.some((s) => s?.item === "copper_ore" && s.qty >= 1)).toBe(true);
+  expect(g.getPlayerSkills("miner").mining.xp).toBe(RESOURCE_TYPES.rock.xp);
+});
+
+test("mining: rock depletes after rock.charges chops and respawns after rock.respawnTicks", () => {
+  const rockCfg = RESOURCE_TYPES.rock;
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "bronze_pickaxe", qty: 1 };
+  g.addPlayer("miner", { x: 0, y: 0, facing: "south", inventory: inv });
+  const resId = g.spawnResource("rock", 1, 0);
+  g.gather("miner", resId);
+  // mine rockCfg.charges times; each mine needs cooldownTicks+1 ticks
+  for (let chop = 0; chop < rockCfg.charges; chop++) {
+    for (let t = 0; t <= rockCfg.cooldownTicks; t++) g.step(1 / 15);
+  }
+  // rock should be depleted (absent from snapshot)
+  expect(g.snapshot().resources.find((r) => r.id === resId)).toBeUndefined();
+  // wait for respawn
+  for (let t = 0; t < rockCfg.respawnTicks + 2; t++) g.step(1 / 15);
+  expect(g.snapshot().resources.find((r) => r.id === resId)).toBeDefined();
+});
+
+// ── Fishing tests ─────────────────────────────────────────────────────────────
+
+test("fishing: player with small_net adjacent to fishing_spot gains raw_shrimp + Fishing xp", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "small_net", qty: 1 };
+  g.addPlayer("fisher", { x: 0, y: 0, facing: "south", inventory: inv });
+  const resId = g.spawnResource("fishing_spot", 1, 0);
+  g.gather("fisher", resId);
+  g.step(1 / 15);
+  const playerInv = g.getInventory("fisher");
+  expect(playerInv?.some((s) => s?.item === "raw_shrimp" && s.qty >= 1)).toBe(true);
+  expect(g.getPlayerSkills("fisher").fishing.xp).toBe(RESOURCE_TYPES.fishing_spot.xp);
+});
+
+test("fishing spot is NEVER absent from snapshot (infinite resource)", () => {
+  const fishingCooldown = RESOURCE_TYPES.fishing_spot.cooldownTicks;
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "small_net", qty: 1 };
+  g.addPlayer("fisher", { x: 0, y: 0, facing: "south", inventory: inv });
+  const resId = g.spawnResource("fishing_spot", 1, 0);
+  g.gather("fisher", resId);
+  // fish many times
+  for (let i = 0; i < 10; i++) {
+    for (let t = 0; t <= fishingCooldown; t++) g.step(1 / 15);
+    expect(g.snapshot().resources.find((r) => r.id === resId)).toBeDefined();
+  }
+});
+
+// ── Wrong/missing tool tests ─────────────────────────────────────────────────
+
+test("gathering a rock without a pickaxe: no ore, target cleared, notice emitted", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  // player with no inventory items (no pickaxe)
+  g.addPlayer("miner", { x: 0, y: 0, facing: "south", inventory: new Array(28).fill(null) });
+  const resId = g.spawnResource("rock", 1, 0);
+  g.gather("miner", resId);
+  g.step(1 / 15);
+  const playerInv = g.getInventory("miner");
+  expect(playerInv?.every((s) => s === null || s.item !== "copper_ore")).toBe(true);
+  const notices = g.consumeGatherNotices();
+  expect(notices.some((n) => n.id === "miner")).toBe(true);
+});
+
+test("gathering a fishing_spot without a net: no shrimp, target cleared, notice emitted", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("fisher", { x: 0, y: 0, facing: "south", inventory: new Array(28).fill(null) });
+  const resId = g.spawnResource("fishing_spot", 1, 0);
+  g.gather("fisher", resId);
+  g.step(1 / 15);
+  const playerInv = g.getInventory("fisher");
+  expect(playerInv?.every((s) => s === null || s.item !== "raw_shrimp")).toBe(true);
+  const notices = g.consumeGatherNotices();
+  expect(notices.some((n) => n.id === "fisher")).toBe(true);
+});
+
+// ── Firemaking tests ─────────────────────────────────────────────────────────
+
+test("firemaking: use() consumes 1 log, creates fire in snapshot at player's tile, awards xp", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "logs", qty: 3 };
+  inv[1] = { item: "tinderbox", qty: 1 };
+  g.addPlayer("p1", { x: 2, y: 2, facing: "south", inventory: inv });
+  g.use("p1", "firemaking", 0);
+  const snap = g.snapshot();
+  // fire appears at player tile
+  expect(snap.resources.some((r) => r.type === "fire" && r.x === 2 && r.y === 2)).toBe(true);
+  // one log consumed
+  const playerInv = g.getInventory("p1");
+  const logsSlot = playerInv?.find((s) => s?.item === "logs");
+  expect(logsSlot?.qty).toBe(2);
+  // xp awarded
+  expect(g.getPlayerSkills("p1").firemaking.xp).toBeGreaterThan(0);
+});
+
+test("firemaking: no tinderbox → refused, log not consumed", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "logs", qty: 2 };
+  g.addPlayer("p1", { x: 2, y: 2, facing: "south", inventory: inv });
+  g.use("p1", "firemaking", 0);
+  // no fire in snapshot
+  expect(g.snapshot().resources.some((r) => r.type === "fire")).toBe(false);
+  // log not consumed
+  const playerInv = g.getInventory("p1");
+  expect(playerInv?.find((s) => s?.item === "logs")?.qty).toBe(2);
+  const notices = g.consumeGatherNotices();
+  expect(notices.some((n) => n.id === "p1")).toBe(true);
+});
+
+test("firemaking: not logs in slot → refused", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "coins", qty: 10 };
+  inv[1] = { item: "tinderbox", qty: 1 };
+  g.addPlayer("p1", { x: 2, y: 2, facing: "south", inventory: inv });
+  g.use("p1", "firemaking", 0);
+  expect(g.snapshot().resources.some((r) => r.type === "fire")).toBe(false);
+  const notices = g.consumeGatherNotices();
+  expect(notices.some((n) => n.id === "p1")).toBe(true);
+});
+
+test("firemaking: cannot stack two fires on same tile (second use refused)", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "logs", qty: 3 };
+  inv[1] = { item: "tinderbox", qty: 1 };
+  g.addPlayer("p1", { x: 2, y: 2, facing: "south", inventory: inv });
+  g.use("p1", "firemaking", 0);
+  // consume the notice from first use (success emits no notice)
+  g.consumeGatherNotices();
+  g.use("p1", "firemaking", 0);
+  // still only one fire
+  const fires = g.snapshot().resources.filter((r) => r.type === "fire" && r.x === 2 && r.y === 2);
+  expect(fires).toHaveLength(1);
+  const notices = g.consumeGatherNotices();
+  expect(notices.some((n) => n.id === "p1")).toBe(true);
+});
+
+test("fire is removed from snapshot after FIRE_LIFETIME_TICKS steps", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "logs", qty: 1 };
+  inv[1] = { item: "tinderbox", qty: 1 };
+  g.addPlayer("p1", { x: 2, y: 2, facing: "south", inventory: inv });
+  g.use("p1", "firemaking", 0);
+  const fireId = g.snapshot().resources.find((r) => r.type === "fire")?.id;
+  expect(fireId).toBeDefined();
+  // advance FIRE_LIFETIME_TICKS ticks
+  for (let t = 0; t < FIRE_LIFETIME_TICKS; t++) g.step(1 / 15);
+  expect(g.snapshot().resources.find((r) => r.id === fireId)).toBeUndefined();
+});
+
+// ── Cooking tests ─────────────────────────────────────────────────────────────
+
+test("cooking: use() on raw_shrimp with adjacent live fire → cooked_shrimp + xp", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  // Spawn a fire manually via firemaking
+  const firemakeInv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  firemakeInv[0] = { item: "logs", qty: 1 };
+  firemakeInv[1] = { item: "tinderbox", qty: 1 };
+  firemakeInv[2] = { item: "raw_shrimp", qty: 2 };
+  g.addPlayer("chef", { x: 2, y: 2, facing: "south", inventory: firemakeInv });
+  // place fire at (2,2) via firemaking
+  g.use("chef", "firemaking", 0);
+  // confirm fire at (2,2); player is at (2,2) — adjacent fire is at same tile or neighboring
+  // Move player to (3,2) so they are adjacent to the fire at (2,2)
+  // Actually (2,2) and (3,2): |dx|=1, |dy|=0 → isAdjacent = true
+  // We can directly call use with cooking from (2,2) – fire is at (2,2), same tile is not strictly "adjacent"
+  // Per isAdjacent: max(|dx|,|dy|) === 1 → (2,2) to (2,2) = 0, not adjacent
+  // So player must be at (3,2) or (2,3) with fire at (2,2).
+  // Easier: use a second player approach or spawn fire separately.
+  // The cleanest: add a fresh player at (3,2) with shrimp, and a fire at (2,2) via spawnFire indirectly.
+  // spawnFire is private; use "firemaking" from a helper player at (2,2) to create the fire.
+  // chef is at (2,2), fire spawned at (2,2). Use cooking from (3,2) player.
+  const cookInv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  cookInv[0] = { item: "raw_shrimp", qty: 3 };
+  g.addPlayer("cook", { x: 3, y: 2, facing: "south", inventory: cookInv });
+  // fire is at (2,2), cook is at (3,2) → adjacent
+  g.use("cook", "cooking", 0);
+  const cookInvResult = g.getInventory("cook");
+  expect(cookInvResult?.some((s) => s?.item === "cooked_shrimp" && s.qty >= 1)).toBe(true);
+  // one raw_shrimp consumed
+  const rawSlot = cookInvResult?.find((s) => s?.item === "raw_shrimp");
+  expect(rawSlot?.qty).toBe(2);
+  expect(g.getPlayerSkills("cook").cooking.xp).toBeGreaterThan(0);
+});
+
+test("cooking: no adjacent fire → refused, raw_shrimp not consumed", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
+  inv[0] = { item: "raw_shrimp", qty: 2 };
+  g.addPlayer("cook", { x: 5, y: 5, facing: "south", inventory: inv });
+  g.use("cook", "cooking", 0);
+  // no cooked shrimp
+  const playerInv = g.getInventory("cook");
+  expect(playerInv?.every((s) => s === null || s.item !== "cooked_shrimp")).toBe(true);
+  // raw_shrimp still there
+  expect(playerInv?.find((s) => s?.item === "raw_shrimp")?.qty).toBe(2);
+  const notices = g.consumeGatherNotices();
+  expect(notices.some((n) => n.id === "cook")).toBe(true);
+});
+
+// ── getPlayerSkills all-five test ─────────────────────────────────────────────
+
+test("getPlayerSkills lists all five SKILLS with default xp 0 for a brand-new player", () => {
+  const g = new Game(open, { x: 0, y: 0 });
+  g.addPlayer("p1");
+  const skills = g.getPlayerSkills("p1");
+  for (const skill of SKILLS) {
+    expect(skills[skill]).toBeDefined();
+    expect(skills[skill].xp).toBe(0);
+    expect(skills[skill].level).toBe(1);
+  }
 });
