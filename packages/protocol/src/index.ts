@@ -25,6 +25,8 @@ export interface PlayerState {
   x: number;
   y: number;
   facing: Facing;
+  hp: number;
+  maxHp: number;
 }
 
 export interface LoginMsg { t: "login"; username: string; password: string; }
@@ -32,7 +34,8 @@ export interface MoveToMsg { t: "moveTo"; x: number; y: number; }
 export interface ChatMsg { t: "chat"; text: string; }
 export interface PickupMsg { t: "pickup"; }
 export interface DropMsg { t: "drop"; slot: number; }
-export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg;
+export interface AttackMsg { t: "attack"; targetId: string; }
+export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg;
 
 export interface WelcomeMsg {
   t: "welcome";
@@ -43,7 +46,8 @@ export interface WelcomeMsg {
   y: number;
   facing: Facing;
 }
-export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; ground: GroundItem[]; npcs: NpcState[]; }
+export interface HitEvent { targetId: string; amount: number; tick: number; }
+export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; ground: GroundItem[]; npcs: NpcState[]; hits: HitEvent[]; }
 export interface LoginErrorMsg { t: "loginError"; reason: string; }
 export interface ChatBroadcastMsg { t: "chatMsg"; from: string; text: string; }
 export interface InventoryMsg { t: "inventory"; slots: (ItemStack | null)[]; }
@@ -55,7 +59,7 @@ export function encode(msg: ClientMsg | ServerMsg): string {
 
 export const MAX_CHAT_LEN = 200;
 
-const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop"]);
+const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack"]);
 const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg", "inventory"]);
 
 export function decodeClient(data: string): ClientMsg {
@@ -69,3 +73,5 @@ export function decodeServer(data: string): ServerMsg {
   if (!obj || !SERVER_TYPES.has(obj.t)) throw new Error(`bad server message: ${data}`);
   return obj as ServerMsg;
 }
+
+export * from "./combat";

@@ -82,6 +82,27 @@ function drawBillboard(f: IsoFrame, cx: number, cyFeet: number, depth: number, k
     for (let dx = 0; dx < W; dx++) plot(f, Math.round(cx + dx - W / 2), Math.round(cyFeet - dy), depth, kind, rgb, -1);
 }
 
+const BAR_W = 5;
+const HP_GREEN: RGB = [40, 200, 40];
+const HP_RED: RGB = [200, 40, 40];
+
+/** Draw a small HP bar one pixel above the billboard head (cyFeet - billboardH - 1). */
+function drawHpBar(f: IsoFrame, cx: number, cyFeet: number, depth: number, hp: number, maxHp: number): void {
+  if (maxHp <= 0) return;
+  const barY = Math.round(cyFeet) - 4 - 1; // billboard H=4; 1px gap above head
+  const filled = Math.round((hp / maxHp) * BAR_W);
+  const startX = Math.round(cx) - Math.floor(BAR_W / 2);
+  for (let dx = 0; dx < BAR_W; dx++) {
+    const rgb = dx < filled ? HP_GREEN : HP_RED;
+    const px = startX + dx;
+    if (px < 0 || px >= f.buf.width || barY < 0 || barY >= f.buf.height) continue;
+    const i = barY * f.buf.width + px;
+    f.buf.kinds[i] = Kind.FLOOR; // neutral kind for UI overlay
+    const o = i * 3;
+    f.buf.rgb[o] = rgb[0]; f.buf.rgb[o + 1] = rgb[1]; f.buf.rgb[o + 2] = rgb[2];
+  }
+}
+
 /**
  * Rasterize the world isometrically. `camOx/camOy` is the screen-pixel offset of the
  * viewport top-left (can be negative). Tiles draw back-to-front; entities draw after,
@@ -122,6 +143,7 @@ export function rasterizeIso(
     const kind = p.id === localId ? Kind.LOCAL : Kind.PLAYER;
     const rgb = p.id === localId ? LOCAL_RGB : PLAYER_RGB;
     drawBillboard(f, cx, cy, depth, kind, rgb);
+    drawHpBar(f, cx, cy, depth, p.hp, p.maxHp);
   }
 
   // ground items — render as small colored sprites, depth = x+y (sits on ground)
@@ -147,6 +169,7 @@ export function rasterizeIso(
     const entry = NPC_TYPES[npc.type];
     const rgb: RGB = entry ? entry.color : [200, 200, 200];
     drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
+    drawHpBar(f, cx, cy, depth, npc.hp, npc.maxHp);
   }
 
   return f;

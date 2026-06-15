@@ -9,9 +9,10 @@ test("client message round-trips", () => {
 test("server snapshot round-trips", () => {
   const msg: ServerMsg = {
     t: "snapshot", tick: 5,
-    players: [{ id: "a", x: 1.5, y: 2, facing: "east" }],
+    players: [{ id: "a", x: 1.5, y: 2, facing: "east", hp: 10, maxHp: 10 }],
     ground: [],
     npcs: [],
+    hits: [],
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
@@ -92,15 +93,15 @@ test("InventoryMsg round-trips", () => {
 
 test("SnapshotMsg includes ground array", () => {
   const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 10, x: 3, y: 4 }];
-  const msg: ServerMsg = { t: "snapshot", tick: 1, players: [], ground, npcs: [] };
+  const msg: ServerMsg = { t: "snapshot", tick: 1, players: [], ground, npcs: [], hits: [] };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
 import { NPC_TYPES, type NpcState } from "./index";
 
 test("SnapshotMsg with npcs round-trips through encode/decodeServer", () => {
-  const npcs: NpcState[] = [{ id: "npc-1", type: "goblin", x: 3.5, y: 7, facing: "south" }];
-  const msg: ServerMsg = { t: "snapshot", tick: 42, players: [], ground: [], npcs };
+  const npcs: NpcState[] = [{ id: "npc-1", type: "goblin", x: 3.5, y: 7, facing: "south", hp: 5, maxHp: 5 }];
+  const msg: ServerMsg = { t: "snapshot", tick: 42, players: [], ground: [], npcs, hits: [] };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
@@ -109,4 +110,22 @@ test("NPC_TYPES has goblin and rat entries", () => {
   expect(NPC_TYPES.rat).toBeDefined();
   expect(NPC_TYPES.goblin.name).toBe("Goblin");
   expect(NPC_TYPES.rat.name).toBe("Rat");
+});
+
+import { PLAYER_MAX_HP } from "./combat";
+
+test("attack message round-trips", () => {
+  const msg: ClientMsg = { t: "attack", targetId: "npc-3" };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("snapshot with hp + hits round-trips", () => {
+  const msg: ServerMsg = {
+    t: "snapshot", tick: 9,
+    players: [{ id: "a", x: 1, y: 2, facing: "east", hp: 7, maxHp: PLAYER_MAX_HP }],
+    ground: [],
+    npcs: [{ id: "n1", type: "goblin", x: 5, y: 5, facing: "south", hp: 3, maxHp: 5 }],
+    hits: [{ targetId: "n1", amount: 2, tick: 9 }],
+  };
+  expect(decodeServer(encode(msg))).toEqual(msg);
 });

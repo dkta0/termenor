@@ -1,4 +1,4 @@
-import { decodeServer, encode, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg } from "@termenor/protocol";
+import { decodeServer, encode, PLAYER_MAX_HP, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
@@ -98,6 +98,11 @@ export class Connection {
     this.sock?.send(encode(msg));
   }
 
+  sendAttack(targetId: string): void {
+    const msg: AttackMsg = { t: "attack", targetId };
+    this.sock?.send(encode(msg));
+  }
+
   disconnect(): void {
     this.closedByUser = true;
     this.sock?.close();
@@ -113,7 +118,9 @@ export class Connection {
       this.state.setMap(msg.map);
       // seed initial position so renderer has a starting frame before first snapshot
       this.state.applySnapshot(
-        { t: "snapshot", tick: 0, players: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing }], ground: [], npcs: [] },
+        { t: "snapshot", tick: 0,
+          players: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP }],
+          ground: [], npcs: [], hits: [] },
         this.now(),
       );
     } else if (msg.t === "snapshot") {

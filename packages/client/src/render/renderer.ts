@@ -31,6 +31,8 @@ export interface RendererHooks {
   onPickup?(): void;
   /** Called when the player presses a number key to drop inventory slot `slot`. */
   onDrop?(slot: number): void;
+  /** Called when the player presses 'a' to attack the nearest NPC. */
+  onAttack?(targetId: string): void;
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
@@ -101,6 +103,26 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       const color = RGBA.fromInts(r, g, b, 255);
       for (const cell of textCells(label, labelCol, labelRow, cols, rows)) {
         buffer.setCell(cell.col, cell.row, cell.char, color, BLACK);
+      }
+    }
+
+    // Damage splats: red number floating above hit entity
+    const RED = RGBA.fromInts(255, 60, 60, 255);
+    const now = performance.now();
+    for (const splat of state.activeSplats(now)) {
+      // Find target in current sample (players + npcs); skip if not visible
+      const targetPlayer = players.find((p) => p.id === splat.targetId);
+      const targetNpc = npcs.find((n) => n.id === splat.targetId);
+      const target = targetPlayer ?? targetNpc;
+      if (!target) continue;
+      const { sx, sy } = tileToScreen(target.x, target.y, target.h);
+      const splatSy = sy - cam.oy - 8; // above the HP bar
+      const splatRow = tier === "halfblock" ? Math.round(splatSy / 2) - 1 : Math.round(splatSy) - 1;
+      const splatSx = sx - cam.ox;
+      const label = `-${splat.amount}`;
+      const splatCol = Math.round(splatSx - label.length / 2);
+      for (const cell of textCells(label, splatCol, splatRow, cols, rows)) {
+        buffer.setCell(cell.col, cell.row, cell.char, RED, BLACK);
       }
     }
 
@@ -183,6 +205,23 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     if (key.name === "g") { hooks.onPickup?.(); return; }
     const numMatch = /^([1-9])$/.exec(key.name ?? "");
     if (numMatch) { hooks.onDrop?.(parseInt(numMatch[1], 10) - 1); return; }
+
+    // Attack nearest NPC
+    if (key.name === "a") {
+      const attackNow = performance.now();
+      const attackPlayers = state.samplePositions(attackNow);
+      const me = attackPlayers.find((p) => p.id === state.localId);
+      const attackNpcs = state.sampleNpcs(attackNow);
+      if (me && attackNpcs.length > 0) {
+        let best = attackNpcs[0], bestD = Infinity;
+        for (const n of attackNpcs) {
+          const d = Math.hypot(n.x - me.x, n.y - me.y);
+          if (d < bestD) { bestD = d; best = n; }
+        }
+        hooks.onAttack?.(best.id);
+      }
+      return;
+    }
 
     // Arrow key movement
     const d = arrowDelta(key.name);

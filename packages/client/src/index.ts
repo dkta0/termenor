@@ -52,6 +52,7 @@ const handle = await startRenderer(state, chatState, {
   onChat: (text) => conn.sendChat(text),
   onPickup: () => conn.sendPickup(),
   onDrop: (slot) => conn.sendDrop(slot),
+  onAttack: (id) => conn.sendAttack(id),
 });
 
 const shutdown = () => { handle.stop(); conn.disconnect(); process.exit(0); };

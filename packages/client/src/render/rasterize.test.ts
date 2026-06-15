@@ -25,7 +25,7 @@ test("plot is depth-tested: nearer (higher depth) wins regardless of order", () 
 });
 
 test("rasterizeIso fills a frame without throwing and marks some floor + pick", () => {
-  const players: RenderPlayer[] = [{ id: "me", x: 1, y: 1, facing: "south", h: 0 }];
+  const players: RenderPlayer[] = [{ id: "me", x: 1, y: 1, facing: "south", h: 0, hp: 10, maxHp: 10 }];
   const f = rasterizeIso(flatMap, players, 0, 0, 64, 48, "me");
   expect(f.buf.width).toBe(64);
   expect(f.buf.height).toBe(48);
@@ -36,7 +36,7 @@ test("rasterizeIso fills a frame without throwing and marks some floor + pick", 
 });
 
 test("walk-behind: a wall in front (greater x+y) occludes the player behind it", () => {
-  const players: RenderPlayer[] = [{ id: "me", x: 0, y: 0, facing: "south", h: 0 }];
+  const players: RenderPlayer[] = [{ id: "me", x: 0, y: 0, facing: "south", h: 0, hp: 10, maxHp: 10 }];
   const flat: MapData = { width: 2, height: 2, tiles: [0, 0, 0, 0], heights: [0, 0, 0, 0] };
   const walled: MapData = { width: 2, height: 2, tiles: [0, 0, 0, 1], heights: [0, 0, 0, 0] };
   const localPixels = (f: ReturnType<typeof rasterizeIso>) =>
@@ -83,7 +83,7 @@ test("rasterizeIso with npcs produces NPC pixels", () => {
     tiles: new Array(25).fill(0),
     heights: new Array(25).fill(0),
   };
-  const npc: NpcRender = { id: "npc-1", type: "goblin", x: 2, y: 2, facing: "south", h: 0 };
+  const npc: NpcRender = { id: "npc-1", type: "goblin", x: 2, y: 2, facing: "south", h: 0, hp: 5, maxHp: 10 };
   const frame = rasterizeIso(map, [], 0, 0, 200, 200, null, [], [npc]);
   expect(frame.buf.kinds.some((k) => k === Kind.NPC)).toBe(true);
 });

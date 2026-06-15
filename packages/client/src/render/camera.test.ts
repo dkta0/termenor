@@ -10,7 +10,7 @@ test("isoCamera centers the viewport on a screen point", () => {
 
 test("pick round trip: a rendered tile is pickable at its center pixel", () => {
   const m: MapData = { width: 3, height: 3, tiles: new Array(9).fill(0), heights: new Array(9).fill(0) };
-  const players: RenderPlayer[] = [{ id: "me", x: 1, y: 1, facing: "south", h: 0 }];
+  const players: RenderPlayer[] = [{ id: "me", x: 1, y: 1, facing: "south", h: 0, hp: 10, maxHp: 10 }];
   const f = rasterizeIso(m, players, -32, -8, 64, 48, "me");
   const idx = f.pick.findIndex((t) => t === 4); // center tile (1,1) → index 4
   expect(idx).toBeGreaterThanOrEqual(0);

@@ -1,4 +1,5 @@
 import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState } from "@termenor/protocol";
+import { SPLAT_MS, type HitEvent } from "@termenor/protocol";
 
 /**
  * How far behind real time we render. ~1.5 server ticks at 15 Hz (~66.7 ms/tick),
@@ -10,8 +11,11 @@ export const INTERP_DELAY_MS = 100;
 /** Snapshots retained for bracketing. ~0.8 s of history at 15 Hz. */
 const MAX_FRAMES = 12;
 
-export interface RenderPlayer { id: string; x: number; y: number; facing: Facing; h: number; }
-export interface NpcRender { id: string; type: string; x: number; y: number; facing: Facing; h: number; }
+export interface RenderPlayer { id: string; x: number; y: number; facing: Facing; h: number; hp: number; maxHp: number; }
+export interface NpcRender { id: string; type: string; x: number; y: number; facing: Facing; h: number; hp: number; maxHp: number; }
+
+/** A fading damage number shown over an entity. */
+export interface Splat { targetId: string; amount: number; expires: number; }
 
 interface Frame { time: number; players: Map<string, PlayerState>; npcs: Map<string, NpcState>; }
 
@@ -21,6 +25,7 @@ export class GameState {
   ground: GroundItem[] = [];
   inventory: (ItemStack | null)[] = [];
   private frames: Frame[] = []; // chronological, oldest → newest
+  private splats: Splat[] = [];
 
   setMap(map: MapData): void { this.map = map; }
   setLocalId(id: string): void { this.localId = id; }
@@ -32,6 +37,23 @@ export class GameState {
     this.frames.push({ time: now, players, npcs });
     if (this.frames.length > MAX_FRAMES) this.frames.shift();
     this.ground = snap.ground;
+    for (const h of snap.hits) this.splats.push({ targetId: h.targetId, amount: h.amount, expires: now + SPLAT_MS });
+  }
+
+  /** Return all splats that haven't expired yet, pruning stale ones in place. */
+  activeSplats(now: number): Splat[] {
+    this.splats = this.splats.filter((s) => s.expires > now);
+    return this.splats;
+  }
+
+  /** hp of the entity with the given id from the NEWEST frame; null if not found. */
+  hpOf(id: string): number | null {
+    const frame = this.frames[this.frames.length - 1];
+    if (!frame) return null;
+    const p = frame.players.get(id);
+    if (p) return p.hp;
+    const n = frame.npcs.get(id);
+    return n ? n.hp : null;
   }
 
   /**
@@ -39,6 +61,7 @@ export class GameState {
    * the two buffered snapshots that bracket `renderTime - INTERP_DELAY_MS`;
    * clamps to the oldest/newest buffered frame outside that range.
    * Elevation (`h`) is bilinearly sampled from the current map heightmap.
+   * hp/maxHp come from the NEWEST frame (not interpolated).
    */
   samplePositions(renderTime: number): RenderPlayer[] {
     return this.attachElevation(this.sampleRaw(renderTime));
@@ -46,9 +69,11 @@ export class GameState {
 
   sampleNpcs(renderTime: number): NpcRender[] {
     const map = this.map;
-    return this.sampleNpcsRaw(renderTime).map((n) => ({
-      ...n, h: map ? sampleElevation(map, n.x, n.y) : 0,
-    }));
+    const newest = this.frames[this.frames.length - 1];
+    return this.sampleNpcsRaw(renderTime).map((n) => {
+      const { hp, maxHp } = newestNpcHp(newest, n.id);
+      return { ...n, h: map ? sampleElevation(map, n.x, n.y) : 0, hp, maxHp };
+    });
   }
 
   /** Find the bracketing frame pair for renderTime - INTERP_DELAY_MS. */
@@ -71,20 +96,24 @@ export class GameState {
     return { a, b, t };
   }
 
-  private sampleRaw(renderTime: number): Array<{ id: string; x: number; y: number; facing: Facing }> {
+  private sampleRaw(renderTime: number): Array<{ id: string; x: number; y: number; facing: Facing; hp: number; maxHp: number }> {
     if (this.frames.length === 0) return [];
     const br = this.bracket(renderTime);
-    if ("single" in br) return frameToPlayers(br.single);
+    const newest = this.frames[this.frames.length - 1];
+    if ("single" in br) return frameToPlayers(br.single, newest);
     const { a, b, t } = br;
-    const out: Array<{ id: string; x: number; y: number; facing: Facing }> = [];
+    const out: Array<{ id: string; x: number; y: number; facing: Facing; hp: number; maxHp: number }> = [];
     for (const [id, pb] of b.players) {
       const pa = a.players.get(id);
-      if (!pa) { out.push({ id, x: pb.x, y: pb.y, facing: pb.facing }); continue; }
+      const { hp, maxHp } = newestPlayerHp(newest, id);
+      if (!pa) { out.push({ id, x: pb.x, y: pb.y, facing: pb.facing, hp, maxHp }); continue; }
       out.push({
         id,
         x: pa.x + (pb.x - pa.x) * t,
         y: pa.y + (pb.y - pa.y) * t,
         facing: pb.facing,
+        hp,
+        maxHp,
       });
     }
     return out;
@@ -105,15 +134,32 @@ export class GameState {
   }
 
   private attachElevation(
-    raw: Array<{ id: string; x: number; y: number; facing: Facing }>,
+    raw: Array<{ id: string; x: number; y: number; facing: Facing; hp: number; maxHp: number }>,
   ): RenderPlayer[] {
     const map = this.map;
     return raw.map((p) => ({ ...p, h: map ? sampleElevation(map, p.x, p.y) : 0 }));
   }
 }
 
-function frameToPlayers(f: Frame): Array<{ id: string; x: number; y: number; facing: Facing }> {
-  return [...f.players.values()].map((p) => ({ id: p.id, x: p.x, y: p.y, facing: p.facing }));
+/** Read hp/maxHp for a player id from the newest frame; default to 0/0 if missing. */
+function newestPlayerHp(newest: Frame | undefined, id: string): { hp: number; maxHp: number } {
+  if (!newest) return { hp: 0, maxHp: 0 };
+  const p = newest.players.get(id);
+  return p ? { hp: p.hp, maxHp: p.maxHp } : { hp: 0, maxHp: 0 };
+}
+
+/** Read hp/maxHp for an npc id from the newest frame; default to 0/0 if missing. */
+function newestNpcHp(newest: Frame | undefined, id: string): { hp: number; maxHp: number } {
+  if (!newest) return { hp: 0, maxHp: 0 };
+  const n = newest.npcs.get(id);
+  return n ? { hp: n.hp, maxHp: n.maxHp } : { hp: 0, maxHp: 0 };
+}
+
+function frameToPlayers(f: Frame, newest: Frame): Array<{ id: string; x: number; y: number; facing: Facing; hp: number; maxHp: number }> {
+  return [...f.players.values()].map((p) => {
+    const { hp, maxHp } = newestPlayerHp(newest, p.id);
+    return { id: p.id, x: p.x, y: p.y, facing: p.facing, hp, maxHp };
+  });
 }
 
 function frameToNpcs(f: Frame): Array<{ id: string; type: string; x: number; y: number; facing: Facing }> {
