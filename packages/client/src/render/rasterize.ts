@@ -1,4 +1,4 @@
-import { ITEM_KINDS, NPC_KINDS, RESOURCE_TYPES } from "@termenor/protocol";
+import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS } from "@termenor/protocol";
 import type { GroundItem, MapData, ResourceState } from "@termenor/protocol";
 import type { NpcRender, RenderPlayer } from "../game-state";
 import { Kind, type PixelBuffer } from "./types";
@@ -178,7 +178,7 @@ export function rasterizeIso(
     const s = tileToScreen(res.x, res.y, res.h);
     const cx = s.sx - camOx, cy = s.sy - camOy;
     const depth = res.x + res.y;
-    const entry = RESOURCE_TYPES[res.type];
+    const entry = RESOURCE_KINDS[res.type];
     const rgb: RGB = entry ? entry.color : [40, 120, 40];
     drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
   }

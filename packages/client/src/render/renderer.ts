@@ -6,7 +6,7 @@ import {
   type MouseEvent as TuiMouseEvent,
   type OptimizedBuffer,
 } from "@opentui/core";
-import { ITEM_KINDS, NPC_KINDS, RESOURCE_TYPES } from "@termenor/protocol";
+import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS } from "@termenor/protocol";
 import type { GameState } from "../game-state";
 import type { ChatState } from "../chat";
 import { isoCamera, pickTile } from "./camera";
@@ -242,7 +242,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       const gatherNow = performance.now();
       const gatherPlayers = state.samplePositions(gatherNow);
       const gatherMe = gatherPlayers.find((p) => p.id === state.localId);
-      const gatherResources = state.sampleResources().filter((r) => RESOURCE_TYPES[r.type]?.gatherable);
+      const gatherResources = state.sampleResources().filter((r) => RESOURCE_KINDS[r.type]?.gatherable);
       if (gatherMe && gatherResources.length > 0) {
         let best = gatherResources[0], bestD = Infinity;
         for (const r of gatherResources) {

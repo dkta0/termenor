@@ -1,6 +1,6 @@
 export interface ResourceState { id: string; type: string; x: number; y: number; }
 
-export interface ResourceConfig {
+export interface ResourceKind {
   name: string;
   color: [number, number, number];
   skill: string;
@@ -15,7 +15,7 @@ export interface ResourceConfig {
   gatherable?: boolean;     // can be targeted by the gather pass / 'c' key (false for fire)
 }
 
-export const RESOURCE_TYPES: Record<string, ResourceConfig> = {
+export const RESOURCE_KINDS: Record<string, ResourceKind> = {
   tree:         { name: "Tree",         color: [40, 120, 40],    skill: "woodcutting", tool: "bronze_axe",     yield: "logs",       xp: 25, charges: 5, respawnTicks: 90,  cooldownTicks: 30, gatherable: true },
   rock:         { name: "Rock",         color: [120, 120, 130],  skill: "mining",      tool: "bronze_pickaxe", yield: "copper_ore", xp: 18, charges: 4, respawnTicks: 120, cooldownTicks: 30, gatherable: true },
   fishing_spot: { name: "Fishing spot", color: [60, 120, 200],   skill: "fishing",     tool: "small_net",      yield: "raw_shrimp", xp: 10, charges: 0, respawnTicks: 0,   cooldownTicks: 35, infinite: true, gatherable: true },

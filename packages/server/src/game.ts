@@ -1,5 +1,5 @@
 import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState } from "@termenor/protocol";
-import { NPC_KINDS, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_TYPES, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
+import { NPC_KINDS, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
 import { findPath, type Point } from "./pathfinding";
 import { advanceAlongPath } from "./movement";
 import { pickWanderTarget, NPC_SPEED } from "./npc";
@@ -227,7 +227,7 @@ export class Game {
       if (p.gatherCd > 0) p.gatherCd--;
       const res = this.resources.find((r) => r.id === p.gatherTarget && r.deadUntil < 0);
       if (!res) { p.gatherTarget = null; continue; }
-      const cfg = RESOURCE_TYPES[res.type];
+      const cfg = RESOURCE_KINDS[res.type];
       if (!cfg || cfg.gatherable === false) { p.gatherTarget = null; continue; }
       if (isAdjacent(p, res)) {
         p.path = [];
@@ -386,7 +386,7 @@ export class Game {
 
   spawnResource(type: string, x: number, y: number): string {
     const id = `res-${this.nextResourceId++}`;
-    const cfg = RESOURCE_TYPES[type];
+    const cfg = RESOURCE_KINDS[type];
     const charges = cfg?.charges ?? 0;
     this.resources.push({ id, type, x, y, home: { x, y }, charges, maxCharges: charges, deadUntil: -1 });
     return id;

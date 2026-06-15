@@ -296,7 +296,7 @@ test("integration: command attack, kill the goblin, it respawns at home", () => 
 
 // ── Woodcutting tests ────────────────────────────────────────────────────────
 
-import { WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, xpForLevel, RESOURCE_TYPES, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
+import { WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, xpForLevel, RESOURCE_KINDS, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
 
 test("new player has bronze_axe in starter inventory", () => {
   const g = new Game(open, { x: 0, y: 0 });
@@ -486,11 +486,11 @@ test("mining: player with bronze_pickaxe adjacent to rock gains copper_ore + Min
   g.step(1 / 15);
   const playerInv = g.getInventory("miner");
   expect(playerInv?.some((s) => s?.item === "copper_ore" && s.qty >= 1)).toBe(true);
-  expect(g.getPlayerSkills("miner").mining.xp).toBe(RESOURCE_TYPES.rock.xp);
+  expect(g.getPlayerSkills("miner").mining.xp).toBe(RESOURCE_KINDS.rock.xp);
 });
 
 test("mining: rock depletes after rock.charges chops and respawns after rock.respawnTicks", () => {
-  const rockCfg = RESOURCE_TYPES.rock;
+  const rockCfg = RESOURCE_KINDS.rock;
   const g = new Game(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "bronze_pickaxe", qty: 1 };
@@ -520,11 +520,11 @@ test("fishing: player with small_net adjacent to fishing_spot gains raw_shrimp +
   g.step(1 / 15);
   const playerInv = g.getInventory("fisher");
   expect(playerInv?.some((s) => s?.item === "raw_shrimp" && s.qty >= 1)).toBe(true);
-  expect(g.getPlayerSkills("fisher").fishing.xp).toBe(RESOURCE_TYPES.fishing_spot.xp);
+  expect(g.getPlayerSkills("fisher").fishing.xp).toBe(RESOURCE_KINDS.fishing_spot.xp);
 });
 
 test("fishing spot is NEVER absent from snapshot (infinite resource)", () => {
-  const fishingCooldown = RESOURCE_TYPES.fishing_spot.cooldownTicks;
+  const fishingCooldown = RESOURCE_KINDS.fishing_spot.cooldownTicks;
   const g = new Game(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "small_net", qty: 1 };
@@ -714,18 +714,18 @@ test("integration: framework spans mining, fishing, firemaking, cooking", () => 
   // --- mining: deplete the rock ---
   g.gather("hero", rockId);
   let rockGone = false;
-  for (let i = 0; i < RESOURCE_TYPES.rock.charges * (RESOURCE_TYPES.rock.cooldownTicks + 2) && !rockGone; i++) {
+  for (let i = 0; i < RESOURCE_KINDS.rock.charges * (RESOURCE_KINDS.rock.cooldownTicks + 2) && !rockGone; i++) {
     g.step(1 / 15);
     if (!g.snapshot().resources.find((r) => r.id === rockId)) rockGone = true;
   }
   expect(rockGone).toBe(true);
   const oreCount = g.getInventory("hero")!.reduce((n, s) => n + (s?.item === "copper_ore" ? s.qty : 0), 0);
-  expect(oreCount).toBe(RESOURCE_TYPES.rock.charges);
-  expect(g.getPlayerSkills("hero").mining.xp).toBe(RESOURCE_TYPES.rock.charges * RESOURCE_TYPES.rock.xp);
+  expect(oreCount).toBe(RESOURCE_KINDS.rock.charges);
+  expect(g.getPlayerSkills("hero").mining.xp).toBe(RESOURCE_KINDS.rock.charges * RESOURCE_KINDS.rock.xp);
 
   // --- fishing: spot is infinite, never disappears ---
   g.gather("hero", spotId);
-  for (let i = 0; i < 3 * (RESOURCE_TYPES.fishing_spot.cooldownTicks + 2); i++) g.step(1 / 15);
+  for (let i = 0; i < 3 * (RESOURCE_KINDS.fishing_spot.cooldownTicks + 2); i++) g.step(1 / 15);
   expect(g.snapshot().resources.find((r) => r.id === spotId)).toBeDefined();
   expect(g.getPlayerSkills("hero").fishing.xp).toBeGreaterThan(0);
 
