@@ -1,4 +1,5 @@
-import type { MapData } from "@termenor/protocol";
+import { ITEMS } from "@termenor/protocol";
+import type { GroundItem, MapData } from "@termenor/protocol";
 import type { RenderPlayer } from "../game-state";
 import { Kind, type PixelBuffer } from "./types";
 import { TILE_W, TILE_H, ELEV_PX, tileToScreen } from "./iso";
@@ -89,6 +90,7 @@ function drawBillboard(f: IsoFrame, cx: number, cyFeet: number, depth: number, k
 export function rasterizeIso(
   map: MapData, players: RenderPlayer[],
   camOx: number, camOy: number, pxW: number, pxH: number, localId: string | null,
+  ground: GroundItem[] = [],
 ): IsoFrame {
   const f = newIsoFrame(pxW, pxH);
 
@@ -119,6 +121,20 @@ export function rasterizeIso(
     const kind = p.id === localId ? Kind.LOCAL : Kind.PLAYER;
     const rgb = p.id === localId ? LOCAL_RGB : PLAYER_RGB;
     drawBillboard(f, cx, cy, depth, kind, rgb);
+  }
+
+  // ground items — render as small colored sprites, depth = x+y (sits on ground)
+  for (const gi of ground) {
+    const h = map.heights[Math.round(gi.y) * map.width + Math.round(gi.x)] ?? 0;
+    const s = tileToScreen(gi.x, gi.y, h);
+    const cx = s.sx - camOx, cy = s.sy - camOy;
+    const depth = gi.x + gi.y;
+    const entry = ITEMS[gi.item];
+    const rgb: RGB = entry ? entry.color : [200, 200, 200];
+    // draw a 2x2 pixel sprite at the tile center
+    for (let dy = 0; dy < 2; dy++)
+      for (let dx = 0; dx < 2; dx++)
+        plot(f, Math.round(cx + dx - 1), Math.round(cy + dy - 1), depth, Kind.ITEM, rgb, -1);
   }
 
   return f;

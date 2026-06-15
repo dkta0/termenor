@@ -1,4 +1,4 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack } from "@termenor/protocol";
 
 /**
  * How far behind real time we render. ~1.5 server ticks at 15 Hz (~66.7 ms/tick),
@@ -17,15 +17,19 @@ interface Frame { time: number; players: Map<string, PlayerState>; }
 export class GameState {
   map: MapData | null = null;
   localId: string | null = null;
+  ground: GroundItem[] = [];
+  inventory: (ItemStack | null)[] = [];
   private frames: Frame[] = []; // chronological, oldest → newest
 
   setMap(map: MapData): void { this.map = map; }
   setLocalId(id: string): void { this.localId = id; }
+  setInventory(slots: (ItemStack | null)[]): void { this.inventory = slots; }
 
   applySnapshot(snap: SnapshotMsg, now: number): void {
     const players = new Map(snap.players.map((p) => [p.id, p]));
     this.frames.push({ time: now, players });
     if (this.frames.length > MAX_FRAMES) this.frames.shift();
+    this.ground = snap.ground;
   }
 
   /**

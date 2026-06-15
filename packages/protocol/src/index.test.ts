@@ -10,6 +10,7 @@ test("server snapshot round-trips", () => {
   const msg: ServerMsg = {
     t: "snapshot", tick: 5,
     players: [{ id: "a", x: 1.5, y: 2, facing: "east" }],
+    ground: [],
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
@@ -67,4 +68,29 @@ test("chatMsg broadcast round-trips", () => {
 
 test("MAX_CHAT_LEN is 200", () => {
   expect(MAX_CHAT_LEN).toBe(200);
+});
+
+import { ITEMS, INV_SIZE } from "./items";
+import type { GroundItem, ItemStack } from "./items";
+
+test("PickupMsg round-trips", () => {
+  const msg: ClientMsg = { t: "pickup" };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("DropMsg round-trips", () => {
+  const msg: ClientMsg = { t: "drop", slot: 3 };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("InventoryMsg round-trips", () => {
+  const slots: (ItemStack | null)[] = [{ item: "coins", qty: 5 }, null];
+  const msg: ServerMsg = { t: "inventory", slots };
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
+test("SnapshotMsg includes ground array", () => {
+  const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 10, x: 3, y: 4 }];
+  const msg: ServerMsg = { t: "snapshot", tick: 1, players: [], ground };
+  expect(decodeServer(encode(msg))).toEqual(msg);
 });

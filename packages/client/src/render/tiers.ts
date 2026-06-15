@@ -9,6 +9,7 @@ const GLYPH: Record<KindValue, string> = {
   [Kind.PLAYER]: "o",
   [Kind.LOCAL]: "@",
   [Kind.SHADOW]: ",",
+  [Kind.ITEM]: "$",
 };
 
 const pxRgb = (buf: PixelBuffer, i: number): RGB => {

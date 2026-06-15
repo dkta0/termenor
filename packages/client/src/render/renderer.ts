@@ -6,6 +6,7 @@ import {
   type MouseEvent as TuiMouseEvent,
   type OptimizedBuffer,
 } from "@opentui/core";
+import { ITEMS } from "@termenor/protocol";
 import type { GameState } from "../game-state";
 import type { ChatState } from "../chat";
 import { isoCamera, pickTile } from "./camera";
@@ -26,6 +27,10 @@ export interface RendererHooks {
   onMoveTo(x: number, y: number): void;
   /** Called with trimmed chat text when the user submits a chat message. */
   onChat(text: string): void;
+  /** Called when the player presses 'g' to pick up a ground item. */
+  onPickup?(): void;
+  /** Called when the player presses a number key to drop inventory slot `slot`. */
+  onDrop?(slot: number): void;
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
@@ -55,7 +60,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     const center = me ? tileToScreen(me.x, me.y, me.h) : tileToScreen(map.width / 2, map.height / 2, 0);
     const cam = isoCamera(center.sx, center.sy, pxW, pxH);
 
-    const frame = rasterizeIso(map, players, cam.ox, cam.oy, pxW, pxH, state.localId);
+    const frame = rasterizeIso(map, players, cam.ox, cam.oy, pxW, pxH, state.localId, state.ground);
     lastFrame = frame;
     const grid = cellGridFor(tier, frame.buf);
     blit(buffer, grid);
@@ -102,6 +107,28 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         buffer.setCell(cell.col, cell.row, cell.char, CYAN, BLACK);
       }
     }
+
+    // Inventory panel: right edge, list non-empty slots
+    const PANEL_COL = cols - 22;
+    const PANEL_COLOR = RGBA.fromInts(200, 200, 160, 255);
+    buffer.setCell(PANEL_COL, 1, "[", PANEL_COLOR, BLACK);
+    const invLabel = " Inventory ]";
+    for (const cell of textCells(invLabel, PANEL_COL + 1, 1, cols, rows)) {
+      buffer.setCell(cell.col, cell.row, cell.char, PANEL_COLOR, BLACK);
+    }
+    const nonEmpty = state.inventory
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => s !== null);
+    const maxSlots = Math.min(nonEmpty.length, rows - 4);
+    for (let row = 0; row < maxSlots; row++) {
+      const { s, i } = nonEmpty[row];
+      if (!s) continue;
+      const entry = ITEMS[s.item];
+      const label = `${i + 1}: ${entry?.name ?? s.item} x${s.qty}`;
+      for (const cell of textCells(label, PANEL_COL, row + 2, cols, rows)) {
+        buffer.setCell(cell.col, cell.row, cell.char, PANEL_COLOR, BLACK);
+      }
+    }
   });
 
   renderer.root.onMouseDown = (e: TuiMouseEvent) => {
@@ -134,6 +161,11 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       chat.open();
       return;
     }
+
+    // Inventory keys
+    if (key.name === "g") { hooks.onPickup?.(); return; }
+    const numMatch = /^([1-9])$/.exec(key.name ?? "");
+    if (numMatch) { hooks.onDrop?.(parseInt(numMatch[1], 10) - 1); return; }
 
     // Arrow key movement
     const d = arrowDelta(key.name);

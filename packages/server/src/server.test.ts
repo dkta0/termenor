@@ -258,3 +258,155 @@ test("unauthenticated chat is silently ignored", async () => {
   expect(client.messages).toHaveLength(0);
   client.close();
 });
+
+// ---------------------------------------------------------------------------
+// Inventory integration tests
+// Each test uses its own startServer(0, ":memory:") for isolation.
+// SEED_ITEMS: coins(25,24), logs(23,24), shrimp(24,25) — all 1 tile from spawn(24,24)
+// SPEED = 5 tiles/s → 1 tile ≈ 200ms; wait 800ms to be safe
+// INV_SIZE = 28
+// ---------------------------------------------------------------------------
+
+test("inventory on login: server sends inventory of length 28, all null", async () => {
+  srv = startServer(0, ":memory:");
+
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  client.send(JSON.stringify({ t: "login", username: "inv_login_user", password: "pw" }));
+  await client.waitForMessage("welcome");
+
+  const inv = await client.waitForMessage("inventory");
+  const slots = inv.slots as Array<unknown>;
+  expect(Array.isArray(slots)).toBe(true);
+  expect(slots).toHaveLength(28);
+  expect(slots.every((s) => s === null)).toBe(true);
+  client.close();
+});
+
+test("snapshot carries ground: snapshot includes seeded items", async () => {
+  srv = startServer(0, ":memory:");
+
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  client.send(JSON.stringify({ t: "login", username: "snap_ground_user", password: "pw" }));
+  await client.waitForMessage("welcome");
+
+  const snap = await client.waitForMessage("snapshot");
+  const ground = snap.ground as Array<{ item: string; x: number; y: number; qty: number }>;
+  expect(Array.isArray(ground)).toBe(true);
+  // At least one seeded item must be present
+  expect(ground.length).toBeGreaterThanOrEqual(1);
+  // coins at (25,24) should be there
+  const coins = ground.find((g) => g.item === "coins" && g.x === 25 && g.y === 24);
+  expect(coins).toBeDefined();
+  expect(coins!.qty).toBe(25);
+  client.close();
+});
+
+test("pickup: moving onto a seeded item and picking it up fills inventory", async () => {
+  srv = startServer(0, ":memory:");
+
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  client.send(JSON.stringify({ t: "login", username: "pickup_user", password: "pw" }));
+  await client.waitForMessage("welcome");
+  // Discard the initial inventory message
+  await client.waitForMessage("inventory");
+
+  // Move to coins at (25, 24) — 1 tile east of spawn
+  client.send(JSON.stringify({ t: "moveTo", x: 25, y: 24 }));
+  await sleep(800); // wait for arrival (1 tile at 5 tiles/s ≈ 200ms; 800ms is safe)
+
+  client.send(JSON.stringify({ t: "pickup" }));
+
+  // Wait for a non-empty inventory message
+  const inv = await client.waitForMessage("inventory", 3000);
+  const slots = inv.slots as Array<{ item: string; qty: number } | null>;
+  const coinSlot = slots.find((s) => s?.item === "coins");
+  expect(coinSlot).toBeDefined();
+  expect(coinSlot!.qty).toBeGreaterThan(0);
+
+  // Verify coins are gone from ground in the next snapshot
+  const snap = await client.waitForMessage("snapshot", 3000);
+  const ground = snap.ground as Array<{ item: string; x: number; y: number }>;
+  const coinsOnGround = ground.find((g) => g.item === "coins" && g.x === 25 && g.y === 24);
+  expect(coinsOnGround).toBeUndefined();
+
+  client.close();
+}, 10_000);
+
+test("drop: dropping an item puts it back on ground at player's tile", async () => {
+  srv = startServer(0, ":memory:");
+
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  client.send(JSON.stringify({ t: "login", username: "drop_user", password: "pw" }));
+  await client.waitForMessage("welcome");
+  // Discard initial inventory (all null)
+  await client.waitForMessage("inventory");
+
+  // Move to logs at (23, 24) and pick them up
+  client.send(JSON.stringify({ t: "moveTo", x: 23, y: 24 }));
+  await sleep(800);
+  client.send(JSON.stringify({ t: "pickup" }));
+
+  // Wait for filled inventory after pickup
+  const invAfterPickup = await client.waitForMessage("inventory", 3000);
+  const slotsAfterPickup = invAfterPickup.slots as Array<{ item: string; qty: number } | null>;
+  const logSlotIdx = slotsAfterPickup.findIndex((s) => s?.item === "logs");
+  expect(logSlotIdx).toBeGreaterThanOrEqual(0);
+
+  // Drop that slot
+  client.send(JSON.stringify({ t: "drop", slot: logSlotIdx }));
+
+  // After drop, inventory should show that slot as null
+  const invAfterDrop = await client.waitForMessage("inventory", 3000);
+  const slotsAfterDrop = invAfterDrop.slots as Array<{ item: string; qty: number } | null>;
+  expect(slotsAfterDrop[logSlotIdx]).toBeNull();
+
+  // Dropped item appears in ground in the next snapshot
+  const snap = await client.waitForMessage("snapshot", 3000);
+  const ground = snap.ground as Array<{ item: string; x: number; y: number }>;
+  const logsOnGround = ground.find((g) => g.item === "logs" && g.x === 23 && g.y === 24);
+  expect(logsOnGround).toBeDefined();
+
+  client.close();
+}, 10_000);
+
+test("persist across reconnect: inventory survives disconnect and reconnect", async () => {
+  srv = startServer(0, ":memory:");
+
+  // --- Session 1: pick up shrimp at (24, 25) ---
+  const c1 = wsClient(srv.port);
+  await c1.waitForOpen();
+  c1.send(JSON.stringify({ t: "login", username: "persist_user", password: "pw" }));
+  await c1.waitForMessage("welcome");
+  await c1.waitForMessage("inventory"); // discard initial empty inventory
+
+  c1.send(JSON.stringify({ t: "moveTo", x: 24, y: 25 }));
+  await sleep(800); // wait for arrival at shrimp tile
+  c1.send(JSON.stringify({ t: "pickup" }));
+
+  const invAfterPickup = await c1.waitForMessage("inventory", 3000);
+  const slotsAfterPickup = invAfterPickup.slots as Array<{ item: string; qty: number } | null>;
+  expect(slotsAfterPickup.some((s) => s !== null)).toBe(true);
+
+  c1.close();
+  await sleep(200); // let disconnect handler save state to DB
+
+  // --- Session 2: reconnect and verify inventory restored ---
+  const c2 = wsClient(srv.port);
+  await c2.waitForOpen();
+  c2.send(JSON.stringify({ t: "login", username: "persist_user", password: "pw" }));
+  await c2.waitForMessage("welcome");
+
+  const restoredInv = await c2.waitForMessage("inventory", 3000);
+  const restoredSlots = restoredInv.slots as Array<{ item: string; qty: number } | null>;
+  expect(restoredSlots.some((s) => s !== null)).toBe(true);
+
+  const shrimpSlot = restoredSlots.find((s) => s?.item === "shrimp");
+  expect(shrimpSlot).toBeDefined();
+  expect(shrimpSlot!.qty).toBeGreaterThan(0);
+
+  c2.close();
+}, 15_000);
