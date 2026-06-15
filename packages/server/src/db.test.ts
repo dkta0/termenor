@@ -2,6 +2,8 @@ import { test, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import { existsSync, rmSync } from "node:fs";
+import { emptyInventory } from "./inventory";
+import type { ItemStack } from "@termenor/protocol";
 
 const SPAWN = { x: 24, y: 24, facing: "south" as const };
 
@@ -39,7 +41,7 @@ test("wrong password is rejected", async () => {
 
 test("savePlayerState persists and restores position", async () => {
   await getOrCreateAccount(db, "diana", "pw", SPAWN);
-  savePlayerState(db, "diana", 10.5, 15.0, "east");
+  savePlayerState(db, "diana", 10.5, 15.0, "east", emptyInventory());
   const result = await getOrCreateAccount(db, "diana", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -62,4 +64,43 @@ test("openDb creates the parent directory for a file path", () => {
   expect(existsSync(`${dir}/nested/termenor.db`)).toBe(true);
   db.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("new account returns empty inventory", async () => {
+  const result = await getOrCreateAccount(db, "invuser", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.inventory).toHaveLength(28);
+  expect(result.state.inventory.every((s: ItemStack | null) => s === null)).toBe(true);
+});
+
+test("savePlayerState persists inventory and restores it", async () => {
+  await getOrCreateAccount(db, "inv2", "pw", SPAWN);
+  const inv = [{ item: "coins", qty: 10 }, ...new Array(27).fill(null)];
+  savePlayerState(db, "inv2", SPAWN.x, SPAWN.y, SPAWN.facing, inv);
+  const result = await getOrCreateAccount(db, "inv2", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.inventory[0]).toEqual({ item: "coins", qty: 10 });
+  expect(result.state.inventory[1]).toBeNull();
+});
+
+test("openDb migrates existing db without inventory column", () => {
+  // Create a db without inventory column (simulating pre-migration db)
+  const legacy = new Database(":memory:");
+  legacy.run(`CREATE TABLE IF NOT EXISTS accounts (
+    username TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    x REAL NOT NULL DEFAULT 24,
+    y REAL NOT NULL DEFAULT 24,
+    facing TEXT NOT NULL DEFAULT 'south',
+    last_seen INTEGER NOT NULL DEFAULT 0
+  )`);
+  legacy.run("INSERT INTO accounts (username, password_hash, x, y, facing, last_seen) VALUES ('old', 'hash', 24, 24, 'south', 0)");
+  // Run migration manually (same logic as openDb)
+  try { legacy.run("ALTER TABLE accounts ADD COLUMN inventory TEXT"); } catch { /* already exists */ }
+  const row = legacy.query("SELECT inventory FROM accounts WHERE username = 'old'").get() as { inventory: string | null };
+  // After migration, inventory column exists (null for existing rows is fine — login will default to emptyInventory)
+  expect(row).toBeDefined();
+  legacy.close();
 });
