@@ -447,3 +447,29 @@ test("snapshot includes live resources but not depleted ones", () => {
   }
   expect(g.snapshot().resources.find((r) => r.id === resId)).toBeUndefined();
 });
+
+test("integration: new player chops a tree to depletion, gains logs+xp, tree respawns at its spot", () => {
+  const g = new Game(open, { x: 0, y: 0 }, () => 0.5);
+  g.addPlayer("hero"); // brand-new player → starter bronze_axe
+  const resId = g.spawnResource("tree", 1, 0); // adjacent to spawn
+  g.gather("hero", resId);
+  // chop until depleted: TREE_CHARGES chops, each gated by gather cooldown
+  let depleted = false;
+  for (let i = 0; i < TREE_CHARGES * 40 && !depleted; i++) {
+    g.step(1 / 15);
+    if (!g.snapshot().resources.find((r) => r.id === resId)) depleted = true;
+  }
+  expect(depleted).toBe(true);
+  const inv = g.getInventory("hero")!;
+  const logCount = inv.reduce((n, s) => n + (s?.item === "logs" ? s.qty : 0), 0);
+  expect(logCount).toBe(TREE_CHARGES);
+  expect(g.getPlayerSkills("hero").woodcutting.xp).toBe(TREE_CHARGES * WOODCUTTING_XP_PER_LOG);
+  // respawns at its spot after the respawn timer
+  let respawned = false;
+  for (let i = 0; i < RESOURCE_RESPAWN_TICKS + 5 && !respawned; i++) {
+    g.step(1 / 15);
+    const r = g.snapshot().resources.find((x) => x.id === resId);
+    if (r && r.x === 1 && r.y === 0) respawned = true;
+  }
+  expect(respawned).toBe(true);
+});
