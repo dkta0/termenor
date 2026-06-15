@@ -41,7 +41,7 @@ test("wrong password is rejected", async () => {
 
 test("savePlayerState persists and restores position", async () => {
   await getOrCreateAccount(db, "diana", "pw", SPAWN);
-  savePlayerState(db, "diana", 10.5, 15.0, "east", emptyInventory(), {});
+  savePlayerState(db, "diana", 10.5, 15.0, "east", emptyInventory(), {}, []);
   const result = await getOrCreateAccount(db, "diana", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -77,7 +77,7 @@ test("new account returns empty inventory", async () => {
 test("savePlayerState persists inventory and restores it", async () => {
   await getOrCreateAccount(db, "inv2", "pw", SPAWN);
   const inv = [{ item: "coins", qty: 10 }, ...new Array(27).fill(null)];
-  savePlayerState(db, "inv2", SPAWN.x, SPAWN.y, SPAWN.facing, inv, {});
+  savePlayerState(db, "inv2", SPAWN.x, SPAWN.y, SPAWN.facing, inv, {}, []);
   const result = await getOrCreateAccount(db, "inv2", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -115,7 +115,7 @@ test("new account returns empty skills", async () => {
 test("savePlayerState persists skills and restores them", async () => {
   await getOrCreateAccount(db, "woodcutter", "pw", SPAWN);
   const skills = { woodcutting: 100 };
-  savePlayerState(db, "woodcutter", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), skills);
+  savePlayerState(db, "woodcutter", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), skills, []);
   const result = await getOrCreateAccount(db, "woodcutter", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -163,4 +163,30 @@ test("login mode succeeds with correct password", async () => {
   await getOrCreateAccount(db, "loginok", "pw", SPAWN, "register");
   const result = await getOrCreateAccount(db, "loginok", "pw", SPAWN, "login");
   expect(result.ok).toBe(true);
+});
+
+test("new account returns empty bank", async () => {
+  const result = await getOrCreateAccount(db, "bankuser", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.bank).toEqual([]);
+});
+
+test("savePlayerState persists bank and restores it", async () => {
+  await getOrCreateAccount(db, "banker", "pw", SPAWN);
+  const bank: ItemStack[] = [{ item: "logs", qty: 50 }];
+  savePlayerState(db, "banker", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), {}, bank);
+  const result = await getOrCreateAccount(db, "banker", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.bank).toEqual([{ item: "logs", qty: 50 }]);
+});
+
+test("NULL or corrupt bank column yields empty bank", async () => {
+  await getOrCreateAccount(db, "corruptbank", "pw", SPAWN);
+  db.run("UPDATE accounts SET bank = 'not json' WHERE username = ?", ["corruptbank"]);
+  const result = await getOrCreateAccount(db, "corruptbank", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.bank).toEqual([]);
 });

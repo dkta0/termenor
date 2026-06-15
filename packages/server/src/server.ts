@@ -134,7 +134,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
         const { username } = ws.data;
         if (username === null) return;
         const state = game.getPlayerState(username);
-        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {});
+        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, []);
         game.removePlayer(username);
         online.delete(username);
         sockets.delete(username);
@@ -169,7 +169,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
       // persist all currently online players
       for (const username of online) {
         const state = game.getPlayerState(username);
-        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {});
+        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, []);
       }
     }
   }, 1000 / TICK_RATE);
