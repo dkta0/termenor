@@ -11,7 +11,7 @@ const GATHER_COOLDOWN_TICKS = 30;
 const FIREMAKING_XP = 40;
 const COOKING_XP = 30;
 
-interface Player {
+interface PlayerEntity {
   id: string;
   x: number;
   y: number;
@@ -27,7 +27,7 @@ interface Player {
   gatherCd: number;
 }
 
-interface Resource {
+interface ResourceEntity {
   id: string;
   type: string;
   x: number;
@@ -38,7 +38,7 @@ interface Resource {
   deadUntil: number; // -1 = alive; >= 0 = respawn at this tick
 }
 
-interface Npc {
+interface NpcEntity {
   id: string;
   type: string;
   x: number;
@@ -67,15 +67,15 @@ export interface RestoredState {
 export class Game {
   readonly map: MapData;
   private spawn: Point;
-  private players = new Map<string, Player>();
+  private players = new Map<string, PlayerEntity>();
   private tick = 0;
   private groundItems: GroundItem[] = [];
   private nextItemId = 1;
-  private npcs: Npc[] = [];
+  private npcs: NpcEntity[] = [];
   private nextNpcId = 1;
   private rng: () => number;
   private hits: HitEvent[] = [];
-  private resources: Resource[] = [];
+  private resources: ResourceEntity[] = [];
   private nextResourceId = 1;
   private skillChanged = new Set<string>();
   private levelUps: { id: string; skill: string; level: number }[] = [];
@@ -478,7 +478,7 @@ export class Game {
     // unknown action: ignore
   }
 
-  private awardXp(p: Player, skill: string, amount: number): void {
+  private awardXp(p: PlayerEntity, skill: string, amount: number): void {
     const oldXp = p.skills[skill] ?? 0;
     const newXp = oldXp + amount;
     p.skills = { ...p.skills, [skill]: newXp };
@@ -488,7 +488,7 @@ export class Game {
     this.skillChanged.add(p.id);
   }
 
-  private hasItem(p: Player, item: string): boolean {
+  private hasItem(p: PlayerEntity, item: string): boolean {
     return p.inventory.some((s) => s !== null && s.item === item);
   }
 
