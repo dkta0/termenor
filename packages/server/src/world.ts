@@ -47,3 +47,11 @@ export const SEED_ITEMS: SeedItem[] = [
   { item: "logs",   qty: 3,  x: 23, y: 24 },
   { item: "shrimp", qty: 5,  x: 24, y: 25 },
 ];
+
+export interface NpcSpawn { type: string; x: number; y: number; radius: number; }
+
+/** NPC spawns near the player start so they're visible immediately. */
+export const NPC_SPAWNS: NpcSpawn[] = [
+  { type: "goblin", x: 28, y: 22, radius: 4 },
+  { type: "rat",    x: 21, y: 27, radius: 3 },
+];
