@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type { Facing } from "@termenor/protocol";
 
 export interface PlayerStateRecord {
@@ -8,6 +10,8 @@ export interface PlayerStateRecord {
 }
 
 export function openDb(path: string): Database {
+  // bun:sqlite creates the file but not its parent dir — ensure it exists for file paths
+  if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path, { create: true });
   db.run(`
     CREATE TABLE IF NOT EXISTS accounts (

@@ -1,6 +1,7 @@
 import { test, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
+import { existsSync, rmSync } from "node:fs";
 
 const SPAWN = { x: 24, y: 24, facing: "south" as const };
 
@@ -52,4 +53,13 @@ test("fresh account defaults to spawn facing", async () => {
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(result.state.facing).toBe("south");
+});
+
+test("openDb creates the parent directory for a file path", () => {
+  const dir = `/tmp/termenor-dbtest-${process.pid}`;
+  rmSync(dir, { recursive: true, force: true });
+  const db = openDb(`${dir}/nested/termenor.db`);
+  expect(existsSync(`${dir}/nested/termenor.db`)).toBe(true);
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
 });
