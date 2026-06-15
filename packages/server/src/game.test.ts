@@ -278,3 +278,18 @@ test("a targeted npc pursues instead of wandering away", () => {
   const now = g.snapshot().npcs.find((n) => n.id === npcId)!;
   expect(Math.hypot(now.x - 0, now.y - 0)).toBeLessThanOrEqual(Math.hypot(start.x - 0, start.y - 0));
 });
+
+test("integration: command attack, kill the goblin, it respawns at home", () => {
+  const g = new Game(open, { x: 0, y: 0 }, () => 0.999);
+  g.addPlayer("hero");
+  g.spawnNpc("goblin", 2, 0, 1);
+  const id = g.snapshot().npcs[0].id;
+  g.attack("hero", id);
+  let respawned = false;
+  for (let i = 0; i < ATTACK_COOLDOWN_TICKS * 6 + RESPAWN_TICKS + 5; i++) {
+    g.step(1 / 15);
+    const npcs = g.snapshot().npcs;
+    if (npcs.length === 1 && npcs[0].hp === npcs[0].maxHp && npcs[0].x === 2 && npcs[0].y === 0) respawned = true;
+  }
+  expect(respawned).toBe(true);
+});
