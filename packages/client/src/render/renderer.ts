@@ -124,7 +124,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       } else if (key.name === "backspace") {
         chat.backspace();
       } else {
-        chat.type(key.name ?? "");
+        chat.type(key.sequence ?? key.name ?? ""); // sequence carries the real glyph (space, uppercase)
       }
       return; // always return early — block arrows/mouse movement while typing
     }
