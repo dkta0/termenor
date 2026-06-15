@@ -1,8 +1,13 @@
-import { decodeClient, encode } from "@termenor/protocol";
+import { decodeClient, encode, MAX_CHAT_LEN } from "@termenor/protocol";
 import { Game } from "./game";
 import { createDefaultMap, SPAWN } from "./world";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import type { Database } from "bun:sqlite";
+
+/** Trim whitespace then truncate to MAX_CHAT_LEN. Returns "" for blank input. */
+export function sanitizeChat(text: string): string {
+  return text.trim().slice(0, MAX_CHAT_LEN);
+}
 
 const TICK_RATE = 15;
 const SAVE_INTERVAL_TICKS = TICK_RATE * 5; // save all online players every ~5 seconds
@@ -87,7 +92,12 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
         }
 
         // authenticated — handle game messages
-        if (msg.t === "moveTo") game.queueMove(ws.data.username, msg.x, msg.y);
+        if (msg.t === "moveTo") {
+          game.queueMove(ws.data.username, msg.x, msg.y);
+        } else if (msg.t === "chat") {
+          const text = sanitizeChat(msg.text);
+          if (text) server.publish("world", encode({ t: "chatMsg", from: ws.data.username, text }));
+        }
       },
       close(ws) {
         const { username } = ws.data;
