@@ -1,4 +1,4 @@
-import { decodeServer, encode, type MoveToMsg } from "@termenor/protocol";
+import { decodeServer, encode, type MoveToMsg, type ChatMsg } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
 /** Minimal socket surface so tests can inject a mock. */
@@ -18,6 +18,7 @@ export interface ConnectionOpts {
   username: string;
   password: string;
   onLoginError?: (reason: string) => void;
+  onChatMsg?: (from: string, text: string) => void;
 }
 
 /** Adapts the browser/Bun WebSocket to SocketLike. */
@@ -41,6 +42,7 @@ export class Connection {
   private readonly username: string;
   private readonly password: string;
   private readonly onLoginError: (reason: string) => void;
+  private readonly onChatMsg: (from: string, text: string) => void;
   private closedByUser = false;
 
   constructor(
@@ -57,6 +59,7 @@ export class Connection {
       console.error(`Login failed: ${reason}`);
       process.exit(1);
     });
+    this.onChatMsg = opts.onChatMsg ?? (() => {});
   }
 
   connect(): void {
@@ -73,6 +76,11 @@ export class Connection {
 
   sendMoveTo(x: number, y: number): void {
     const msg: MoveToMsg = { t: "moveTo", x, y };
+    this.sock?.send(encode(msg));
+  }
+
+  sendChat(text: string): void {
+    const msg: ChatMsg = { t: "chat", text };
     this.sock?.send(encode(msg));
   }
 
@@ -96,6 +104,8 @@ export class Connection {
       );
     } else if (msg.t === "snapshot") {
       this.state.applySnapshot(msg, this.now());
+    } else if (msg.t === "chatMsg") {
+      this.onChatMsg(msg.from, msg.text);
     }
   }
 }
