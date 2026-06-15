@@ -1,19 +1,16 @@
 import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState } from "@termenor/protocol";
-import { NPC_KINDS, PLAYER_MAX_HP, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
+import { NPC_KINDS, PLAYER_MAX_HP, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, SKILLS } from "@termenor/protocol";
 import { type Point } from "./pathfinding";
-import { emptyInventory, addToInventory, removeSlot } from "./inventory";
-import { isAdjacent } from "./combat";
+import { emptyInventory, addToInventory } from "./inventory";
 import type { PlayerEntity, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
-import { awardXp } from "./skills-system";
 import * as invSys from "./inventory-system";
 import * as moveSys from "./movement-system";
 import * as combatSys from "./combat-system";
 import * as resourceSys from "./resource-system";
 import * as gatherSys from "./gather-system";
+import * as actionSys from "./action-system";
 
 const GATHER_COOLDOWN_TICKS = 30;
-const FIREMAKING_XP = 40;
-const COOKING_XP = 30;
 
 export interface RestoredState {
   x: number;
@@ -36,7 +33,7 @@ export class GameWorld {
   hits: HitEvent[] = [];
   resources: ResourceEntity[] = [];
   fires: FireEntity[] = [];
-  private nextResourceId = 1;
+  nextResourceId = 1;
   events: GameEvents = { skillChanged: new Set(), levelUps: [], gatherNotices: [] };
 
   constructor(map: MapData, spawn: Point, rng: () => number = Math.random) {
@@ -150,86 +147,12 @@ export class GameWorld {
     return id;
   }
 
-  private spawnFire(x: number, y: number): void {
-    const id = `res-${this.nextResourceId++}`;
-    this.fires.push({ id, x, y, expiresAt: this.tick + FIRE_LIFETIME_TICKS });
-  }
-
   gather(playerId: string, targetId: string): void {
     gatherSys.setGatherTarget(this, playerId, targetId);
   }
 
   use(playerId: string, action: string, slot: number): void {
-    const p = this.players.get(playerId);
-    if (!p) return;
-    if (slot < 0 || slot >= p.inventory.length) return;
-    const stack = p.inventory[slot];
-
-    if (action === "firemaking") {
-      if (stack?.item !== "logs") {
-        this.events.gatherNotices.push({ id: p.id, text: "You need logs to make a fire." });
-        return;
-      }
-      if (!gatherSys.hasItem(p, "tinderbox")) {
-        this.events.gatherNotices.push({ id: p.id, text: "You need a tinderbox to make a fire." });
-        return;
-      }
-      const px = Math.round(p.x);
-      const py = Math.round(p.y);
-      const fireAlreadyHere = this.fires.some(
-        (f) => f.x === px && f.y === py && this.tick < f.expiresAt,
-      );
-      if (fireAlreadyHere) {
-        this.events.gatherNotices.push({ id: p.id, text: "There is already a fire here." });
-        return;
-      }
-      // Consume one log
-      if (stack.qty === 1) {
-        const { slots } = removeSlot(p.inventory, slot);
-        p.inventory = slots;
-      } else {
-        p.inventory[slot] = { item: stack.item, qty: stack.qty - 1 };
-      }
-      this.spawnFire(px, py);
-      awardXp(this.events, p, "firemaking", FIREMAKING_XP);
-      return;
-    }
-
-    if (action === "cooking") {
-      if (stack?.item !== "raw_shrimp") {
-        this.events.gatherNotices.push({ id: p.id, text: "You need raw shrimp to cook." });
-        return;
-      }
-      const hasAdjacentFire = this.fires.some(
-        (f) => this.tick < f.expiresAt && isAdjacent(p, f),
-      );
-      if (!hasAdjacentFire) {
-        this.events.gatherNotices.push({ id: p.id, text: "You need to be next to a fire to cook." });
-        return;
-      }
-      const { slots: cookedSlots, leftover } = addToInventory(p.inventory, { item: "cooked_shrimp", qty: 1 });
-      if (leftover !== null) {
-        this.events.gatherNotices.push({ id: p.id, text: "Your inventory is full." });
-        return;
-      }
-      // Consume one raw_shrimp from the updated slots (cooked_shrimp already added)
-      const rawIdx = cookedSlots.findIndex((s) => s?.item === "raw_shrimp");
-      if (rawIdx !== -1) {
-        const rawStack = cookedSlots[rawIdx]!;
-        if (rawStack.qty === 1) {
-          const { slots: finalSlots } = removeSlot(cookedSlots, rawIdx);
-          p.inventory = finalSlots;
-        } else {
-          cookedSlots[rawIdx] = { item: rawStack.item, qty: rawStack.qty - 1 };
-          p.inventory = cookedSlots;
-        }
-      } else {
-        p.inventory = cookedSlots;
-      }
-      awardXp(this.events, p, "cooking", COOKING_XP);
-      return;
-    }
-    // unknown action: ignore
+    actionSys.use(this, playerId, action, slot);
   }
 
   getPlayerSkills(id: string): Record<string, { xp: number; level: number }> {
