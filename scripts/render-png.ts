@@ -40,7 +40,7 @@ for (let i = 0; i < N; i++) {
   const me = players.find((p) => p.id === state.localId);
   const center = me ? tileToScreen(me.x, me.y, me.h) : tileToScreen(map.width / 2, map.height / 2, 0);
   const cam = isoCamera(center.sx, center.sy, PXW, PXH);
-  const frame = rasterizeIso(map, players, cam.ox, cam.oy, PXW, PXH, state.localId);
+  const frame = rasterizeIso(map, players, cam.ox, cam.oy, PXW, PXH, state.localId, state.ground);
   const ppm = `/tmp/termenor-f${String(i).padStart(2, "0")}.ppm`;
   await writePPM(ppm, PXW, PXH, frame.buf.rgb);
   frames.push(ppm);
