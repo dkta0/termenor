@@ -35,7 +35,14 @@ interface ResourceEntity {
   home: Point;
   charges: number;
   maxCharges: number;
-  deadUntil: number; // -1 = alive; >= 0 = respawn at this tick
+  respawnAt: number; // -1 = alive; >= 0 = respawn at this tick
+}
+
+interface FireEntity {
+  id: string;
+  x: number;
+  y: number;
+  expiresAt: number; // tick at which the fire goes out
 }
 
 interface NpcEntity {
@@ -53,7 +60,7 @@ interface NpcEntity {
   maxHit: number;
   target: string | null;
   attackCd: number;
-  deadUntil: number; // -1 = alive; >= 0 = respawn at this tick
+  respawnAt: number; // -1 = alive; >= 0 = respawn at this tick
 }
 
 export interface RestoredState {
@@ -76,6 +83,7 @@ export class Game {
   private rng: () => number;
   private hits: HitEvent[] = [];
   private resources: ResourceEntity[] = [];
+  private fires: FireEntity[] = [];
   private nextResourceId = 1;
   private skillChanged = new Set<string>();
   private levelUps: { id: string; skill: string; level: number }[] = [];
@@ -125,14 +133,14 @@ export class Game {
       maxHit,
       target: null,
       attackCd: 0,
-      deadUntil: -1,
+      respawnAt: -1,
     });
   }
 
   attack(playerId: string, targetId: string): void {
     const p = this.players.get(playerId);
     if (!p) return;
-    const npc = this.npcs.find((n) => n.id === targetId && n.deadUntil < 0);
+    const npc = this.npcs.find((n) => n.id === targetId && n.respawnAt < 0);
     if (!npc) return;
     p.target = targetId;
     npc.target = playerId;   // aggro: a targeted NPC pursues + stops wandering (spec 2.4)
@@ -161,9 +169,9 @@ export class Game {
 
     // Respawn dead NPCs whose timer has expired
     for (const npc of this.npcs) {
-      if (npc.deadUntil >= 0 && this.tick >= npc.deadUntil) {
+      if (npc.respawnAt >= 0 && this.tick >= npc.respawnAt) {
         npc.x = npc.home.x; npc.y = npc.home.y; npc.path = [];
-        npc.hp = npc.maxHp; npc.target = null; npc.attackCd = 0; npc.deadUntil = -1;
+        npc.hp = npc.maxHp; npc.target = null; npc.attackCd = 0; npc.respawnAt = -1;
       }
     }
 
@@ -172,14 +180,14 @@ export class Game {
       advanceAlongPath(p, SPEED * dt);
     }
     for (const npc of this.npcs) {
-      if (npc.deadUntil >= 0) continue;
+      if (npc.respawnAt >= 0) continue;
       advanceAlongPath(npc, NPC_SPEED * dt);
     }
 
     // NPC wander AI: idle NPCs past their wander timer pick a new target
     // Skip dead NPCs and NPCs that have a combat target
     for (const npc of this.npcs) {
-      if (npc.deadUntil >= 0) continue;
+      if (npc.respawnAt >= 0) continue;
       if (npc.target) continue;          // combat overrides wander
       if (npc.path.length > 0) continue; // still walking
       if (this.tick < npc.nextWanderTick) continue; // still idling
@@ -202,30 +210,31 @@ export class Game {
     // Combat pass: players attack npcs, npcs attack their target
     for (const p of this.players.values()) {
       if (p.attackCd > 0) p.attackCd--;
-      this.combatStep(p, (id) => this.npcs.find((n) => n.id === id && n.deadUntil < 0) ?? null, PLAYER_MAX_HIT);
+      this.combatStep(p, (id) => this.npcs.find((n) => n.id === id && n.respawnAt < 0) ?? null, PLAYER_MAX_HIT);
     }
     for (const npc of this.npcs) {
-      if (npc.deadUntil >= 0) continue;
+      if (npc.respawnAt >= 0) continue;
       if (npc.attackCd > 0) npc.attackCd--;
       this.combatStep(npc, (id) => this.players.get(id) ?? null, npc.maxHit);
     }
 
     this.resolveDeaths();
 
-    // Respawn depleted gatherables; remove expired fires
+    // Respawn depleted gatherables
     for (const res of this.resources) {
-      if (res.type !== "fire" && res.deadUntil >= 0 && this.tick >= res.deadUntil) {
+      if (res.respawnAt >= 0 && this.tick >= res.respawnAt) {
         res.charges = res.maxCharges;
-        res.deadUntil = -1;
+        res.respawnAt = -1;
       }
     }
-    this.resources = this.resources.filter((r) => !(r.type === "fire" && this.tick >= r.deadUntil));
+    // Expire fires
+    this.fires = this.fires.filter((f) => this.tick < f.expiresAt);
 
     // Gather pass
     for (const p of this.players.values()) {
       if (!p.gatherTarget) continue;
       if (p.gatherCd > 0) p.gatherCd--;
-      const res = this.resources.find((r) => r.id === p.gatherTarget && r.deadUntil < 0);
+      const res = this.resources.find((r) => r.id === p.gatherTarget && r.respawnAt < 0);
       if (!res) { p.gatherTarget = null; continue; }
       const cfg = RESOURCE_KINDS[res.type];
       if (!cfg || cfg.gatherable === false) { p.gatherTarget = null; continue; }
@@ -250,7 +259,7 @@ export class Game {
           if (!cfg.infinite) {
             res.charges--;
             if (res.charges <= 0) {
-              res.deadUntil = this.tick + cfg.respawnTicks;
+              res.respawnAt = this.tick + cfg.respawnTicks;
               // clear all players targeting this depleted resource
               for (const other of this.players.values()) {
                 if (other.gatherTarget === res.id) other.gatherTarget = null;
@@ -307,8 +316,8 @@ export class Game {
 
   private resolveDeaths(): void {
     for (const npc of this.npcs) {
-      if (npc.deadUntil < 0 && npc.hp <= 0) {
-        npc.deadUntil = this.tick + RESPAWN_TICKS;
+      if (npc.respawnAt < 0 && npc.hp <= 0) {
+        npc.respawnAt = this.tick + RESPAWN_TICKS;
         npc.path = []; npc.target = null;
         for (const p of this.players.values()) if (p.target === npc.id) p.target = null;
         for (const other of this.npcs) if (other.target === npc.id) other.target = null;
@@ -388,19 +397,19 @@ export class Game {
     const id = `res-${this.nextResourceId++}`;
     const cfg = RESOURCE_KINDS[type];
     const charges = cfg?.charges ?? 0;
-    this.resources.push({ id, type, x, y, home: { x, y }, charges, maxCharges: charges, deadUntil: -1 });
+    this.resources.push({ id, type, x, y, home: { x, y }, charges, maxCharges: charges, respawnAt: -1 });
     return id;
   }
 
   private spawnFire(x: number, y: number): void {
     const id = `res-${this.nextResourceId++}`;
-    this.resources.push({ id, type: "fire", x, y, home: { x, y }, charges: 0, maxCharges: 0, deadUntil: this.tick + FIRE_LIFETIME_TICKS });
+    this.fires.push({ id, x, y, expiresAt: this.tick + FIRE_LIFETIME_TICKS });
   }
 
   gather(playerId: string, targetId: string): void {
     const p = this.players.get(playerId);
     if (!p) return;
-    const res = this.resources.find((r) => r.id === targetId && r.deadUntil < 0);
+    const res = this.resources.find((r) => r.id === targetId && r.respawnAt < 0);
     if (!res) return;
     p.gatherTarget = targetId;
   }
@@ -422,8 +431,8 @@ export class Game {
       }
       const px = Math.round(p.x);
       const py = Math.round(p.y);
-      const fireAlreadyHere = this.resources.some(
-        (r) => r.type === "fire" && r.x === px && r.y === py && this.tick < r.deadUntil,
+      const fireAlreadyHere = this.fires.some(
+        (f) => f.x === px && f.y === py && this.tick < f.expiresAt,
       );
       if (fireAlreadyHere) {
         this.gatherNotices.push({ id: p.id, text: "There is already a fire here." });
@@ -446,8 +455,8 @@ export class Game {
         this.gatherNotices.push({ id: p.id, text: "You need raw shrimp to cook." });
         return;
       }
-      const hasAdjacentFire = this.resources.some(
-        (r) => r.type === "fire" && this.tick < r.deadUntil && isAdjacent(p, r),
+      const hasAdjacentFire = this.fires.some(
+        (f) => this.tick < f.expiresAt && isAdjacent(p, f),
       );
       if (!hasAdjacentFire) {
         this.gatherNotices.push({ id: p.id, text: "You need to be next to a fire to cook." });
@@ -525,12 +534,15 @@ export class Game {
     const players: PlayerState[] = [...this.players.values()].map((p) => ({
       id: p.id, x: p.x, y: p.y, facing: p.facing, hp: p.hp, maxHp: p.maxHp,
     }));
-    const npcs: NpcState[] = this.npcs.filter((n) => n.deadUntil < 0).map((n) => ({
+    const npcs: NpcState[] = this.npcs.filter((n) => n.respawnAt < 0).map((n) => ({
       id: n.id, type: n.type, x: n.x, y: n.y, facing: n.facing, hp: n.hp, maxHp: n.maxHp,
     }));
-    const resources: ResourceState[] = this.resources
-      .filter((r) => r.type === "fire" ? this.tick < r.deadUntil : r.deadUntil < 0)
-      .map((r) => ({ id: r.id, type: r.type, x: r.x, y: r.y }));
+    const resources: ResourceState[] = [
+      ...this.resources
+        .filter((r) => r.respawnAt < 0)
+        .map((r) => ({ id: r.id, type: r.type, x: r.x, y: r.y })),
+      ...this.fires.map((f) => ({ id: f.id, type: "fire", x: f.x, y: f.y })),
+    ];
     const hits = this.hits; this.hits = [];
     return { t: "snapshot", tick: this.tick, players, ground: this.groundItems.slice(), npcs, hits, resources };
   }
