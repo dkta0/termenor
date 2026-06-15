@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import type { MapData } from "@termenor/protocol";
+import type { GroundItem } from "@termenor/protocol";
 import { Game } from "./game";
 
 // open 10x1 corridor
@@ -97,4 +98,86 @@ test("getPlayerState returns current x, y, facing", () => {
 test("getPlayerState returns null for unknown player", () => {
   const g = new Game(corridor, { x: 0, y: 0 });
   expect(g.getPlayerState("nobody")).toBeNull();
+});
+
+test("addGroundItem places item in groundItems", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addGroundItem("coins", 10, 2, 0);
+  const snap = g.snapshot();
+  expect(snap.ground).toHaveLength(1);
+  expect(snap.ground[0]).toMatchObject({ item: "coins", qty: 10, x: 2, y: 0 });
+});
+
+test("snapshot.ground is empty when no ground items", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  expect(g.snapshot().ground).toEqual([]);
+});
+
+test("pickup moves ground item at player tile into inventory, returns true", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addPlayer("p1", { x: 2, y: 0, facing: "south" });
+  g.addGroundItem("coins", 5, 2, 0);
+  const changed = g.pickup("p1");
+  expect(changed).toBe(true);
+  expect(g.snapshot().ground).toHaveLength(0);
+  const inv = g.getInventory("p1");
+  expect(inv?.[0]).toEqual({ item: "coins", qty: 5 });
+});
+
+test("pickup on empty tile returns false, no change", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addPlayer("p1", { x: 2, y: 0, facing: "south" });
+  const changed = g.pickup("p1");
+  expect(changed).toBe(false);
+  expect(g.snapshot().ground).toHaveLength(0);
+});
+
+test("pickup with full inventory: leftover stays on ground", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addPlayer("p1", { x: 2, y: 0, facing: "south" });
+  // fill inventory with non-stackable items
+  for (let i = 0; i < 28; i++) g.addGroundItem("bronze_sword", 1, 3, 0);
+  // move player to tile 3,0 and pick up once to seed inventory
+  // simpler: inject state directly via addPlayer with pre-filled inventory
+  const g2 = new Game(corridor, { x: 0, y: 0 });
+  g2.addPlayer("p2", { x: 2, y: 0, facing: "south", inventory: new Array(28).fill({ item: "bronze_sword", qty: 1 }) });
+  g2.addGroundItem("logs", 3, 2, 0);
+  const changed = g2.pickup("p2");
+  expect(changed).toBe(false); // inventory full, nothing could be taken
+  expect(g2.snapshot().ground).toHaveLength(1); // item still on ground
+});
+
+test("drop moves slot item to ground, returns true", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addPlayer("p1", { x: 2, y: 0, facing: "south", inventory: [{ item: "logs", qty: 2 }, ...new Array(27).fill(null)] });
+  const changed = g.drop("p1", 0);
+  expect(changed).toBe(true);
+  expect(g.snapshot().ground).toHaveLength(1);
+  expect(g.snapshot().ground[0]).toMatchObject({ item: "logs", qty: 2, x: 2, y: 0 });
+  expect(g.getInventory("p1")?.[0]).toBeNull();
+});
+
+test("drop of empty slot returns false", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addPlayer("p1", { x: 0, y: 0, facing: "south" });
+  const changed = g.drop("p1", 0);
+  expect(changed).toBe(false);
+});
+
+test("drop slot out of range is ignored, returns false", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  g.addPlayer("p1", { x: 0, y: 0, facing: "south" });
+  expect(g.drop("p1", 999)).toBe(false);
+});
+
+test("getInventory returns null for unknown player", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  expect(g.getInventory("ghost")).toBeNull();
+});
+
+test("addPlayer with saved inventory restores it", () => {
+  const g = new Game(corridor, { x: 0, y: 0 });
+  const inv = [{ item: "coins", qty: 7 }, ...new Array(27).fill(null)];
+  g.addPlayer("alice", { x: 0, y: 0, facing: "south", inventory: inv });
+  expect(g.getInventory("alice")?.[0]).toEqual({ item: "coins", qty: 7 });
 });
