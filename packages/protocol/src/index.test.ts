@@ -18,7 +18,7 @@ test("decodeClient rejects unknown type", () => {
   expect(() => decodeClient(JSON.stringify({ t: "nope" }))).toThrow();
 });
 
-import { MAX_CLIMB } from "./index";
+import { MAX_CLIMB, MAX_CHAT_LEN } from "./index";
 import type { MapData } from "./index";
 
 test("MapData carries a per-tile heights array", () => {
@@ -53,4 +53,18 @@ test("decodeClient rejects hello (removed from ClientMsg)", () => {
   // hello is no longer a valid client message after auth refactor
   // login replaces hello as the first message sent by a client
   expect(() => decodeClient(JSON.stringify({ t: "hello" }))).toThrow();
+});
+
+test("chat message round-trips", () => {
+  const msg = { t: "chat", text: "hello world" } as const;
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("chatMsg broadcast round-trips", () => {
+  const msg = { t: "chatMsg", from: "alice", text: "hi" } as const;
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
+test("MAX_CHAT_LEN is 200", () => {
+  expect(MAX_CHAT_LEN).toBe(200);
 });

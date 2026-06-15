@@ -1,4 +1,5 @@
 import { GameState } from "./game-state";
+import { ChatState } from "./chat";
 import { Connection } from "./connection";
 import { startRenderer } from "./render/renderer";
 
@@ -34,6 +35,7 @@ async function readCredentials(): Promise<{ username: string; password: string }
 const { username, password } = await readCredentials();
 
 const state = new GameState();
+const chatState = new ChatState();
 const conn = new Connection(url, state, {
   username,
   password,
@@ -41,11 +43,13 @@ const conn = new Connection(url, state, {
     console.error(`Login failed: ${reason}`);
     process.exit(1);
   },
+  onChatMsg: (from, text) => chatState.receive(from, text),
 });
 conn.connect();
 
-const handle = await startRenderer(state, {
+const handle = await startRenderer(state, chatState, {
   onMoveTo: (x, y) => conn.sendMoveTo(x, y),
+  onChat: (text) => conn.sendChat(text),
 });
 
 const shutdown = () => { handle.stop(); conn.disconnect(); process.exit(0); };

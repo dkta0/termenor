@@ -146,3 +146,28 @@ test("welcome message seeds local position in GameState", () => {
   }));
   expect(state.localId).toBe("alice");
 });
+
+test("sendChat serializes a chat message", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  conn.sendChat("hello world");
+  expect(sock.lastDecoded()).toEqual({ t: "chat", text: "hello world" });
+});
+
+test("incoming chatMsg invokes onChatMsg callback", () => {
+  const received: Array<{ from: string; text: string }> = [];
+  const sock = new MockSocket();
+  const factory: SocketFactory = () => sock;
+  const gs = new GameState();
+  const conn = new Connection("ws://x", gs, {
+    socketFactory: factory,
+    now: () => 1000,
+    username: "alice",
+    password: "pw",
+    onChatMsg: (from, text) => received.push({ from, text }),
+  });
+  conn.connect();
+  sock.fireOpen();
+  sock.fireMessage(encode({ t: "chatMsg", from: "bob", text: "hi alice" }));
+  expect(received).toEqual([{ from: "bob", text: "hi alice" }]);
+});

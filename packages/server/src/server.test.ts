@@ -188,3 +188,73 @@ test("moveTo before login is ignored — server does not crash; welcome shows sp
   expect(Number(welcome.y)).toBeCloseTo(24, 5);
   client.close();
 });
+
+test("authenticated player's chat is broadcast as chatMsg to all subscribers", async () => {
+  srv = startServer(0, ":memory:");
+
+  const alice = wsClient(srv.port);
+  const bob = wsClient(srv.port);
+  await alice.waitForOpen();
+  await bob.waitForOpen();
+
+  alice.send(JSON.stringify({ t: "login", username: "alice", password: "pw" }));
+  await alice.waitForMessage("welcome");
+
+  bob.send(JSON.stringify({ t: "login", username: "bob", password: "pw" }));
+  await bob.waitForMessage("welcome");
+
+  const aliceChatP = alice.waitForMessage("chatMsg");
+  const bobChatP = bob.waitForMessage("chatMsg");
+
+  alice.send(JSON.stringify({ t: "chat", text: "hello bob" }));
+
+  const aliceMsg = await aliceChatP;
+  const bobMsg = await bobChatP;
+
+  expect(aliceMsg).toMatchObject({ t: "chatMsg", from: "alice", text: "hello bob" });
+  expect(bobMsg).toMatchObject({ t: "chatMsg", from: "alice", text: "hello bob" });
+
+  alice.close();
+  bob.close();
+});
+
+test("empty chat (whitespace-only) is dropped — no chatMsg broadcast", async () => {
+  srv = startServer(0, ":memory:");
+  const alice = wsClient(srv.port);
+  await alice.waitForOpen();
+  alice.send(JSON.stringify({ t: "login", username: "alice", password: "pw" }));
+  await alice.waitForMessage("welcome");
+
+  alice.send(JSON.stringify({ t: "chat", text: "   " }));
+  await sleep(200);
+
+  const chatMsgs = alice.messages.filter((m) => m.includes('"chatMsg"'));
+  expect(chatMsgs).toHaveLength(0);
+  alice.close();
+});
+
+test("over-long chat text is truncated to MAX_CHAT_LEN", async () => {
+  srv = startServer(0, ":memory:");
+  const alice = wsClient(srv.port);
+  await alice.waitForOpen();
+  alice.send(JSON.stringify({ t: "login", username: "alice", password: "pw" }));
+  await alice.waitForMessage("welcome");
+
+  const chatP = alice.waitForMessage("chatMsg");
+  alice.send(JSON.stringify({ t: "chat", text: "x".repeat(500) }));
+  const msg = await chatP;
+  expect(String(msg.text).length).toBe(200);
+  alice.close();
+});
+
+test("unauthenticated chat is silently ignored", async () => {
+  srv = startServer(0, ":memory:");
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+
+  client.send(JSON.stringify({ t: "chat", text: "sneaky" }));
+  await sleep(150);
+
+  expect(client.messages).toHaveLength(0);
+  client.close();
+});

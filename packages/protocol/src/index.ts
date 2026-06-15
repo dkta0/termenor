@@ -21,7 +21,8 @@ export interface PlayerState {
 
 export interface LoginMsg { t: "login"; username: string; password: string; }
 export interface MoveToMsg { t: "moveTo"; x: number; y: number; }
-export type ClientMsg = LoginMsg | MoveToMsg;
+export interface ChatMsg { t: "chat"; text: string; }
+export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg;
 
 export interface WelcomeMsg {
   t: "welcome";
@@ -34,14 +35,17 @@ export interface WelcomeMsg {
 }
 export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; }
 export interface LoginErrorMsg { t: "loginError"; reason: string; }
-export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg;
+export interface ChatBroadcastMsg { t: "chatMsg"; from: string; text: string; }
+export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg | ChatBroadcastMsg;
 
 export function encode(msg: ClientMsg | ServerMsg): string {
   return JSON.stringify(msg);
 }
 
-const CLIENT_TYPES = new Set(["login", "moveTo"]);
-const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError"]);
+export const MAX_CHAT_LEN = 200;
+
+const CLIENT_TYPES = new Set(["login", "moveTo", "chat"]);
+const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg"]);
 
 export function decodeClient(data: string): ClientMsg {
   const obj = JSON.parse(data);
