@@ -5,63 +5,12 @@ import { advanceAlongPath } from "./movement";
 import { pickWanderTarget, NPC_SPEED } from "./npc";
 import { emptyInventory, addToInventory, removeSlot } from "./inventory";
 import { rollDamage, isAdjacent } from "./combat";
+import type { PlayerEntity, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
 
 const SPEED = 5; // tiles per second  → ~200ms per tile
 const GATHER_COOLDOWN_TICKS = 30;
 const FIREMAKING_XP = 40;
 const COOKING_XP = 30;
-
-interface PlayerEntity {
-  id: string;
-  x: number;
-  y: number;
-  facing: Facing;
-  path: Point[]; // remaining waypoints (tile centers)
-  inventory: (ItemStack | null)[];
-  hp: number;
-  maxHp: number;
-  target: string | null;
-  attackCd: number;
-  skills: Record<string, number>; // xp by skill name
-  gatherTarget: string | null;
-  gatherCd: number;
-}
-
-interface ResourceEntity {
-  id: string;
-  type: string;
-  x: number;
-  y: number;
-  home: Point;
-  charges: number;
-  maxCharges: number;
-  respawnAt: number; // -1 = alive; >= 0 = respawn at this tick
-}
-
-interface FireEntity {
-  id: string;
-  x: number;
-  y: number;
-  expiresAt: number; // tick at which the fire goes out
-}
-
-interface NpcEntity {
-  id: string;
-  type: string;
-  x: number;
-  y: number;
-  facing: Facing;
-  path: Point[];
-  home: Point;
-  radius: number;
-  nextWanderTick: number;
-  hp: number;
-  maxHp: number;
-  maxHit: number;
-  target: string | null;
-  attackCd: number;
-  respawnAt: number; // -1 = alive; >= 0 = respawn at this tick
-}
 
 export interface RestoredState {
   x: number;
@@ -71,7 +20,7 @@ export interface RestoredState {
   skills?: Record<string, number>;
 }
 
-export class Game {
+export class GameWorld {
   readonly map: MapData;
   private spawn: Point;
   private players = new Map<string, PlayerEntity>();
@@ -85,9 +34,7 @@ export class Game {
   private resources: ResourceEntity[] = [];
   private fires: FireEntity[] = [];
   private nextResourceId = 1;
-  private skillChanged = new Set<string>();
-  private levelUps: { id: string; skill: string; level: number }[] = [];
-  private gatherNotices: { id: string; text: string }[] = [];
+  events: GameEvents = { skillChanged: new Set(), levelUps: [], gatherNotices: [] };
 
   constructor(map: MapData, spawn: Point, rng: () => number = Math.random) {
     this.map = map;
@@ -243,14 +190,14 @@ export class Game {
         if (p.gatherCd === 0) {
           if (cfg.tool && !this.hasItem(p, cfg.tool)) {
             p.gatherTarget = null;
-            this.gatherNotices.push({ id: p.id, text: "You need the right tool." });
+            this.events.gatherNotices.push({ id: p.id, text: "You need the right tool." });
             continue;
           }
           const { slots, leftover } = addToInventory(p.inventory, { item: cfg.yield, qty: 1 });
           if (leftover !== null) {
             // inventory full — could not add item
             p.gatherTarget = null;
-            this.gatherNotices.push({ id: p.id, text: "Your inventory is full." });
+            this.events.gatherNotices.push({ id: p.id, text: "Your inventory is full." });
             continue;
           }
           p.inventory = slots;
@@ -422,11 +369,11 @@ export class Game {
 
     if (action === "firemaking") {
       if (stack?.item !== "logs") {
-        this.gatherNotices.push({ id: p.id, text: "You need logs to make a fire." });
+        this.events.gatherNotices.push({ id: p.id, text: "You need logs to make a fire." });
         return;
       }
       if (!this.hasItem(p, "tinderbox")) {
-        this.gatherNotices.push({ id: p.id, text: "You need a tinderbox to make a fire." });
+        this.events.gatherNotices.push({ id: p.id, text: "You need a tinderbox to make a fire." });
         return;
       }
       const px = Math.round(p.x);
@@ -435,7 +382,7 @@ export class Game {
         (f) => f.x === px && f.y === py && this.tick < f.expiresAt,
       );
       if (fireAlreadyHere) {
-        this.gatherNotices.push({ id: p.id, text: "There is already a fire here." });
+        this.events.gatherNotices.push({ id: p.id, text: "There is already a fire here." });
         return;
       }
       // Consume one log
@@ -452,19 +399,19 @@ export class Game {
 
     if (action === "cooking") {
       if (stack?.item !== "raw_shrimp") {
-        this.gatherNotices.push({ id: p.id, text: "You need raw shrimp to cook." });
+        this.events.gatherNotices.push({ id: p.id, text: "You need raw shrimp to cook." });
         return;
       }
       const hasAdjacentFire = this.fires.some(
         (f) => this.tick < f.expiresAt && isAdjacent(p, f),
       );
       if (!hasAdjacentFire) {
-        this.gatherNotices.push({ id: p.id, text: "You need to be next to a fire to cook." });
+        this.events.gatherNotices.push({ id: p.id, text: "You need to be next to a fire to cook." });
         return;
       }
       const { slots: cookedSlots, leftover } = addToInventory(p.inventory, { item: "cooked_shrimp", qty: 1 });
       if (leftover !== null) {
-        this.gatherNotices.push({ id: p.id, text: "Your inventory is full." });
+        this.events.gatherNotices.push({ id: p.id, text: "Your inventory is full." });
         return;
       }
       // Consume one raw_shrimp from the updated slots (cooked_shrimp already added)
@@ -492,9 +439,9 @@ export class Game {
     const newXp = oldXp + amount;
     p.skills = { ...p.skills, [skill]: newXp };
     if (levelForXp(newXp) > levelForXp(oldXp)) {
-      this.levelUps.push({ id: p.id, skill, level: levelForXp(newXp) });
+      this.events.levelUps.push({ id: p.id, skill, level: levelForXp(newXp) });
     }
-    this.skillChanged.add(p.id);
+    this.events.skillChanged.add(p.id);
   }
 
   private hasItem(p: PlayerEntity, item: string): boolean {
@@ -513,20 +460,20 @@ export class Game {
   }
 
   consumeSkillChanges(): string[] {
-    const ids = [...this.skillChanged];
-    this.skillChanged.clear();
+    const ids = [...this.events.skillChanged];
+    this.events.skillChanged.clear();
     return ids;
   }
 
   consumeLevelUps(): { id: string; skill: string; level: number }[] {
-    const ups = this.levelUps;
-    this.levelUps = [];
+    const ups = this.events.levelUps;
+    this.events.levelUps = [];
     return ups;
   }
 
   consumeGatherNotices(): { id: string; text: string }[] {
-    const notices = this.gatherNotices;
-    this.gatherNotices = [];
+    const notices = this.events.gatherNotices;
+    this.events.gatherNotices = [];
     return notices;
   }
 

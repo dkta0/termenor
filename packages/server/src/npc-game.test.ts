@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import type { MapData } from "@termenor/protocol";
-import { Game } from "./game";
+import { GameWorld } from "./game";
 
 // Open 20x20 map (walls on border, interior walkable)
 function openMap(w: number, h: number): MapData {
@@ -21,7 +21,7 @@ function seededRng(seed: number): () => number {
 }
 
 test("spawnNpc adds npc to snapshot with deterministic id", () => {
-  const g = new Game(map20, { x: 10, y: 10 }, seededRng(1));
+  const g = new GameWorld(map20, { x: 10, y: 10 }, seededRng(1));
   g.spawnNpc("goblin", 10, 10, 3);
   const snap = g.snapshot();
   expect(snap.npcs).toHaveLength(1);
@@ -29,7 +29,7 @@ test("spawnNpc adds npc to snapshot with deterministic id", () => {
 });
 
 test("spawnNpc ids increment: npc-1, npc-2", () => {
-  const g = new Game(map20, { x: 10, y: 10 }, seededRng(1));
+  const g = new GameWorld(map20, { x: 10, y: 10 }, seededRng(1));
   g.spawnNpc("goblin", 5, 5, 3);
   g.spawnNpc("rat", 8, 8, 2);
   const ids = g.snapshot().npcs.map((n) => n.id);
@@ -37,7 +37,7 @@ test("spawnNpc ids increment: npc-1, npc-2", () => {
 });
 
 test("NPC moves after enough ticks (wander AI fires)", () => {
-  const g = new Game(map20, { x: 10, y: 10 }, seededRng(42));
+  const g = new GameWorld(map20, { x: 10, y: 10 }, seededRng(42));
   g.spawnNpc("goblin", 10, 10, 4);
   const before = g.snapshot().npcs[0];
   // Run 60 ticks (4 seconds at 15Hz) — should have wandered at least once
@@ -47,7 +47,7 @@ test("NPC moves after enough ticks (wander AI fires)", () => {
 });
 
 test("NPC stays within radius of home after many ticks", () => {
-  const g = new Game(map20, { x: 10, y: 10 }, seededRng(77));
+  const g = new GameWorld(map20, { x: 10, y: 10 }, seededRng(77));
   const home = { x: 10, y: 10 };
   const radius = 3;
   g.spawnNpc("goblin", home.x, home.y, radius);
@@ -58,7 +58,7 @@ test("NPC stays within radius of home after many ticks", () => {
 });
 
 test("NPC never occupies a blocked tile", () => {
-  const g = new Game(map20, { x: 10, y: 10 }, seededRng(55));
+  const g = new GameWorld(map20, { x: 10, y: 10 }, seededRng(55));
   g.spawnNpc("rat", 10, 10, 5);
   for (let i = 0; i < 300; i++) g.step(1 / 15);
   const npc = g.snapshot().npcs[0];
@@ -68,12 +68,12 @@ test("NPC never occupies a blocked tile", () => {
 });
 
 test("snapshot.npcs is empty when no npcs spawned", () => {
-  const g = new Game(map20, { x: 10, y: 10 });
+  const g = new GameWorld(map20, { x: 10, y: 10 });
   expect(g.snapshot().npcs).toEqual([]);
 });
 
 test("wander AI: idle npc gets a new path when nextWanderTick elapses", () => {
-  const g = new Game(map20, { x: 10, y: 10 }, seededRng(33));
+  const g = new GameWorld(map20, { x: 10, y: 10 }, seededRng(33));
   g.spawnNpc("goblin", 10, 10, 4);
   // advance until movement occurs — check that the npc eventually has a non-zero path
   let moved = false;
@@ -85,10 +85,10 @@ test("wander AI: idle npc gets a new path when nextWanderTick elapses", () => {
   expect(moved).toBe(true);
 });
 
-test("existing player tests still pass after Game refactor", () => {
+test("existing player tests still pass after GameWorld refactor", () => {
   // Regression: player movement identical after advanceAlongPath refactor
   const corridor: MapData = { width: 10, height: 1, tiles: new Array(10).fill(0), heights: new Array(10).fill(0) };
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1");
   g.queueMove("p1", 4, 0);
   for (let i = 0; i < 16; i++) g.step(1 / 15);

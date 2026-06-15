@@ -1,13 +1,13 @@
 import { test, expect } from "bun:test";
 import type { MapData } from "@termenor/protocol";
 import type { GroundItem } from "@termenor/protocol";
-import { Game } from "./game";
+import { GameWorld } from "./game";
 
 // open 10x1 corridor
 const corridor: MapData = { width: 10, height: 1, tiles: new Array(10).fill(0), heights: new Array(10).fill(0) };
 
 test("addPlayer spawns at given tile and appears in snapshot", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1");
   const snap = g.snapshot();
   expect(snap.players).toHaveLength(1);
@@ -15,7 +15,7 @@ test("addPlayer spawns at given tile and appears in snapshot", () => {
 });
 
 test("player walks to target over time and stops there", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1");
   g.queueMove("p1", 4, 0); // 4 tiles at 5 tiles/s = 0.8s
   // advance 1 second in 66ms steps
@@ -26,7 +26,7 @@ test("player walks to target over time and stops there", () => {
 });
 
 test("facing updates toward movement direction", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1");
   g.queueMove("p1", 3, 0);
   g.step(1 / 15);
@@ -35,7 +35,7 @@ test("facing updates toward movement direction", () => {
 
 test("queueMove to unwalkable tile is ignored", () => {
   const map: MapData = { width: 3, height: 1, tiles: [0, 1, 0], heights: [0, 0, 0] };
-  const g = new Game(map, { x: 0, y: 0 });
+  const g = new GameWorld(map, { x: 0, y: 0 });
   g.addPlayer("p1");
   g.queueMove("p1", 1, 0); // blocked
   for (let i = 0; i < 10; i++) g.step(1 / 15);
@@ -43,7 +43,7 @@ test("queueMove to unwalkable tile is ignored", () => {
 });
 
 test("fractional moveTo is floored to a tile", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1");
   g.queueMove("p1", 3.9, 0.2); // → tile (3, 0)
   for (let i = 0; i < 16; i++) g.step(1 / 15);
@@ -51,7 +51,7 @@ test("fractional moveTo is floored to a tile", () => {
 });
 
 test("two players tracked independently", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("a");
   g.addPlayer("b");
   g.queueMove("a", 2, 0);
@@ -62,46 +62,46 @@ test("two players tracked independently", () => {
 });
 
 test("removePlayer drops it from snapshot", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("a");
   g.removePlayer("a");
   expect(g.snapshot().players).toHaveLength(0);
 });
 
 test("tick counter increments each step", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.step(1 / 15);
   g.step(1 / 15);
   expect(g.snapshot().tick).toBe(2);
 });
 
 test("addPlayer with saved state restores x, y, facing", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("alice", { x: 7, y: 0, facing: "west" });
   const snap = g.snapshot();
   expect(snap.players[0]).toMatchObject({ id: "alice", x: 7, y: 0, facing: "west" });
 });
 
 test("addPlayer with no state falls back to spawn", () => {
-  const g = new Game(corridor, { x: 3, y: 0 });
+  const g = new GameWorld(corridor, { x: 3, y: 0 });
   g.addPlayer("bob");
   expect(g.snapshot().players[0]).toMatchObject({ x: 3, y: 0, facing: "south" });
 });
 
 test("getPlayerState returns current x, y, facing", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("alice", { x: 5, y: 0, facing: "east" });
   const state = g.getPlayerState("alice");
   expect(state).toMatchObject({ x: 5, y: 0, facing: "east" });
 });
 
 test("getPlayerState returns null for unknown player", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   expect(g.getPlayerState("nobody")).toBeNull();
 });
 
 test("addGroundItem places item in groundItems", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addGroundItem("coins", 10, 2, 0);
   const snap = g.snapshot();
   expect(snap.ground).toHaveLength(1);
@@ -109,12 +109,12 @@ test("addGroundItem places item in groundItems", () => {
 });
 
 test("snapshot.ground is empty when no ground items", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   expect(g.snapshot().ground).toEqual([]);
 });
 
 test("pickup moves ground item at player tile into inventory, returns true", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1", { x: 2, y: 0, facing: "south" });
   g.addGroundItem("coins", 5, 2, 0);
   const changed = g.pickup("p1");
@@ -125,7 +125,7 @@ test("pickup moves ground item at player tile into inventory, returns true", () 
 });
 
 test("pickup on empty tile returns false, no change", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1", { x: 2, y: 0, facing: "south" });
   const changed = g.pickup("p1");
   expect(changed).toBe(false);
@@ -133,13 +133,13 @@ test("pickup on empty tile returns false, no change", () => {
 });
 
 test("pickup with full inventory: leftover stays on ground", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1", { x: 2, y: 0, facing: "south" });
   // fill inventory with non-stackable items
   for (let i = 0; i < 28; i++) g.addGroundItem("bronze_sword", 1, 3, 0);
   // move player to tile 3,0 and pick up once to seed inventory
   // simpler: inject state directly via addPlayer with pre-filled inventory
-  const g2 = new Game(corridor, { x: 0, y: 0 });
+  const g2 = new GameWorld(corridor, { x: 0, y: 0 });
   g2.addPlayer("p2", { x: 2, y: 0, facing: "south", inventory: new Array(28).fill({ item: "bronze_sword", qty: 1 }) });
   g2.addGroundItem("logs", 3, 2, 0);
   const changed = g2.pickup("p2");
@@ -148,7 +148,7 @@ test("pickup with full inventory: leftover stays on ground", () => {
 });
 
 test("drop moves slot item to ground, returns true", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1", { x: 2, y: 0, facing: "south", inventory: [{ item: "logs", qty: 2 }, ...new Array(27).fill(null)] });
   const changed = g.drop("p1", 0);
   expect(changed).toBe(true);
@@ -158,25 +158,25 @@ test("drop moves slot item to ground, returns true", () => {
 });
 
 test("drop of empty slot returns false", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1", { x: 0, y: 0, facing: "south" });
   const changed = g.drop("p1", 0);
   expect(changed).toBe(false);
 });
 
 test("drop slot out of range is ignored, returns false", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   g.addPlayer("p1", { x: 0, y: 0, facing: "south" });
   expect(g.drop("p1", 999)).toBe(false);
 });
 
 test("getInventory returns null for unknown player", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   expect(g.getInventory("ghost")).toBeNull();
 });
 
 test("addPlayer with saved inventory restores it", () => {
-  const g = new Game(corridor, { x: 0, y: 0 });
+  const g = new GameWorld(corridor, { x: 0, y: 0 });
   const inv = [{ item: "coins", qty: 7 }, ...new Array(27).fill(null)];
   g.addPlayer("alice", { x: 0, y: 0, facing: "south", inventory: inv });
   expect(g.getInventory("alice")?.[0]).toEqual({ item: "coins", qty: 7 });
@@ -190,7 +190,7 @@ const open: MapData = { width: 10, height: 10, tiles: new Array(100).fill(0), he
 function maxHitRng() { return () => 0.999; }
 
 test("attacking an adjacent npc reduces its hp by the rolled amount on a ready cooldown", () => {
-  const g = new Game(open, { x: 0, y: 0 }, maxHitRng());
+  const g = new GameWorld(open, { x: 0, y: 0 }, maxHitRng());
   g.addPlayer("p1"); g.queueMove("p1", 0, 0);
   g.spawnNpc("goblin", 1, 0, 2);
   const npcId = g.snapshot().npcs[0].id;
@@ -203,7 +203,7 @@ test("attacking an adjacent npc reduces its hp by the rolled amount on a ready c
 });
 
 test("attack cooldown gates cadence (no damage every tick)", () => {
-  const g = new Game(open, { x: 0, y: 0 }, maxHitRng());
+  const g = new GameWorld(open, { x: 0, y: 0 }, maxHitRng());
   g.addPlayer("p1"); g.spawnNpc("goblin", 1, 0, 2);
   const npcId = g.snapshot().npcs[0].id;
   g.attack("p1", npcId);
@@ -212,7 +212,7 @@ test("attack cooldown gates cadence (no damage every tick)", () => {
 });
 
 test("npc retaliates against its attacker", () => {
-  const g = new Game(open, { x: 0, y: 0 }, maxHitRng());
+  const g = new GameWorld(open, { x: 0, y: 0 }, maxHitRng());
   g.addPlayer("p1"); g.spawnNpc("goblin", 1, 0, 2);
   const npcId = g.snapshot().npcs[0].id;
   g.attack("p1", npcId);
@@ -221,7 +221,7 @@ test("npc retaliates against its attacker", () => {
 });
 
 test("npc dies, leaves the snapshot, respawns at home full hp after RESPAWN_TICKS", () => {
-  const g = new Game(open, { x: 0, y: 0 }, maxHitRng());
+  const g = new GameWorld(open, { x: 0, y: 0 }, maxHitRng());
   g.addPlayer("p1"); g.spawnNpc("goblin", 1, 0, 2);
   const npcId = g.snapshot().npcs[0].id;
   g.attack("p1", npcId);
@@ -236,7 +236,7 @@ test("npc dies, leaves the snapshot, respawns at home full hp after RESPAWN_TICK
 });
 
 test("out-of-range attacker walks toward the target before landing a hit", () => {
-  const g = new Game(open, { x: 0, y: 0 }, maxHitRng());
+  const g = new GameWorld(open, { x: 0, y: 0 }, maxHitRng());
   g.addPlayer("p1"); g.spawnNpc("goblin", 5, 0, 1);
   const npcId = g.snapshot().npcs[0].id;
   g.attack("p1", npcId);
@@ -249,7 +249,7 @@ test("out-of-range attacker walks toward the target before landing a hit", () =>
 });
 
 test("player respawns at SPAWN with full hp when killed", () => {
-  const g = new Game(open, { x: 0, y: 0 }, maxHitRng());
+  const g = new GameWorld(open, { x: 0, y: 0 }, maxHitRng());
   g.addPlayer("p1");
   g.spawnNpc("goblin", 1, 0, 2);
   const npcId = g.snapshot().npcs[0].id;
@@ -269,7 +269,7 @@ test("player respawns at SPAWN with full hp when killed", () => {
 });
 
 test("a targeted npc pursues instead of wandering away", () => {
-  const g = new Game(open, { x: 0, y: 0 }, () => 0.999);
+  const g = new GameWorld(open, { x: 0, y: 0 }, () => 0.999);
   g.addPlayer("p1"); g.spawnNpc("goblin", 5, 5, 4);
   const npcId = g.snapshot().npcs[0].id;
   g.attack("p1", npcId);
@@ -280,7 +280,7 @@ test("a targeted npc pursues instead of wandering away", () => {
 });
 
 test("integration: command attack, kill the goblin, it respawns at home", () => {
-  const g = new Game(open, { x: 0, y: 0 }, () => 0.999);
+  const g = new GameWorld(open, { x: 0, y: 0 }, () => 0.999);
   g.addPlayer("hero");
   g.spawnNpc("goblin", 2, 0, 1);
   const id = g.snapshot().npcs[0].id;
@@ -299,14 +299,14 @@ test("integration: command attack, kill the goblin, it respawns at home", () => 
 import { WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, xpForLevel, RESOURCE_KINDS, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
 
 test("new player has bronze_axe in starter inventory", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("p1");
   const inv = g.getInventory("p1");
   expect(inv?.some((s) => s?.item === "bronze_axe")).toBe(true);
 });
 
 test("restored player does not get a duplicate bronze_axe", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv = new Array(28).fill(null);
   inv[0] = { item: "logs", qty: 1 };
   g.addPlayer("p1", { x: 0, y: 0, facing: "south", inventory: inv });
@@ -315,7 +315,7 @@ test("restored player does not get a duplicate bronze_axe", () => {
 });
 
 test("chopping adjacent tree adds 1 log + WOODCUTTING_XP_PER_LOG xp and decrements charges", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("p1"); // gets bronze_axe
   const resId = g.spawnResource("tree", 1, 0);
   g.gather("p1", resId);
@@ -326,7 +326,7 @@ test("chopping adjacent tree adds 1 log + WOODCUTTING_XP_PER_LOG xp and decremen
 });
 
 test("gather cooldown gates cadence: two steps yield only one log", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("p1");
   const resId = g.spawnResource("tree", 1, 0);
   g.gather("p1", resId);
@@ -338,7 +338,7 @@ test("gather cooldown gates cadence: two steps yield only one log", () => {
 });
 
 test("no axe player: gather yields 0 logs, clears gatherTarget, emits gatherNotice", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   // restore with inventory that has no axe
   g.addPlayer("p2", { x: 0, y: 0, facing: "south", inventory: new Array(28).fill(null) });
   const resId = g.spawnResource("tree", 1, 0);
@@ -351,7 +351,7 @@ test("no axe player: gather yields 0 logs, clears gatherTarget, emits gatherNoti
 });
 
 test("full inventory: gather yields 0 logs, xp unchanged, emits gatherNotice", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   // 27 junk slots + axe in slot 27; no room for logs
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   for (let i = 0; i < 27; i++) inv[i] = { item: "coins", qty: 1 };
@@ -369,7 +369,7 @@ test("full inventory: gather yields 0 logs, xp unchanged, emits gatherNotice", (
 
 test("tree depletes after TREE_CHARGES chops then respawns after RESOURCE_RESPAWN_TICKS", () => {
   const GATHER_COOLDOWN_TICKS = 30;
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("p1");
   const resId = g.spawnResource("tree", 1, 0);
   g.gather("p1", resId);
@@ -385,7 +385,7 @@ test("tree depletes after TREE_CHARGES chops then respawns after RESOURCE_RESPAW
 });
 
 test("out-of-range gatherer walks toward the tree before chopping", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("p1"); // starts at (0,0)
   const resId = g.spawnResource("tree", 5, 0); // far away
   g.gather("p1", resId);
@@ -399,7 +399,7 @@ test("out-of-range gatherer walks toward the tree before chopping", () => {
 });
 
 test("xp crossing a level threshold raises woodcutting level and emits levelUp", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   // seed player with xp just below level 2 threshold
   const xpNeededForL2 = xpForLevel(2);
   const startXp = xpNeededForL2 - WOODCUTTING_XP_PER_LOG; // one chop away
@@ -416,7 +416,7 @@ test("xp crossing a level threshold raises woodcutting level and emits levelUp",
 });
 
 test("getPlayerSkills always includes woodcutting key even for brand-new players", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("p1");
   const skills = g.getPlayerSkills("p1");
   expect(skills.woodcutting).toBeDefined();
@@ -425,7 +425,7 @@ test("getPlayerSkills always includes woodcutting key even for brand-new players
 });
 
 test("consumeSkillChanges returns ids of players whose skills changed this tick and clears", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("p1");
   const resId = g.spawnResource("tree", 1, 0);
   g.gather("p1", resId);
@@ -437,7 +437,7 @@ test("consumeSkillChanges returns ids of players whose skills changed this tick 
 
 test("snapshot includes live resources but not depleted ones", () => {
   const GATHER_COOLDOWN_TICKS = 30;
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("p1");
   const resId = g.spawnResource("tree", 1, 0);
   // deplete the tree
@@ -449,7 +449,7 @@ test("snapshot includes live resources but not depleted ones", () => {
 });
 
 test("integration: new player chops a tree to depletion, gains logs+xp, tree respawns at its spot", () => {
-  const g = new Game(open, { x: 0, y: 0 }, () => 0.5);
+  const g = new GameWorld(open, { x: 0, y: 0 }, () => 0.5);
   g.addPlayer("hero"); // brand-new player → starter bronze_axe
   const resId = g.spawnResource("tree", 1, 0); // adjacent to spawn
   g.gather("hero", resId);
@@ -477,7 +477,7 @@ test("integration: new player chops a tree to depletion, gains logs+xp, tree res
 // ── Mining tests ─────────────────────────────────────────────────────────────
 
 test("mining: player with bronze_pickaxe adjacent to rock gains copper_ore + Mining xp", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "bronze_pickaxe", qty: 1 };
   g.addPlayer("miner", { x: 0, y: 0, facing: "south", inventory: inv });
@@ -491,7 +491,7 @@ test("mining: player with bronze_pickaxe adjacent to rock gains copper_ore + Min
 
 test("mining: rock depletes after rock.charges chops and respawns after rock.respawnTicks", () => {
   const rockCfg = RESOURCE_KINDS.rock;
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "bronze_pickaxe", qty: 1 };
   g.addPlayer("miner", { x: 0, y: 0, facing: "south", inventory: inv });
@@ -511,7 +511,7 @@ test("mining: rock depletes after rock.charges chops and respawns after rock.res
 // ── Fishing tests ─────────────────────────────────────────────────────────────
 
 test("fishing: player with small_net adjacent to fishing_spot gains raw_shrimp + Fishing xp", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "small_net", qty: 1 };
   g.addPlayer("fisher", { x: 0, y: 0, facing: "south", inventory: inv });
@@ -525,7 +525,7 @@ test("fishing: player with small_net adjacent to fishing_spot gains raw_shrimp +
 
 test("fishing spot is NEVER absent from snapshot (infinite resource)", () => {
   const fishingCooldown = RESOURCE_KINDS.fishing_spot.cooldownTicks;
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "small_net", qty: 1 };
   g.addPlayer("fisher", { x: 0, y: 0, facing: "south", inventory: inv });
@@ -541,7 +541,7 @@ test("fishing spot is NEVER absent from snapshot (infinite resource)", () => {
 // ── Wrong/missing tool tests ─────────────────────────────────────────────────
 
 test("gathering a rock without a pickaxe: no ore, target cleared, notice emitted", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   // player with no inventory items (no pickaxe)
   g.addPlayer("miner", { x: 0, y: 0, facing: "south", inventory: new Array(28).fill(null) });
   const resId = g.spawnResource("rock", 1, 0);
@@ -554,7 +554,7 @@ test("gathering a rock without a pickaxe: no ore, target cleared, notice emitted
 });
 
 test("gathering a fishing_spot without a net: no shrimp, target cleared, notice emitted", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("fisher", { x: 0, y: 0, facing: "south", inventory: new Array(28).fill(null) });
   const resId = g.spawnResource("fishing_spot", 1, 0);
   g.gather("fisher", resId);
@@ -568,7 +568,7 @@ test("gathering a fishing_spot without a net: no shrimp, target cleared, notice 
 // ── Firemaking tests ─────────────────────────────────────────────────────────
 
 test("firemaking: use() consumes 1 log, creates fire in snapshot at player's tile, awards xp", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "logs", qty: 3 };
   inv[1] = { item: "tinderbox", qty: 1 };
@@ -586,7 +586,7 @@ test("firemaking: use() consumes 1 log, creates fire in snapshot at player's til
 });
 
 test("firemaking: no tinderbox → refused, log not consumed", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "logs", qty: 2 };
   g.addPlayer("p1", { x: 2, y: 2, facing: "south", inventory: inv });
@@ -601,7 +601,7 @@ test("firemaking: no tinderbox → refused, log not consumed", () => {
 });
 
 test("firemaking: not logs in slot → refused", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "coins", qty: 10 };
   inv[1] = { item: "tinderbox", qty: 1 };
@@ -613,7 +613,7 @@ test("firemaking: not logs in slot → refused", () => {
 });
 
 test("firemaking: cannot stack two fires on same tile (second use refused)", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "logs", qty: 3 };
   inv[1] = { item: "tinderbox", qty: 1 };
@@ -630,7 +630,7 @@ test("firemaking: cannot stack two fires on same tile (second use refused)", () 
 });
 
 test("fire is removed from snapshot after FIRE_LIFETIME_TICKS steps", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "logs", qty: 1 };
   inv[1] = { item: "tinderbox", qty: 1 };
@@ -646,7 +646,7 @@ test("fire is removed from snapshot after FIRE_LIFETIME_TICKS steps", () => {
 // ── Cooking tests ─────────────────────────────────────────────────────────────
 
 test("cooking: use() on raw_shrimp with adjacent live fire → cooked_shrimp + xp", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   // Spawn a fire manually via firemaking
   const firemakeInv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   firemakeInv[0] = { item: "logs", qty: 1 };
@@ -672,7 +672,7 @@ test("cooking: use() on raw_shrimp with adjacent live fire → cooked_shrimp + x
 });
 
 test("cooking: no adjacent fire → refused, raw_shrimp not consumed", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "raw_shrimp", qty: 2 };
   g.addPlayer("cook", { x: 5, y: 5, facing: "south", inventory: inv });
@@ -689,7 +689,7 @@ test("cooking: no adjacent fire → refused, raw_shrimp not consumed", () => {
 // ── getPlayerSkills all-five test ─────────────────────────────────────────────
 
 test("getPlayerSkills lists all five SKILLS with default xp 0 for a brand-new player", () => {
-  const g = new Game(open, { x: 0, y: 0 });
+  const g = new GameWorld(open, { x: 0, y: 0 });
   g.addPlayer("p1");
   const skills = g.getPlayerSkills("p1");
   for (const skill of SKILLS) {
@@ -700,7 +700,7 @@ test("getPlayerSkills lists all five SKILLS with default xp 0 for a brand-new pl
 });
 
 test("integration: framework spans mining, fishing, firemaking, cooking", () => {
-  const g = new Game(open, { x: 0, y: 0 }, () => 0.5);
+  const g = new GameWorld(open, { x: 0, y: 0 }, () => 0.5);
   const inv: ({ item: string; qty: number } | null)[] = new Array(28).fill(null);
   inv[0] = { item: "bronze_pickaxe", qty: 1 };
   inv[1] = { item: "small_net", qty: 1 };

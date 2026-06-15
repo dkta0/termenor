@@ -1,5 +1,5 @@
 import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, type InventoryMsg, type SkillsMsg } from "@termenor/protocol";
-import { Game } from "./game";
+import { GameWorld } from "./game";
 import { createDefaultMap, SPAWN, SEED_ITEMS, NPC_SPAWNS, RESOURCE_SPAWNS, STARTER_AXE } from "./world";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import { emptyInventory } from "./inventory";
@@ -22,7 +22,7 @@ export interface RunningServer {
 
 export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memory:"): RunningServer {
   const map = createDefaultMap();
-  const game = new Game(map, SPAWN);
+  const game = new GameWorld(map, SPAWN);
   for (const s of SEED_ITEMS) game.addGroundItem(s.item, s.qty, s.x, s.y);
   game.addGroundItem(STARTER_AXE.item, STARTER_AXE.qty, STARTER_AXE.x, STARTER_AXE.y);
   for (const n of NPC_SPAWNS) game.spawnNpc(n.type, n.x, n.y, n.radius);
