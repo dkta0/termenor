@@ -16,11 +16,11 @@ const server = startServer(0);
 const url = `ws://localhost:${server.port}`;
 
 const state = new GameState();
-const conn = new Connection(url, state);
+const conn = new Connection(url, state, { username: "local", password: "smoke" });
 conn.connect();
 
 // a second player so we can see both
-const other = new Connection(url, new GameState());
+const other = new Connection(url, new GameState(), { username: "other", password: "smoke" });
 other.connect();
 
 await Bun.sleep(300);

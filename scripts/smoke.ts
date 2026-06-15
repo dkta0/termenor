@@ -8,8 +8,8 @@ const url = `ws://localhost:${server.port}`;
 
 const gsA = new GameState();
 const gsB = new GameState();
-const a = new Connection(url, gsA);
-const b = new Connection(url, gsB);
+const a = new Connection(url, gsA, { username: "playerA", password: "smoke" });
+const b = new Connection(url, gsB, { username: "playerB", password: "smoke" });
 a.connect();
 b.connect();
 

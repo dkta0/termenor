@@ -15,6 +15,9 @@ export interface ConnectionOpts {
   socketFactory?: SocketFactory;
   now?: () => number;
   reconnectDelayMs?: number;
+  username: string;
+  password: string;
+  onLoginError?: (reason: string) => void;
 }
 
 /** Adapts the browser/Bun WebSocket to SocketLike. */
@@ -35,22 +38,31 @@ export class Connection {
   private readonly factory: SocketFactory;
   private readonly now: () => number;
   private readonly reconnectDelayMs: number;
+  private readonly username: string;
+  private readonly password: string;
+  private readonly onLoginError: (reason: string) => void;
   private closedByUser = false;
 
   constructor(
     private readonly url: string,
     private readonly state: GameState,
-    opts: ConnectionOpts = {},
+    opts: ConnectionOpts,
   ) {
     this.factory = opts.socketFactory ?? defaultFactory;
     this.now = opts.now ?? (() => performance.now());
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 500;
+    this.username = opts.username;
+    this.password = opts.password;
+    this.onLoginError = opts.onLoginError ?? ((reason) => {
+      console.error(`Login failed: ${reason}`);
+      process.exit(1);
+    });
   }
 
   connect(): void {
     const sock = this.factory(this.url);
     this.sock = sock;
-    sock.onopen = () => sock.send(encode({ t: "hello" }));
+    sock.onopen = () => sock.send(encode({ t: "login", username: this.username, password: this.password }));
     sock.onmessage = (data) => this.handle(data);
     sock.onclose = () => {
       if (this.closedByUser) return;
@@ -72,9 +84,16 @@ export class Connection {
   private handle(data: string): void {
     let msg;
     try { msg = decodeServer(data); } catch { return; }
-    if (msg.t === "welcome") {
+    if (msg.t === "loginError") {
+      this.onLoginError(msg.reason);
+    } else if (msg.t === "welcome") {
       this.state.setLocalId(msg.playerId);
       this.state.setMap(msg.map);
+      // seed initial position so renderer has a starting frame before first snapshot
+      this.state.applySnapshot(
+        { t: "snapshot", tick: 0, players: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing }] },
+        this.now(),
+      );
     } else if (msg.t === "snapshot") {
       this.state.applySnapshot(msg, this.now());
     }

@@ -13,5 +13,7 @@ COPY packages/protocol ./packages/protocol
 COPY packages/server ./packages/server
 
 ENV PORT=3000
+ENV DB_PATH=/app/data/termenor.db
+RUN mkdir -p /app/data
 EXPOSE 3000
 CMD ["bun", "run", "packages/server/src/index.ts"]

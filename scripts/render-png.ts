@@ -22,9 +22,9 @@ function writePPM(path: string, w: number, h: number, rgb: Uint8Array) {
 const server = startServer(0);
 const url = `ws://localhost:${server.port}`;
 const state = new GameState();           // client A (observer)
-const a = new Connection(url, state);
+const a = new Connection(url, state, { username: "observer", password: "smoke" });
 const moverState = new GameState();      // client B (mover)
-const b = new Connection(url, moverState);
+const b = new Connection(url, moverState, { username: "mover", password: "smoke" });
 a.connect(); b.connect();
 
 await Bun.sleep(300);

@@ -22,13 +22,15 @@ OTHER_COLOR = b"80;140;255"                       # other player (blue), fg or b
 def set_winsize(fd, rows, cols):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
-def spawn_client(rows, cols):
+def spawn_client(rows, cols, username):
     pid, fd = pty.fork()
     if pid == 0:  # child
         env = dict(os.environ)
         env["SERVER_URL"] = f"ws://localhost:{PORT}"
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
+        env["TERMENOR_USER"] = username   # auth: distinct account per client
+        env["TERMENOR_PASS"] = "ptycheck"
         os.chdir(ROOT)
         os.execvpe("bun", ["bun", "run", "packages/client/src/index.ts"], env)
         os._exit(127)
@@ -63,8 +65,8 @@ def main():
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     time.sleep(1.5)
-    pidA, fdA = spawn_client(40, 100)   # observer
-    pidB, fdB = spawn_client(40, 100)   # mover
+    pidA, fdA = spawn_client(40, 100, "observer")   # observer
+    pidB, fdB = spawn_client(40, 100, "mover")      # mover
     time.sleep(1.2)                      # join + first frames
 
     # phase 1: baseline frames

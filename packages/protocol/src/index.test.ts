@@ -6,23 +6,10 @@ test("client message round-trips", () => {
   expect(decodeClient(encode(msg))).toEqual(msg);
 });
 
-test("hello round-trips", () => {
-  const msg: ClientMsg = { t: "hello" };
-  expect(decodeClient(encode(msg))).toEqual(msg);
-});
-
 test("server snapshot round-trips", () => {
   const msg: ServerMsg = {
     t: "snapshot", tick: 5,
     players: [{ id: "a", x: 1.5, y: 2, facing: "east" }],
-  };
-  expect(decodeServer(encode(msg))).toEqual(msg);
-});
-
-test("welcome round-trips", () => {
-  const msg: ServerMsg = {
-    t: "welcome", playerId: "a", tickRate: 15,
-    map: { width: 2, height: 1, tiles: [0, 1], heights: [0, 0] },
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
@@ -41,4 +28,29 @@ test("MapData carries a per-tile heights array", () => {
 
 test("MAX_CLIMB is 1 (one height unit per step)", () => {
   expect(MAX_CLIMB).toBe(1);
+});
+
+test("login message round-trips", () => {
+  const msg: ClientMsg = { t: "login", username: "alice", password: "s3cr3t" };
+  expect(decodeClient(encode(msg))).toEqual(msg);
+});
+
+test("loginError message round-trips", () => {
+  const msg: ServerMsg = { t: "loginError", reason: "bad password" };
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
+test("welcome includes restored x, y, facing", () => {
+  const msg: ServerMsg = {
+    t: "welcome", playerId: "alice", tickRate: 15,
+    x: 12.5, y: 7.0, facing: "east",
+    map: { width: 2, height: 1, tiles: [0, 0], heights: [0, 0] },
+  };
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
+test("decodeClient rejects hello (removed from ClientMsg)", () => {
+  // hello is no longer a valid client message after auth refactor
+  // login replaces hello as the first message sent by a client
+  expect(() => decodeClient(JSON.stringify({ t: "hello" }))).toThrow();
 });
