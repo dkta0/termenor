@@ -1,4 +1,4 @@
-import { ITEMS, NPC_TYPES, RESOURCE_TYPES } from "@termenor/protocol";
+import { ITEM_KINDS, NPC_TYPES, RESOURCE_TYPES } from "@termenor/protocol";
 import type { GroundItem, MapData, ResourceState } from "@termenor/protocol";
 import type { NpcRender, RenderPlayer } from "../game-state";
 import { Kind, type PixelBuffer } from "./types";
@@ -153,7 +153,7 @@ export function rasterizeIso(
     const s = tileToScreen(gi.x, gi.y, h);
     const cx = s.sx - camOx, cy = s.sy - camOy;
     const depth = gi.x + gi.y;
-    const entry = ITEMS[gi.item];
+    const entry = ITEM_KINDS[gi.item];
     const rgb: RGB = entry ? entry.color : [200, 200, 200];
     // draw a 2x2 pixel sprite at the tile center
     for (let dy = 0; dy < 2; dy++)

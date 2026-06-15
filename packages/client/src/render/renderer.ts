@@ -6,7 +6,7 @@ import {
   type MouseEvent as TuiMouseEvent,
   type OptimizedBuffer,
 } from "@opentui/core";
-import { ITEMS, NPC_TYPES, RESOURCE_TYPES } from "@termenor/protocol";
+import { ITEM_KINDS, NPC_TYPES, RESOURCE_TYPES } from "@termenor/protocol";
 import type { GameState } from "../game-state";
 import type { ChatState } from "../chat";
 import { isoCamera, pickTile } from "./camera";
@@ -176,7 +176,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     for (let row = 0; row < maxSlots; row++) {
       const { s, i } = nonEmpty[row];
       if (!s) continue;
-      const entry = ITEMS[s.item];
+      const entry = ITEM_KINDS[s.item];
       const label = `${i + 1}: ${entry?.name ?? s.item} x${s.qty}`;
       for (const cell of textCells(label, PANEL_COL, row + 2, cols, rows)) {
         buffer.setCell(cell.col, cell.row, cell.char, PANEL_COLOR, BLACK);

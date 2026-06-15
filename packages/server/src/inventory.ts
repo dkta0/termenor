@@ -1,4 +1,4 @@
-import { INV_SIZE, ITEMS } from "@termenor/protocol";
+import { INV_SIZE, ITEM_KINDS } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 
 export function emptyInventory(): (ItemStack | null)[] {
@@ -10,7 +10,7 @@ export function addToInventory(
   stack: ItemStack,
 ): { slots: (ItemStack | null)[]; leftover: ItemStack | null } {
   const result = slots.slice() as (ItemStack | null)[];
-  const entry = ITEMS[stack.item];
+  const entry = ITEM_KINDS[stack.item];
   const stackable = entry?.stackable ?? false;
 
   if (stackable) {

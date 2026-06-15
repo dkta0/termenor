@@ -1,6 +1,7 @@
 import type { ItemStack, GroundItem } from "./items";
 export type { ItemStack, GroundItem } from "./items";
-export { ITEMS, isItem, INV_SIZE } from "./items";
+export { ITEM_KINDS, isItem, INV_SIZE } from "./items";
+export type { ItemKind } from "./items";
 
 import type { NpcState } from "./npcs";
 export type { NpcState } from "./npcs";

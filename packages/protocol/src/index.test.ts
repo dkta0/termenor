@@ -73,7 +73,7 @@ test("MAX_CHAT_LEN is 200", () => {
   expect(MAX_CHAT_LEN).toBe(200);
 });
 
-import { ITEMS, INV_SIZE } from "./items";
+import { ITEM_KINDS, INV_SIZE } from "./items";
 import type { GroundItem, ItemStack } from "./items";
 
 test("PickupMsg round-trips", () => {

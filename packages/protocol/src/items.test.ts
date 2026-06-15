@@ -1,15 +1,15 @@
 import { test, expect } from "bun:test";
-import { ITEMS, isItem, INV_SIZE, type ItemStack, type GroundItem } from "./items";
+import { ITEM_KINDS, isItem, INV_SIZE, type ItemStack, type GroundItem } from "./items";
 
-test("ITEMS registry has expected item ids", () => {
-  expect(Object.keys(ITEMS)).toContain("coins");
-  expect(Object.keys(ITEMS)).toContain("logs");
-  expect(Object.keys(ITEMS)).toContain("bronze_sword");
-  expect(Object.keys(ITEMS)).toContain("shrimp");
+test("ITEM_KINDS registry has expected item ids", () => {
+  expect(Object.keys(ITEM_KINDS)).toContain("coins");
+  expect(Object.keys(ITEM_KINDS)).toContain("logs");
+  expect(Object.keys(ITEM_KINDS)).toContain("bronze_sword");
+  expect(Object.keys(ITEM_KINDS)).toContain("shrimp");
 });
 
-test("each ITEMS entry has required fields", () => {
-  for (const [, entry] of Object.entries(ITEMS)) {
+test("each ITEM_KINDS entry has required fields", () => {
+  for (const [, entry] of Object.entries(ITEM_KINDS)) {
     expect(typeof entry.name).toBe("string");
     expect(typeof entry.glyph).toBe("string");
     expect(entry.color).toHaveLength(3);

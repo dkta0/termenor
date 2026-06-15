@@ -13,7 +13,14 @@ export interface GroundItem {
 
 export const INV_SIZE = 28;
 
-export const ITEMS: Record<string, { name: string; glyph: string; color: [number, number, number]; stackable: boolean }> = {
+export interface ItemKind {
+  name: string;
+  glyph: string;
+  color: [number, number, number];
+  stackable: boolean;
+}
+
+export const ITEM_KINDS: Record<string, ItemKind> = {
   coins:        { name: "Coins",        glyph: "$", color: [255, 215,   0], stackable: true  },
   logs:         { name: "Logs",         glyph: "l", color: [139,  90,  43], stackable: true  },
   bronze_sword: { name: "Bronze sword", glyph: "/", color: [205, 127,  50], stackable: false },
@@ -28,5 +35,5 @@ export const ITEMS: Record<string, { name: string; glyph: string; color: [number
 };
 
 export function isItem(id: string): boolean {
-  return Object.prototype.hasOwnProperty.call(ITEMS, id);
+  return Object.prototype.hasOwnProperty.call(ITEM_KINDS, id);
 }
