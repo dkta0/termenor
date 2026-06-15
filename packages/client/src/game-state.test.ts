@@ -1,10 +1,10 @@
 import { test, expect } from "bun:test";
-import type { MapData, SnapshotMsg, GroundItem, ItemStack, NpcState } from "@termenor/protocol";
+import type { MapData, SnapshotMsg, GroundItem, ItemStack, NpcState, ResourceState } from "@termenor/protocol";
 import { SPLAT_MS } from "@termenor/protocol";
 import { GameState, INTERP_DELAY_MS, sampleElevation } from "./game-state";
 
 const snap = (tick: number, x: number): SnapshotMsg => ({
-  t: "snapshot", tick, players: [{ id: "a", x, y: 0, facing: "east", hp: 10, maxHp: 10 }], ground: [], npcs: [], hits: [],
+  t: "snapshot", tick, players: [{ id: "a", x, y: 0, facing: "east", hp: 10, maxHp: 10 }], ground: [], npcs: [], hits: [], resources: [],
 });
 
 test("samplePositions returns empty before any snapshot", () => {
@@ -83,7 +83,7 @@ test("sampleElevation returns 0 out of bounds", () => {
 test("applySnapshot stores ground items", () => {
   const gs = new GameState();
   const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 5, x: 3, y: 4 }];
-  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground, npcs: [], hits: [] }, 1000);
+  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground, npcs: [], hits: [], resources: [] }, 1000);
   expect(gs.ground).toEqual(ground);
 });
 
@@ -112,6 +112,7 @@ const snapWithNpcs = (tick: number, npcX: number): SnapshotMsg => ({
   ground: [],
   npcs: [{ id: "npc-1", type: "goblin", x: npcX, y: 0, facing: "east", hp: 5, maxHp: 5 }],
   hits: [],
+  resources: [],
 });
 
 test("applySnapshot stores npcs", () => {
@@ -148,7 +149,7 @@ test("sampleNpcs clamps to latest when render time is past newest snapshot", () 
 
 test("sampleNpcs handles npc missing from first frame (uses newest position)", () => {
   const gs = new GameState();
-  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground: [], npcs: [], hits: [] }, 1000);
+  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground: [], npcs: [], hits: [], resources: [] }, 1000);
   gs.applySnapshot(snapWithNpcs(2, 8), 1100);
   const npcs = gs.sampleNpcs(1050 + INTERP_DELAY_MS);
   expect(npcs).toHaveLength(1);
@@ -177,7 +178,7 @@ function combatSnap(over: Partial<SnapshotMsg> = {}): SnapshotMsg {
   return {
     t: "snapshot", tick: 1,
     players: [{ id: "me", x: 0, y: 0, facing: "south", hp: 8, maxHp: 10 }],
-    ground: [], npcs: [], hits: [], ...over,
+    ground: [], npcs: [], hits: [], resources: [], ...over,
   };
 }
 
@@ -196,4 +197,25 @@ test("hits become active splats that prune after SPLAT_MS", () => {
   expect(gs.activeSplats(1000).length).toBe(1);
   expect(gs.activeSplats(1000 + SPLAT_MS - 1).length).toBe(1);
   expect(gs.activeSplats(1000 + SPLAT_MS + 1).length).toBe(0);
+});
+
+// ---- Resource / skills tests ----
+
+test("applySnapshot with resources makes sampleResources return them with numeric h", () => {
+  const gs = new GameState();
+  const resources: ResourceState[] = [{ id: "r1", type: "tree", x: 3, y: 4 }];
+  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground: [], npcs: [], hits: [], resources }, 1000);
+  const sampled = gs.sampleResources();
+  expect(sampled).toHaveLength(1);
+  expect(sampled[0].x).toBe(3);
+  expect(sampled[0].y).toBe(4);
+  expect(typeof sampled[0].h).toBe("number");
+});
+
+test("setSkills + skillsLine returns string containing level and Woodcutting", () => {
+  const gs = new GameState();
+  gs.setSkills({ woodcutting: { xp: 25, level: 1 } });
+  const line = gs.skillsLine();
+  expect(line).toContain("Woodcutting");
+  expect(line).toContain("1");
 });

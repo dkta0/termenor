@@ -1,4 +1,4 @@
-import { decodeServer, encode, PLAYER_MAX_HP, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg } from "@termenor/protocol";
+import { decodeServer, encode, PLAYER_MAX_HP, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type SkillsMsg } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
@@ -21,6 +21,7 @@ export interface ConnectionOpts {
   onLoginError?: (reason: string) => void;
   onChatMsg?: (from: string, text: string) => void;
   onInventory?: (slots: (ItemStack | null)[]) => void;
+  onSkills?: () => void;
 }
 
 /** Adapts the browser/Bun WebSocket to SocketLike. */
@@ -46,6 +47,7 @@ export class Connection {
   private readonly onLoginError: (reason: string) => void;
   private readonly onChatMsg: (from: string, text: string) => void;
   private readonly onInventory: ((slots: (ItemStack | null)[]) => void) | undefined;
+  private readonly onSkills: (() => void) | undefined;
   private closedByUser = false;
 
   constructor(
@@ -64,6 +66,7 @@ export class Connection {
     });
     this.onChatMsg = opts.onChatMsg ?? (() => {});
     this.onInventory = opts.onInventory;
+    this.onSkills = opts.onSkills;
   }
 
   connect(): void {
@@ -103,6 +106,11 @@ export class Connection {
     this.sock?.send(encode(msg));
   }
 
+  sendGather(targetId: string): void {
+    const msg: GatherMsg = { t: "gather", targetId };
+    this.sock?.send(encode(msg));
+  }
+
   disconnect(): void {
     this.closedByUser = true;
     this.sock?.close();
@@ -120,7 +128,7 @@ export class Connection {
       this.state.applySnapshot(
         { t: "snapshot", tick: 0,
           players: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP }],
-          ground: [], npcs: [], hits: [] },
+          ground: [], npcs: [], hits: [], resources: [] },
         this.now(),
       );
     } else if (msg.t === "snapshot") {
@@ -130,6 +138,9 @@ export class Connection {
     } else if (msg.t === "inventory") {
       this.state.setInventory(msg.slots);
       this.onInventory?.(msg.slots);
+    } else if (msg.t === "skills") {
+      this.state.setSkills((msg as SkillsMsg).skills);
+      this.onSkills?.();
     }
   }
 }

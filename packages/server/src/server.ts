@@ -1,6 +1,6 @@
-import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, type InventoryMsg } from "@termenor/protocol";
+import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, type InventoryMsg, type SkillsMsg } from "@termenor/protocol";
 import { Game } from "./game";
-import { createDefaultMap, SPAWN, SEED_ITEMS, NPC_SPAWNS } from "./world";
+import { createDefaultMap, SPAWN, SEED_ITEMS, NPC_SPAWNS, RESOURCE_SPAWNS, STARTER_AXE } from "./world";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import { emptyInventory } from "./inventory";
 import type { Database } from "bun:sqlite";
@@ -24,9 +24,12 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
   const map = createDefaultMap();
   const game = new Game(map, SPAWN);
   for (const s of SEED_ITEMS) game.addGroundItem(s.item, s.qty, s.x, s.y);
+  game.addGroundItem(STARTER_AXE.item, STARTER_AXE.qty, STARTER_AXE.x, STARTER_AXE.y);
   for (const n of NPC_SPAWNS) game.spawnNpc(n.type, n.x, n.y, n.radius);
+  for (const r of RESOURCE_SPAWNS) game.spawnResource(r.type, r.x, r.y);
   const db: Database = openDb(dbPath);
   const online = new Set<string>(); // usernames currently connected
+  const sockets = new Map<string, Bun.ServerWebSocket<Conn>>(); // username → active socket
   let nextId = 1;
   let saveTick = 0;
 
@@ -80,6 +83,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
           }
 
           ws.data.username = username;
+          sockets.set(username, ws);
           game.addPlayer(username, result.state);
           ws.subscribe("world");
           ws.send(encode({
@@ -93,6 +97,8 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
           }));
           const invMsg: InventoryMsg = { t: "inventory", slots: result.state.inventory };
           ws.send(encode(invMsg));
+          const skillsMsg: SkillsMsg = { t: "skills", skills: game.getPlayerSkills(username) };
+          ws.send(encode(skillsMsg));
           return;
         }
 
@@ -118,15 +124,18 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
           }
         } else if (msg.t === "attack") {
           game.attack(ws.data.username, msg.targetId);
+        } else if (msg.t === "gather") {
+          game.gather(ws.data.username, msg.targetId);
         }
       },
       close(ws) {
         const { username } = ws.data;
         if (username === null) return;
         const state = game.getPlayerState(username);
-        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory());
+        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {});
         game.removePlayer(username);
         online.delete(username);
+        sockets.delete(username);
       },
     },
   });
@@ -136,13 +145,29 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
     game.step(dt);
     server.publish("world", encode(game.snapshot()));
 
+    // deliver per-player skill updates
+    for (const id of game.consumeSkillChanges()) {
+      const sock = sockets.get(id);
+      if (sock) sock.send(encode({ t: "skills", skills: game.getPlayerSkills(id) } satisfies SkillsMsg));
+    }
+    // deliver level-up announcements as private chat messages
+    for (const { id, skill, level } of game.consumeLevelUps()) {
+      const sock = sockets.get(id);
+      if (sock) sock.send(encode({ t: "chatMsg", from: "", text: `${skill[0].toUpperCase() + skill.slice(1)} level ${level}!` }));
+    }
+    // deliver gather feedback notices (no-axe, full-inv, etc.)
+    for (const { id, text } of game.consumeGatherNotices()) {
+      const sock = sockets.get(id);
+      if (sock) sock.send(encode({ t: "chatMsg", from: "", text }));
+    }
+
     saveTick++;
     if (saveTick >= SAVE_INTERVAL_TICKS) {
       saveTick = 0;
       // persist all currently online players
       for (const username of online) {
         const state = game.getPlayerState(username);
-        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory());
+        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {});
       }
     }
   }, 1000 / TICK_RATE);

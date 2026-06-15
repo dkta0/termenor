@@ -1,5 +1,5 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent } from "@termenor/protocol";
-import { NPC_TYPES, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState } from "@termenor/protocol";
+import { NPC_TYPES, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp } from "@termenor/protocol";
 import { findPath, type Point } from "./pathfinding";
 import { advanceAlongPath } from "./movement";
 import { pickWanderTarget, NPC_SPEED } from "./npc";
@@ -7,6 +7,7 @@ import { emptyInventory, addToInventory, removeSlot } from "./inventory";
 import { rollDamage, isAdjacent } from "./combat";
 
 const SPEED = 5; // tiles per second  → ~200ms per tile
+const GATHER_COOLDOWN_TICKS = 30;
 
 interface Player {
   id: string;
@@ -19,6 +20,20 @@ interface Player {
   maxHp: number;
   target: string | null;
   attackCd: number;
+  skills: Record<string, number>; // xp by skill name
+  gatherTarget: string | null;
+  gatherCd: number;
+}
+
+interface Resource {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  home: Point;
+  charges: number;
+  maxCharges: number;
+  deadUntil: number; // -1 = alive; >= 0 = respawn at this tick
 }
 
 interface Npc {
@@ -44,6 +59,7 @@ export interface RestoredState {
   y: number;
   facing: Facing;
   inventory?: (ItemStack | null)[];
+  skills?: Record<string, number>;
 }
 
 export class Game {
@@ -57,6 +73,11 @@ export class Game {
   private nextNpcId = 1;
   private rng: () => number;
   private hits: HitEvent[] = [];
+  private resources: Resource[] = [];
+  private nextResourceId = 1;
+  private skillChanged = new Set<string>();
+  private levelUps: { id: string; skill: string; level: number }[] = [];
+  private gatherNotices: { id: string; text: string }[] = [];
 
   constructor(map: MapData, spawn: Point, rng: () => number = Math.random) {
     this.map = map;
@@ -68,8 +89,17 @@ export class Game {
     const x = state?.x ?? this.spawn.x;
     const y = state?.y ?? this.spawn.y;
     const facing = state?.facing ?? "south";
-    const inventory = state?.inventory ?? emptyInventory();
-    this.players.set(id, { id, x, y, facing, path: [], inventory, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, target: null, attackCd: 0 });
+    const skills = state?.skills ?? {};
+    let inventory: (ItemStack | null)[];
+    if (state !== undefined) {
+      // restoring a saved player — use provided inventory (or empty if not persisted), no starter axe
+      inventory = state.inventory ?? emptyInventory();
+    } else {
+      // brand-new player: seed bronze_axe
+      const { slots } = addToInventory(emptyInventory(), { item: "bronze_axe", qty: 1 });
+      inventory = slots;
+    }
+    this.players.set(id, { id, x, y, facing, path: [], inventory, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, target: null, attackCd: 0, skills, gatherTarget: null, gatherCd: 0 });
   }
 
   removePlayer(id: string): void {
@@ -109,7 +139,7 @@ export class Game {
   getPlayerState(id: string): RestoredState | null {
     const p = this.players.get(id);
     if (!p) return null;
-    return { x: p.x, y: p.y, facing: p.facing, inventory: p.inventory };
+    return { x: p.x, y: p.y, facing: p.facing, inventory: p.inventory, skills: p.skills };
   }
 
   queueMove(id: string, x: number, y: number): void {
@@ -179,6 +209,65 @@ export class Game {
     }
 
     this.resolveDeaths();
+
+    // Respawn depleted resources
+    for (const res of this.resources) {
+      if (res.deadUntil >= 0 && this.tick >= res.deadUntil) {
+        res.charges = res.maxCharges;
+        res.deadUntil = -1;
+      }
+    }
+
+    // Gather pass
+    for (const p of this.players.values()) {
+      if (!p.gatherTarget) continue;
+      if (p.gatherCd > 0) p.gatherCd--;
+      const res = this.resources.find((r) => r.id === p.gatherTarget && r.deadUntil < 0);
+      if (!res) { p.gatherTarget = null; continue; }
+      if (isAdjacent(p, res)) {
+        p.path = [];
+        if (p.gatherCd === 0) {
+          if (!this.hasAxe(p)) {
+            p.gatherTarget = null;
+            this.gatherNotices.push({ id: p.id, text: "You need an axe to chop this." });
+            continue;
+          }
+          const { slots, leftover } = addToInventory(p.inventory, { item: "logs", qty: 1 });
+          if (leftover !== null) {
+            // inventory full — could not add log
+            p.gatherTarget = null;
+            this.gatherNotices.push({ id: p.id, text: "Your inventory is full." });
+            continue;
+          }
+          p.inventory = slots;
+          const oldXp = p.skills.woodcutting ?? 0;
+          const newXp = oldXp + WOODCUTTING_XP_PER_LOG;
+          p.skills = { ...p.skills, woodcutting: newXp };
+          if (levelForXp(newXp) > levelForXp(oldXp)) {
+            this.levelUps.push({ id: p.id, skill: "woodcutting", level: levelForXp(newXp) });
+          }
+          this.skillChanged.add(p.id);
+          p.gatherCd = GATHER_COOLDOWN_TICKS;
+          res.charges--;
+          if (res.charges <= 0) {
+            res.deadUntil = this.tick + RESOURCE_RESPAWN_TICKS;
+            // clear all players targeting this depleted resource
+            for (const other of this.players.values()) {
+              if (other.gatherTarget === res.id) other.gatherTarget = null;
+            }
+          }
+        }
+      } else {
+        this.stepToward(p, res.x, res.y);
+      }
+    }
+  }
+
+  private stepToward(actor: { x: number; y: number; path: Point[] }, tx: number, ty: number): void {
+    if (actor.path.length === 0) {
+      const path = findPath(this.map, { x: Math.round(actor.x), y: Math.round(actor.y) }, { x: Math.round(tx), y: Math.round(ty) });
+      if (path && path.length > 0) { path.pop(); actor.path = path; }
+    }
   }
 
   private combatStep(
@@ -204,9 +293,8 @@ export class Game {
           if (attackerId) victimNpc.target = attackerId;
         }
       }
-    } else if (actor.path.length === 0) {
-      const path = findPath(this.map, { x: Math.round(actor.x), y: Math.round(actor.y) }, { x: Math.round(tgt.x), y: Math.round(tgt.y) });
-      if (path && path.length > 0) { path.pop(); actor.path = path; }
+    } else {
+      this.stepToward(actor, tgt.x, tgt.y);
     }
   }
 
@@ -295,6 +383,55 @@ export class Game {
     return true;
   }
 
+  spawnResource(type: string, x: number, y: number): string {
+    const id = `res-${this.nextResourceId++}`;
+    this.resources.push({ id, type, x, y, home: { x, y }, charges: TREE_CHARGES, maxCharges: TREE_CHARGES, deadUntil: -1 });
+    return id;
+  }
+
+  gather(playerId: string, targetId: string): void {
+    const p = this.players.get(playerId);
+    if (!p) return;
+    const res = this.resources.find((r) => r.id === targetId && r.deadUntil < 0);
+    if (!res) return;
+    p.gatherTarget = targetId;
+  }
+
+  private hasAxe(p: Player): boolean {
+    return p.inventory.some((s) => s !== null && s.item === "bronze_axe");
+  }
+
+  getPlayerSkills(id: string): Record<string, { xp: number; level: number }> {
+    const p = this.players.get(id);
+    const rawSkills = p?.skills ?? {};
+    const woodcuttingXp = rawSkills.woodcutting ?? 0;
+    const result: Record<string, { xp: number; level: number }> = {
+      woodcutting: { xp: woodcuttingXp, level: levelForXp(woodcuttingXp) },
+    };
+    for (const [skill, xp] of Object.entries(rawSkills)) {
+      if (skill !== "woodcutting") result[skill] = { xp, level: levelForXp(xp) };
+    }
+    return result;
+  }
+
+  consumeSkillChanges(): string[] {
+    const ids = [...this.skillChanged];
+    this.skillChanged.clear();
+    return ids;
+  }
+
+  consumeLevelUps(): { id: string; skill: string; level: number }[] {
+    const ups = this.levelUps;
+    this.levelUps = [];
+    return ups;
+  }
+
+  consumeGatherNotices(): { id: string; text: string }[] {
+    const notices = this.gatherNotices;
+    this.gatherNotices = [];
+    return notices;
+  }
+
   snapshot(): SnapshotMsg {
     const players: PlayerState[] = [...this.players.values()].map((p) => ({
       id: p.id, x: p.x, y: p.y, facing: p.facing, hp: p.hp, maxHp: p.maxHp,
@@ -302,7 +439,10 @@ export class Game {
     const npcs: NpcState[] = this.npcs.filter((n) => n.deadUntil < 0).map((n) => ({
       id: n.id, type: n.type, x: n.x, y: n.y, facing: n.facing, hp: n.hp, maxHp: n.maxHp,
     }));
+    const resources: ResourceState[] = this.resources
+      .filter((r) => r.deadUntil < 0)
+      .map((r) => ({ id: r.id, type: r.type, x: r.x, y: r.y }));
     const hits = this.hits; this.hits = [];
-    return { t: "snapshot", tick: this.tick, players, ground: this.groundItems.slice(), npcs, hits };
+    return { t: "snapshot", tick: this.tick, players, ground: this.groundItems.slice(), npcs, hits, resources };
   }
 }

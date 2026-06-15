@@ -9,6 +9,7 @@ export interface PlayerStateRecord {
   y: number;
   facing: Facing;
   inventory: (ItemStack | null)[];
+  skills: Record<string, number>;
 }
 
 export function openDb(path: string): Database {
@@ -23,12 +24,19 @@ export function openDb(path: string): Database {
       y             REAL NOT NULL DEFAULT 24,
       facing        TEXT NOT NULL DEFAULT 'south',
       last_seen     INTEGER NOT NULL DEFAULT 0,
-      inventory     TEXT
+      inventory     TEXT,
+      skills        TEXT
     )
   `);
   // Migration guard: add inventory column to existing databases that predate this column
   try {
     db.run("ALTER TABLE accounts ADD COLUMN inventory TEXT");
+  } catch {
+    // column already exists on an existing db — safe to ignore
+  }
+  // Migration guard: add skills column to existing databases that predate this column
+  try {
+    db.run("ALTER TABLE accounts ADD COLUMN skills TEXT");
   } catch {
     // column already exists on an existing db — safe to ignore
   }
@@ -42,8 +50,8 @@ export async function getOrCreateAccount(
   spawn: { x: number; y: number; facing: Facing },
 ): Promise<{ ok: true; state: PlayerStateRecord } | { ok: false; reason: string }> {
   const row = db
-    .query<{ password_hash: string; x: number; y: number; facing: string; inventory: string | null }, string>(
-      "SELECT password_hash, x, y, facing, inventory FROM accounts WHERE username = ?",
+    .query<{ password_hash: string; x: number; y: number; facing: string; inventory: string | null; skills: string | null }, string>(
+      "SELECT password_hash, x, y, facing, inventory, skills FROM accounts WHERE username = ?",
     )
     .get(username);
 
@@ -54,17 +62,27 @@ export async function getOrCreateAccount(
       "INSERT INTO accounts (username, password_hash, x, y, facing, last_seen) VALUES (?, ?, ?, ?, ?, ?)",
       [username, hash, spawn.x, spawn.y, spawn.facing, Date.now()],
     );
-    return { ok: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory() } };
+    return { ok: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {} } };
   }
 
   const valid = await Bun.password.verify(password, row.password_hash);
   if (!valid) return { ok: false, reason: "bad password" };
+
+  let skills: Record<string, number> = {};
+  if (row.skills) {
+    try {
+      skills = JSON.parse(row.skills) as Record<string, number>;
+    } catch {
+      skills = {};
+    }
+  }
 
   return {
     ok: true,
     state: {
       x: row.x, y: row.y, facing: row.facing as Facing,
       inventory: row.inventory ? (JSON.parse(row.inventory) as (ItemStack | null)[]) : emptyInventory(),
+      skills,
     },
   };
 }
@@ -76,9 +94,10 @@ export function savePlayerState(
   y: number,
   facing: Facing,
   inventory: (ItemStack | null)[],
+  skills: Record<string, number>,
 ): void {
   db.run(
-    "UPDATE accounts SET x = ?, y = ?, facing = ?, inventory = ?, last_seen = ? WHERE username = ?",
-    [x, y, facing, JSON.stringify(inventory), Date.now(), username],
+    "UPDATE accounts SET x = ?, y = ?, facing = ?, inventory = ?, skills = ?, last_seen = ? WHERE username = ?",
+    [x, y, facing, JSON.stringify(inventory), JSON.stringify(skills), Date.now(), username],
   );
 }

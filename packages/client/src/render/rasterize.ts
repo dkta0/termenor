@@ -1,5 +1,5 @@
-import { ITEMS, NPC_TYPES } from "@termenor/protocol";
-import type { GroundItem, MapData } from "@termenor/protocol";
+import { ITEMS, NPC_TYPES, RESOURCE_TYPES } from "@termenor/protocol";
+import type { GroundItem, MapData, ResourceState } from "@termenor/protocol";
 import type { NpcRender, RenderPlayer } from "../game-state";
 import { Kind, type PixelBuffer } from "./types";
 import { TILE_W, TILE_H, ELEV_PX, tileToScreen } from "./iso";
@@ -113,6 +113,7 @@ export function rasterizeIso(
   camOx: number, camOy: number, pxW: number, pxH: number, localId: string | null,
   ground: GroundItem[] = [],
   npcs: NpcRender[] = [],
+  resources: (ResourceState & { h: number })[] = [],
 ): IsoFrame {
   const f = newIsoFrame(pxW, pxH);
 
@@ -170,6 +171,16 @@ export function rasterizeIso(
     const rgb: RGB = entry ? entry.color : [200, 200, 200];
     drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
     drawHpBar(f, cx, cy, depth, npc.hp, npc.maxHp);
+  }
+
+  // Resources — static billboards (no HP bar)
+  for (const res of resources) {
+    const s = tileToScreen(res.x, res.y, res.h);
+    const cx = s.sx - camOx, cy = s.sy - camOy;
+    const depth = res.x + res.y;
+    const entry = RESOURCE_TYPES[res.type];
+    const rgb: RGB = entry ? entry.color : [40, 120, 40];
+    drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
   }
 
   return f;

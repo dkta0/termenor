@@ -18,6 +18,7 @@ export const ITEMS: Record<string, { name: string; glyph: string; color: [number
   logs:         { name: "Logs",         glyph: "l", color: [139,  90,  43], stackable: true  },
   bronze_sword: { name: "Bronze sword", glyph: "/", color: [205, 127,  50], stackable: false },
   shrimp:       { name: "Shrimp",       glyph: "~", color: [255, 160, 122], stackable: true  },
+  bronze_axe:   { name: "Bronze axe",   glyph: "T", color: [150, 110,  70], stackable: false },
 };
 
 export function isItem(id: string): boolean {

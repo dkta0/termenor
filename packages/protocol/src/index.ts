@@ -6,6 +6,8 @@ import type { NpcState } from "./npcs";
 export type { NpcState } from "./npcs";
 export { NPC_TYPES } from "./npcs";
 
+import type { ResourceState } from "./resources";
+
 export type Facing = "north" | "south" | "east" | "west";
 
 /** Row-major grid. 0 = walkable, 1 = blocked. `heights` is per-tile ground elevation. */
@@ -35,7 +37,8 @@ export interface ChatMsg { t: "chat"; text: string; }
 export interface PickupMsg { t: "pickup"; }
 export interface DropMsg { t: "drop"; slot: number; }
 export interface AttackMsg { t: "attack"; targetId: string; }
-export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg;
+export interface GatherMsg { t: "gather"; targetId: string; }
+export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg;
 
 export interface WelcomeMsg {
   t: "welcome";
@@ -47,11 +50,12 @@ export interface WelcomeMsg {
   facing: Facing;
 }
 export interface HitEvent { targetId: string; amount: number; tick: number; }
-export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; ground: GroundItem[]; npcs: NpcState[]; hits: HitEvent[]; }
+export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; ground: GroundItem[]; npcs: NpcState[]; hits: HitEvent[]; resources: ResourceState[]; }
 export interface LoginErrorMsg { t: "loginError"; reason: string; }
 export interface ChatBroadcastMsg { t: "chatMsg"; from: string; text: string; }
 export interface InventoryMsg { t: "inventory"; slots: (ItemStack | null)[]; }
-export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg | ChatBroadcastMsg | InventoryMsg;
+export interface SkillsMsg { t: "skills"; skills: Record<string, { xp: number; level: number }>; }
+export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg | ChatBroadcastMsg | InventoryMsg | SkillsMsg;
 
 export function encode(msg: ClientMsg | ServerMsg): string {
   return JSON.stringify(msg);
@@ -59,8 +63,8 @@ export function encode(msg: ClientMsg | ServerMsg): string {
 
 export const MAX_CHAT_LEN = 200;
 
-const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack"]);
-const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg", "inventory"]);
+const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack", "gather"]);
+const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg", "inventory", "skills"]);
 
 export function decodeClient(data: string): ClientMsg {
   const obj = JSON.parse(data);
@@ -75,3 +79,5 @@ export function decodeServer(data: string): ServerMsg {
 }
 
 export * from "./combat";
+export * from "./skills";
+export * from "./resources";
