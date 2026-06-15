@@ -8,6 +8,7 @@ import { awardXp } from "./skills-system";
 import * as invSys from "./inventory-system";
 import * as moveSys from "./movement-system";
 import * as combatSys from "./combat-system";
+import * as resourceSys from "./resource-system";
 
 const GATHER_COOLDOWN_TICKS = 30;
 const FIREMAKING_XP = 40;
@@ -32,8 +33,8 @@ export class GameWorld {
   private nextNpcId = 1;
   rng: () => number;
   hits: HitEvent[] = [];
-  private resources: ResourceEntity[] = [];
-  private fires: FireEntity[] = [];
+  resources: ResourceEntity[] = [];
+  fires: FireEntity[] = [];
   private nextResourceId = 1;
   events: GameEvents = { skillChanged: new Set(), levelUps: [], gatherNotices: [] };
 
@@ -117,15 +118,7 @@ export class GameWorld {
 
     combatSys.resolveDeaths(this);
 
-    // Respawn depleted gatherables
-    for (const res of this.resources) {
-      if (res.respawnAt >= 0 && this.tick >= res.respawnAt) {
-        res.charges = res.maxCharges;
-        res.respawnAt = -1;
-      }
-    }
-    // Expire fires
-    this.fires = this.fires.filter((f) => this.tick < f.expiresAt);
+    resourceSys.stepResources(this);
 
     // Gather pass
     for (const p of this.players.values()) {
