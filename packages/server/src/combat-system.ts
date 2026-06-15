@@ -26,6 +26,17 @@ export function stepCombat(w: GameWorld): void {
   }
 }
 
+// Respawn lives in combat-system alongside death resolution (resolveDeaths):
+// together they form the NPC death/respawn lifecycle.
+export function stepNpcRespawn(w: GameWorld): void {
+  for (const npc of w.npcs) {
+    if (npc.respawnAt >= 0 && w.tick >= npc.respawnAt) {
+      npc.x = npc.home.x; npc.y = npc.home.y; npc.path = [];
+      npc.hp = npc.maxHp; npc.target = null; npc.attackCd = 0; npc.respawnAt = -1;
+    }
+  }
+}
+
 export function resolveDeaths(w: GameWorld): void {
   for (const npc of w.npcs) {
     if (npc.respawnAt < 0 && npc.hp <= 0) {

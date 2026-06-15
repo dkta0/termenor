@@ -21,6 +21,12 @@ export interface RestoredState {
 }
 
 export class GameWorld {
+  /**
+   * @internal — shared mutable surface for the System modules (movement, combat,
+   * resource, gather, inventory, action). These fields are read/written by the
+   * `*-system.ts` modules and are NOT part of the public command API. External
+   * callers should go through the command methods below, not these fields.
+   */
   readonly map: MapData;
   spawn: Point;
   players = new Map<string, PlayerEntity>();
@@ -98,26 +104,14 @@ export class GameWorld {
     moveSys.queueMove(this, id, x, y);
   }
 
-  /** Advance the world by dt seconds. */
+  /** Advance the world by dt seconds. Pure orchestration of the System modules. */
   step(dt: number): void {
     this.tick++;
-
-    // Respawn dead NPCs whose timer has expired
-    for (const npc of this.npcs) {
-      if (npc.respawnAt >= 0 && this.tick >= npc.respawnAt) {
-        npc.x = npc.home.x; npc.y = npc.home.y; npc.path = [];
-        npc.hp = npc.maxHp; npc.target = null; npc.attackCd = 0; npc.respawnAt = -1;
-      }
-    }
-
+    combatSys.stepNpcRespawn(this);
     moveSys.stepMovement(this, dt);
-
     combatSys.stepCombat(this);
-
     combatSys.resolveDeaths(this);
-
     resourceSys.stepResources(this);
-
     gatherSys.stepGather(this);
   }
 
