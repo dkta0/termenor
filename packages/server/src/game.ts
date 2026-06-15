@@ -1,15 +1,13 @@
 import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState } from "@termenor/protocol";
 import { NPC_KINDS, PLAYER_MAX_HP, PLAYER_MAX_HIT, ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, FIRE_LIFETIME_TICKS, SKILLS } from "@termenor/protocol";
-import { findPath, type Point } from "./pathfinding";
-import { advanceAlongPath } from "./movement";
-import { pickWanderTarget, NPC_SPEED } from "./npc";
+import { type Point } from "./pathfinding";
 import { emptyInventory, addToInventory, removeSlot } from "./inventory";
 import { rollDamage, isAdjacent } from "./combat";
 import type { PlayerEntity, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
 import { awardXp } from "./skills-system";
 import * as invSys from "./inventory-system";
+import * as moveSys from "./movement-system";
 
-const SPEED = 5; // tiles per second  → ~200ms per tile
 const GATHER_COOLDOWN_TICKS = 30;
 const FIREMAKING_XP = 40;
 const COOKING_XP = 30;
@@ -26,12 +24,12 @@ export class GameWorld {
   readonly map: MapData;
   private spawn: Point;
   players = new Map<string, PlayerEntity>();
-  private tick = 0;
+  tick = 0;
   groundItems: GroundItem[] = [];
   nextItemId = 1;
-  private npcs: NpcEntity[] = [];
+  npcs: NpcEntity[] = [];
   private nextNpcId = 1;
-  private rng: () => number;
+  rng: () => number;
   private hits: HitEvent[] = [];
   private resources: ResourceEntity[] = [];
   private fires: FireEntity[] = [];
@@ -102,14 +100,7 @@ export class GameWorld {
   }
 
   queueMove(id: string, x: number, y: number): void {
-    const p = this.players.get(id);
-    if (!p) return;
-    // tiles are integer-addressed; floor any fractional client input
-    const tx = Math.floor(x);
-    const ty = Math.floor(y);
-    const path = findPath(this.map, { x: Math.round(p.x), y: Math.round(p.y) }, { x: tx, y: ty });
-    if (path === null) return; // unwalkable / unreachable — ignore
-    p.path = path;
+    moveSys.queueMove(this, id, x, y);
   }
 
   /** Advance the world by dt seconds. */
@@ -124,37 +115,7 @@ export class GameWorld {
       }
     }
 
-    // Movement
-    for (const p of this.players.values()) {
-      advanceAlongPath(p, SPEED * dt);
-    }
-    for (const npc of this.npcs) {
-      if (npc.respawnAt >= 0) continue;
-      advanceAlongPath(npc, NPC_SPEED * dt);
-    }
-
-    // NPC wander AI: idle NPCs past their wander timer pick a new target
-    // Skip dead NPCs and NPCs that have a combat target
-    for (const npc of this.npcs) {
-      if (npc.respawnAt >= 0) continue;
-      if (npc.target) continue;          // combat overrides wander
-      if (npc.path.length > 0) continue; // still walking
-      if (this.tick < npc.nextWanderTick) continue; // still idling
-      const target = pickWanderTarget(this.map, npc.home, npc.radius, this.rng);
-      if (target === null) {
-        // no reachable tile found — idle for a short interval then retry
-        npc.nextWanderTick = this.tick + Math.floor(this.rng() * 15) + 5;
-        continue;
-      }
-      const path = findPath(this.map, { x: Math.round(npc.x), y: Math.round(npc.y) }, target);
-      if (path === null) {
-        npc.nextWanderTick = this.tick + Math.floor(this.rng() * 15) + 5;
-        continue;
-      }
-      npc.path = path;
-      // idle interval after arriving: 1-4 seconds at 15Hz = 15-60 ticks
-      npc.nextWanderTick = this.tick + Math.floor(this.rng() * 45) + 15;
-    }
+    moveSys.stepMovement(this, dt);
 
     // Combat pass: players attack npcs, npcs attack their target
     for (const p of this.players.values()) {
@@ -217,15 +178,8 @@ export class GameWorld {
           }
         }
       } else {
-        this.stepToward(p, res.x, res.y);
+        moveSys.stepToward(this, p, res.x, res.y);
       }
-    }
-  }
-
-  private stepToward(actor: { x: number; y: number; path: Point[] }, tx: number, ty: number): void {
-    if (actor.path.length === 0) {
-      const path = findPath(this.map, { x: Math.round(actor.x), y: Math.round(actor.y) }, { x: Math.round(tx), y: Math.round(ty) });
-      if (path && path.length > 0) { path.pop(); actor.path = path; }
     }
   }
 
@@ -253,7 +207,7 @@ export class GameWorld {
         }
       }
     } else {
-      this.stepToward(actor, tgt.x, tgt.y);
+      moveSys.stepToward(this, actor, tgt.x, tgt.y);
     }
   }
 
