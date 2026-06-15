@@ -13,6 +13,7 @@ export const Kind = {
   LOCAL: 4,
   SHADOW: 5,
   ITEM: 6,
+  NPC: 7,
 } as const;
 export type KindValue = (typeof Kind)[keyof typeof Kind];
 

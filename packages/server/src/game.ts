@@ -1,5 +1,7 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState } from "@termenor/protocol";
 import { findPath, type Point } from "./pathfinding";
+import { advanceAlongPath } from "./movement";
+import { pickWanderTarget, NPC_SPEED } from "./npc";
 import { emptyInventory, addToInventory, removeSlot } from "./inventory";
 
 const SPEED = 5; // tiles per second  → ~200ms per tile
@@ -13,10 +15,16 @@ interface Player {
   inventory: (ItemStack | null)[];
 }
 
-function facingTo(dx: number, dy: number, fallback: Facing): Facing {
-  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "east" : "west";
-  if (dy !== 0) return dy > 0 ? "south" : "north";
-  return fallback;
+interface Npc {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  facing: Facing;
+  path: Point[];
+  home: Point;
+  radius: number;
+  nextWanderTick: number;
 }
 
 export interface RestoredState {
@@ -33,10 +41,14 @@ export class Game {
   private tick = 0;
   private groundItems: GroundItem[] = [];
   private nextItemId = 1;
+  private npcs: Npc[] = [];
+  private nextNpcId = 1;
+  private rng: () => number;
 
-  constructor(map: MapData, spawn: Point) {
+  constructor(map: MapData, spawn: Point, rng: () => number = Math.random) {
     this.map = map;
     this.spawn = spawn;
+    this.rng = rng;
   }
 
   addPlayer(id: string, state?: RestoredState): void {
@@ -49,6 +61,18 @@ export class Game {
 
   removePlayer(id: string): void {
     this.players.delete(id);
+  }
+
+  spawnNpc(type: string, x: number, y: number, radius: number): void {
+    this.npcs.push({
+      id: `npc-${this.nextNpcId++}`,
+      type, x, y,
+      facing: "south",
+      path: [],
+      home: { x, y },
+      radius,
+      nextWanderTick: 0,
+    });
   }
 
   getPlayerState(id: string): RestoredState | null {
@@ -72,25 +96,30 @@ export class Game {
   step(dt: number): void {
     this.tick++;
     for (const p of this.players.values()) {
-      let budget = SPEED * dt;
-      while (budget > 0 && p.path.length > 0) {
-        const target = p.path[0];
-        const dx = target.x - p.x;
-        const dy = target.y - p.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist <= budget) {
-          p.x = target.x;
-          p.y = target.y;
-          p.facing = facingTo(dx, dy, p.facing);
-          p.path.shift();
-          budget -= dist;
-        } else {
-          p.x += (dx / dist) * budget;
-          p.y += (dy / dist) * budget;
-          p.facing = facingTo(dx, dy, p.facing);
-          budget = 0;
-        }
+      advanceAlongPath(p, SPEED * dt);
+    }
+    // Advance NPC paths
+    for (const npc of this.npcs) {
+      advanceAlongPath(npc, NPC_SPEED * dt);
+    }
+    // NPC wander AI: idle NPCs past their wander timer pick a new target
+    for (const npc of this.npcs) {
+      if (npc.path.length > 0) continue; // still walking
+      if (this.tick < npc.nextWanderTick) continue; // still idling
+      const target = pickWanderTarget(this.map, npc.home, npc.radius, this.rng);
+      if (target === null) {
+        // no reachable tile found — idle for a short interval then retry
+        npc.nextWanderTick = this.tick + Math.floor(this.rng() * 15) + 5;
+        continue;
       }
+      const path = findPath(this.map, { x: Math.round(npc.x), y: Math.round(npc.y) }, target);
+      if (path === null) {
+        npc.nextWanderTick = this.tick + Math.floor(this.rng() * 15) + 5;
+        continue;
+      }
+      npc.path = path;
+      // idle interval after arriving: 1-4 seconds at 15Hz = 15-60 ticks
+      npc.nextWanderTick = this.tick + Math.floor(this.rng() * 45) + 15;
     }
   }
 
@@ -159,6 +188,9 @@ export class Game {
     const players: PlayerState[] = [...this.players.values()].map((p) => ({
       id: p.id, x: p.x, y: p.y, facing: p.facing,
     }));
-    return { t: "snapshot", tick: this.tick, players, ground: this.groundItems.slice() };
+    const npcs: NpcState[] = this.npcs.map((n) => ({
+      id: n.id, type: n.type, x: n.x, y: n.y, facing: n.facing,
+    }));
+    return { t: "snapshot", tick: this.tick, players, ground: this.groundItems.slice(), npcs };
   }
 }

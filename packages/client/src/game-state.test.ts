@@ -1,9 +1,9 @@
 import { test, expect } from "bun:test";
-import type { MapData, SnapshotMsg, GroundItem, ItemStack } from "@termenor/protocol";
+import type { MapData, SnapshotMsg, GroundItem, ItemStack, NpcState } from "@termenor/protocol";
 import { GameState, INTERP_DELAY_MS, sampleElevation } from "./game-state";
 
 const snap = (tick: number, x: number): SnapshotMsg => ({
-  t: "snapshot", tick, players: [{ id: "a", x, y: 0, facing: "east" }], ground: [],
+  t: "snapshot", tick, players: [{ id: "a", x, y: 0, facing: "east" }], ground: [], npcs: [],
 });
 
 test("samplePositions returns empty before any snapshot", () => {
@@ -82,7 +82,7 @@ test("sampleElevation returns 0 out of bounds", () => {
 test("applySnapshot stores ground items", () => {
   const gs = new GameState();
   const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 5, x: 3, y: 4 }];
-  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground }, 1000);
+  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground, npcs: [] }, 1000);
   expect(gs.ground).toEqual(ground);
 });
 
@@ -101,4 +101,70 @@ test("setInventory stores slots", () => {
 test("inventory defaults to empty array before setInventory", () => {
   const gs = new GameState();
   expect(gs.inventory).toEqual([]);
+});
+
+// ---- NPC tests ----
+
+const snapWithNpcs = (tick: number, npcX: number): SnapshotMsg => ({
+  t: "snapshot", tick,
+  players: [],
+  ground: [],
+  npcs: [{ id: "npc-1", type: "goblin", x: npcX, y: 0, facing: "east" }],
+});
+
+test("applySnapshot stores npcs", () => {
+  const gs = new GameState();
+  gs.applySnapshot(snapWithNpcs(1, 5), 1000);
+  const npcs = gs.sampleNpcs(1000 + INTERP_DELAY_MS + 50);
+  expect(npcs).toHaveLength(1);
+  expect(npcs[0].id).toBe("npc-1");
+  expect(npcs[0].type).toBe("goblin");
+});
+
+test("sampleNpcs returns empty before any snapshot", () => {
+  const gs = new GameState();
+  expect(gs.sampleNpcs(1000)).toEqual([]);
+});
+
+test("sampleNpcs interpolates npc position between two snapshots", () => {
+  const gs = new GameState();
+  gs.applySnapshot(snapWithNpcs(1, 0), 1000);
+  gs.applySnapshot(snapWithNpcs(2, 10), 1100);
+  const renderTime = 1050 + INTERP_DELAY_MS;
+  const npcs = gs.sampleNpcs(renderTime);
+  expect(npcs).toHaveLength(1);
+  expect(npcs[0].x).toBeCloseTo(5, 5);
+});
+
+test("sampleNpcs clamps to latest when render time is past newest snapshot", () => {
+  const gs = new GameState();
+  gs.applySnapshot(snapWithNpcs(1, 0), 1000);
+  gs.applySnapshot(snapWithNpcs(2, 10), 1100);
+  const npcs = gs.sampleNpcs(5000);
+  expect(npcs[0].x).toBeCloseTo(10, 5);
+});
+
+test("sampleNpcs handles npc missing from first frame (uses newest position)", () => {
+  const gs = new GameState();
+  gs.applySnapshot({ t: "snapshot", tick: 1, players: [], ground: [], npcs: [] }, 1000);
+  gs.applySnapshot(snapWithNpcs(2, 8), 1100);
+  const npcs = gs.sampleNpcs(1050 + INTERP_DELAY_MS);
+  expect(npcs).toHaveLength(1);
+  expect(npcs[0].x).toBe(8);
+});
+
+test("sampleNpcs attaches elevation h", () => {
+  const gs = new GameState();
+  gs.setMap({ width: 2, height: 1, tiles: [0, 0], heights: [0, 4] });
+  gs.applySnapshot(snapWithNpcs(1, 1), 1000);
+  const npcs = gs.sampleNpcs(1000 + INTERP_DELAY_MS + 50);
+  expect(npcs[0].h).toBeCloseTo(4, 5);
+});
+
+test("samplePositions behavior unchanged after refactor (regression)", () => {
+  const gs = new GameState();
+  gs.applySnapshot(snap(1, 0), 1000);
+  gs.applySnapshot(snap(2, 10), 1100);
+  const players = gs.samplePositions(1050 + INTERP_DELAY_MS);
+  expect(players[0].x).toBeCloseTo(5, 5);
 });

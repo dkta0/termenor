@@ -10,6 +10,7 @@ const GLYPH: Record<KindValue, string> = {
   [Kind.LOCAL]: "@",
   [Kind.SHADOW]: ",",
   [Kind.ITEM]: "$",
+  [Kind.NPC]: "&",
 };
 
 const pxRgb = (buf: PixelBuffer, i: number): RGB => {

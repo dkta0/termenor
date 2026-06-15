@@ -113,7 +113,7 @@ export class Connection {
       this.state.setMap(msg.map);
       // seed initial position so renderer has a starting frame before first snapshot
       this.state.applySnapshot(
-        { t: "snapshot", tick: 0, players: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing }], ground: [] },
+        { t: "snapshot", tick: 0, players: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing }], ground: [], npcs: [] },
         this.now(),
       );
     } else if (msg.t === "snapshot") {

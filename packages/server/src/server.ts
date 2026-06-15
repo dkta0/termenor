@@ -1,6 +1,6 @@
 import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, type InventoryMsg } from "@termenor/protocol";
 import { Game } from "./game";
-import { createDefaultMap, SPAWN, SEED_ITEMS } from "./world";
+import { createDefaultMap, SPAWN, SEED_ITEMS, NPC_SPAWNS } from "./world";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import { emptyInventory } from "./inventory";
 import type { Database } from "bun:sqlite";
@@ -24,6 +24,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
   const map = createDefaultMap();
   const game = new Game(map, SPAWN);
   for (const s of SEED_ITEMS) game.addGroundItem(s.item, s.qty, s.x, s.y);
+  for (const n of NPC_SPAWNS) game.spawnNpc(n.type, n.x, n.y, n.radius);
   const db: Database = openDb(dbPath);
   const online = new Set<string>(); // usernames currently connected
   let nextId = 1;

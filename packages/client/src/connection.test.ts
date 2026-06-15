@@ -59,7 +59,7 @@ test("welcome populates map and local id", () => {
 test("snapshot is applied to game-state", () => {
   const { sock, gs, advance } = setup();
   sock.fireOpen();
-  sock.fireMessage(encode({ t: "snapshot", tick: 1, players: [{ id: "me", x: 1, y: 0, facing: "east" }], ground: [] }));
+  sock.fireMessage(encode({ t: "snapshot", tick: 1, players: [{ id: "me", x: 1, y: 0, facing: "east" }], ground: [], npcs: [] }));
   advance(200);
   const players = gs.samplePositions(1200);
   expect(players[0].id).toBe("me");

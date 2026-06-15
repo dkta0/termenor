@@ -11,6 +11,7 @@ test("server snapshot round-trips", () => {
     t: "snapshot", tick: 5,
     players: [{ id: "a", x: 1.5, y: 2, facing: "east" }],
     ground: [],
+    npcs: [],
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
@@ -91,6 +92,21 @@ test("InventoryMsg round-trips", () => {
 
 test("SnapshotMsg includes ground array", () => {
   const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 10, x: 3, y: 4 }];
-  const msg: ServerMsg = { t: "snapshot", tick: 1, players: [], ground };
+  const msg: ServerMsg = { t: "snapshot", tick: 1, players: [], ground, npcs: [] };
   expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
+import { NPC_TYPES, type NpcState } from "./index";
+
+test("SnapshotMsg with npcs round-trips through encode/decodeServer", () => {
+  const npcs: NpcState[] = [{ id: "npc-1", type: "goblin", x: 3.5, y: 7, facing: "south" }];
+  const msg: ServerMsg = { t: "snapshot", tick: 42, players: [], ground: [], npcs };
+  expect(decodeServer(encode(msg))).toEqual(msg);
+});
+
+test("NPC_TYPES has goblin and rat entries", () => {
+  expect(NPC_TYPES.goblin).toBeDefined();
+  expect(NPC_TYPES.rat).toBeDefined();
+  expect(NPC_TYPES.goblin.name).toBe("Goblin");
+  expect(NPC_TYPES.rat.name).toBe("Rat");
 });
