@@ -116,6 +116,8 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
               if (inv) ws.send(encode({ t: "inventory", slots: inv } satisfies InventoryMsg));
             }
           }
+        } else if (msg.t === "attack") {
+          game.attack(ws.data.username, msg.targetId);
         }
       },
       close(ws) {
