@@ -9,7 +9,7 @@ The whole game, built as ordered vertical slices. Each row is one `/spec → /pl
 2. ✅ **Isometric renderer** — 2:1 dimetric projection, rolling terrain elevation (+ climb
    collision), extruded walls with walk-behind, face-normal lighting + terrain skirts, entity
    billboards + shadows, z-interpolation, pick-buffer picking. *(merged)*
-3. **Accounts + persistence** — login, save/load player state (SQLite/Postgres, Docker).
+3. ✅ **Accounts + persistence** — login (hashed pw), save/load player state via SQLite (bun:sqlite) on a Docker volume. *(merged)*
 4. **Chat + nearby-player presence** — names, public chat.
 
 ## Core loop

@@ -33,4 +33,5 @@ driven by `/goal`, one slice at a time.
 
 - Slice 1: ✅ smooth multiplayer movement (merged to main).
 - Slice 2: ✅ isometric renderer — elevation + collision, walk-behind, billboards (merged to main).
-- Slice 3: accounts + persistence — next.
+- Slice 3: ✅ accounts + persistence — login + SQLite save/load on a Docker volume (merged to main).
+- Slice 4: chat + nearby-player presence — next.
