@@ -1,5 +1,6 @@
 import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack } from "@termenor/protocol";
 import { findPath, type Point } from "./pathfinding";
+import { advanceAlongPath } from "./movement";
 import { emptyInventory, addToInventory, removeSlot } from "./inventory";
 
 const SPEED = 5; // tiles per second  → ~200ms per tile
@@ -11,12 +12,6 @@ interface Player {
   facing: Facing;
   path: Point[]; // remaining waypoints (tile centers)
   inventory: (ItemStack | null)[];
-}
-
-function facingTo(dx: number, dy: number, fallback: Facing): Facing {
-  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "east" : "west";
-  if (dy !== 0) return dy > 0 ? "south" : "north";
-  return fallback;
 }
 
 export interface RestoredState {
@@ -72,25 +67,7 @@ export class Game {
   step(dt: number): void {
     this.tick++;
     for (const p of this.players.values()) {
-      let budget = SPEED * dt;
-      while (budget > 0 && p.path.length > 0) {
-        const target = p.path[0];
-        const dx = target.x - p.x;
-        const dy = target.y - p.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist <= budget) {
-          p.x = target.x;
-          p.y = target.y;
-          p.facing = facingTo(dx, dy, p.facing);
-          p.path.shift();
-          budget -= dist;
-        } else {
-          p.x += (dx / dist) * budget;
-          p.y += (dy / dist) * budget;
-          p.facing = facingTo(dx, dy, p.facing);
-          budget = 0;
-        }
-      }
+      advanceAlongPath(p, SPEED * dt);
     }
   }
 
