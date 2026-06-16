@@ -47,7 +47,6 @@ export class Connection {
   private username: string;
   private password: string;
   private mode: "login" | "register" | undefined;
-  private authenticated = false;
   private suppressReconnect = false;
   private pendingAuth: ((r: AuthResult) => void) | null = null;
   private readonly onLoginError: (reason: string) => void;
@@ -86,6 +85,11 @@ export class Connection {
     };
     sock.onmessage = (data) => this.handle(data);
     sock.onclose = () => {
+      // Ignore the close of a socket we've already replaced (e.g. a failed-auth
+      // socket whose late close arrives after the user retried). Only the live
+      // socket may drive reconnection — otherwise a retry's reset of
+      // suppressReconnect would let the abandoned socket spawn a stray connection.
+      if (sock !== this.sock) return;
       if (this.closedByUser || this.suppressReconnect) return;
       if (this.reconnectDelayMs <= 0) this.connect();
       else setTimeout(() => this.connect(), this.reconnectDelayMs);
@@ -159,7 +163,6 @@ export class Connection {
         this.onLoginError(msg.reason);
       }
     } else if (msg.t === "welcome") {
-      this.authenticated = true;
       this.mode = "login"; // any later reconnect logs into the now-existing account
       const pending = this.pendingAuth;
       this.pendingAuth = null;

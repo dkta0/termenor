@@ -241,3 +241,31 @@ test("legacy connect() still sends a login frame without a mode key", () => {
   sock.fireOpen();
   expect(sock.lastDecoded()).toEqual({ t: "login", username: "alice", password: "s3cr3t" });
 });
+
+test("a superseded socket closing after a failed-auth retry does NOT spawn a stray reconnect", async () => {
+  const sockets: MockSocket[] = [];
+  const conn = new Connection("ws://x", new GameState(), {
+    socketFactory: () => { const s = new MockSocket(); sockets.push(s); return s; },
+    now: () => 0, reconnectDelayMs: 0,
+  });
+  // Attempt #1 fails with loginError (socket #1).
+  const p1 = conn.authenticate("login", "ghost", "pw");
+  sockets[0].fireOpen();
+  sockets[0].fireMessage(encode({ t: "loginError", reason: "no such account" }));
+  await expect(p1).resolves.toEqual({ ok: false, reason: "no such account" });
+  expect(sockets).toHaveLength(1);
+
+  // User retries (socket #2). This resets suppressReconnect.
+  const p2 = conn.authenticate("login", "ghost", "pw2");
+  expect(sockets).toHaveLength(2);
+
+  // The server now closes the abandoned socket #1 (late). It must be ignored —
+  // it is no longer the live socket, so no stray socket #3 may be opened.
+  sockets[0].close();
+  expect(sockets).toHaveLength(2);
+
+  // Resolve p2 so the promise doesn't dangle.
+  sockets[1].fireOpen();
+  sockets[1].fireMessage(encode({ t: "loginError", reason: "no such account" }));
+  await p2;
+});
