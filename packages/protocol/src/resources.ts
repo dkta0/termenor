@@ -20,6 +20,8 @@ export const RESOURCE_KINDS: Record<string, ResourceKind> = {
   rock:         { name: "Rock",         color: [120, 120, 130],  skill: "mining",      tool: "bronze_pickaxe", yield: "copper_ore", xp: 18, charges: 4, respawnTicks: 120, cooldownTicks: 30, gatherable: true },
   fishing_spot: { name: "Fishing spot", color: [60, 120, 200],   skill: "fishing",     tool: "small_net",      yield: "raw_shrimp", xp: 10, charges: 0, respawnTicks: 0,   cooldownTicks: 35, infinite: true, gatherable: true },
   fire:         { name: "Fire",         color: [240, 140, 30],   skill: "firemaking",  tool: null,             yield: "",           xp: 0,  charges: 0, respawnTicks: 0,   cooldownTicks: 0,  lifetimeTicks: 150, gatherable: false },
+  bank_booth:   { name: "Bank booth",   color: [180, 170, 60],   skill: "",            tool: null,             yield: "",           xp: 0,  charges: 0, respawnTicks: 0,   cooldownTicks: 0,  gatherable: false },
+  general_store:{ name: "General Store", color: [200, 120, 200], skill: "",            tool: null,             yield: "",           xp: 0,  charges: 0, respawnTicks: 0,   cooldownTicks: 0,  gatherable: false },
 };
 
 export const FIRE_LIFETIME_TICKS = 150;

@@ -6,6 +6,7 @@ export interface PlayerEntity {
   inventory: (ItemStack | null)[]; hp: number; maxHp: number;
   target: string | null; attackCd: number;
   skills: Record<string, number>; gatherTarget: string | null; gatherCd: number;
+  bank: ItemStack[];
 }
 
 export interface NpcEntity {
