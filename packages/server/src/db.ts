@@ -48,6 +48,7 @@ export async function getOrCreateAccount(
   username: string,
   password: string,
   spawn: { x: number; y: number; facing: Facing },
+  mode?: "login" | "register",
 ): Promise<{ ok: true; state: PlayerStateRecord } | { ok: false; reason: string }> {
   const row = db
     .query<{ password_hash: string; x: number; y: number; facing: string; inventory: string | null; skills: string | null }, string>(
@@ -56,7 +57,8 @@ export async function getOrCreateAccount(
     .get(username);
 
   if (row === null) {
-    // new account — create it
+    // No account exists. Reject explicit logins; create for register/legacy.
+    if (mode === "login") return { ok: false, reason: "no such account" };
     const hash = await Bun.password.hash(password);
     db.run(
       "INSERT INTO accounts (username, password_hash, x, y, facing, last_seen) VALUES (?, ?, ?, ?, ?, ?)",
@@ -65,8 +67,11 @@ export async function getOrCreateAccount(
     return { ok: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {} } };
   }
 
+  // Account exists. Reject explicit registers; verify password otherwise.
+  if (mode === "register") return { ok: false, reason: "that name is taken" };
+
   const valid = await Bun.password.verify(password, row.password_hash);
-  if (!valid) return { ok: false, reason: "bad password" };
+  if (!valid) return { ok: false, reason: mode === "login" ? "wrong password" : "bad password" };
 
   let skills: Record<string, number> = {};
   if (row.skills) {

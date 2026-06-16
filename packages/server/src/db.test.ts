@@ -130,3 +130,37 @@ test("NULL or corrupt skills column yields empty skills", async () => {
   if (!result.ok) return;
   expect(result.state.skills).toEqual({});
 });
+
+test("register mode fails when the name is already taken", async () => {
+  await getOrCreateAccount(db, "taken", "pw", SPAWN, "register");
+  const result = await getOrCreateAccount(db, "taken", "pw2", SPAWN, "register");
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.reason).toMatch(/taken/i);
+});
+
+test("register mode creates a fresh account", async () => {
+  const result = await getOrCreateAccount(db, "fresh", "pw", SPAWN, "register");
+  expect(result.ok).toBe(true);
+});
+
+test("login mode fails when the account does not exist", async () => {
+  const result = await getOrCreateAccount(db, "ghost", "pw", SPAWN, "login");
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.reason).toMatch(/no such account/i);
+});
+
+test("login mode fails with wrong password on an existing account", async () => {
+  await getOrCreateAccount(db, "realuser", "right", SPAWN, "register");
+  const result = await getOrCreateAccount(db, "realuser", "wrong", SPAWN, "login");
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.reason).toMatch(/wrong password/i);
+});
+
+test("login mode succeeds with correct password", async () => {
+  await getOrCreateAccount(db, "loginok", "pw", SPAWN, "register");
+  const result = await getOrCreateAccount(db, "loginok", "pw", SPAWN, "login");
+  expect(result.ok).toBe(true);
+});
