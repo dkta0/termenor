@@ -29,8 +29,12 @@ typecheck:
 render:
     bun run verify:render
 
-# full pre-commit gate: tests + typecheck + render
-check: test typecheck render
+# real-terminal click-to-move smoke test (hermetic, own temp DB)
+click:
+    bun run verify:click
+
+# full pre-commit gate: tests + typecheck + render + click
+check: test typecheck render click
 
 # free port 3000 by stopping the rivalmark web container that squats on it
 free-port:

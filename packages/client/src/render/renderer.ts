@@ -1,5 +1,6 @@
 import {
   createCliRenderer,
+  BoxRenderable,
   RGBA,
   type CliRenderer,
   type KeyEvent,
@@ -184,7 +185,22 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     }
   });
 
-  renderer.root.onMouseDown = (e: TuiMouseEvent) => {
+  // OpenTUI dispatches mouse events only to renderables registered in the hit
+  // grid; the RootRenderable never registers itself, and we draw the world by
+  // writing pixels straight to the buffer (no child renderables). So clicks
+  // landed on nothing and `onMouseDown` never fired. A full-screen, invisible
+  // box (no border, no fill) registers in the hit grid and catches every click
+  // without painting over the world.
+  const clickLayer = new BoxRenderable(renderer, {
+    id: "click-layer",
+    width: "100%",
+    height: "100%",
+    border: false,
+    shouldFill: false,
+  });
+  renderer.root.add(clickLayer);
+
+  clickLayer.onMouseDown = (e: TuiMouseEvent) => {
     if (chat.active) return; // gate clicks while typing
     if (!lastFrame || !state.map) return;
     const px = e.x;
