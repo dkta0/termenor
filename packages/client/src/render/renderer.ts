@@ -7,7 +7,7 @@ import {
   type MouseEvent as TuiMouseEvent,
   type OptimizedBuffer,
 } from "@opentui/core";
-import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS } from "@termenor/protocol";
+import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS, EQUIP_SLOTS } from "@termenor/protocol";
 import type { GameState } from "../game-state";
 import type { ChatState } from "../chat";
 import { isoCamera, pickTile } from "./camera";
@@ -44,6 +44,8 @@ export interface RendererHooks {
   onBankAction?(action: "deposit" | "withdraw", slot: number, qty: number): void;
   /** Called for a shop buy/sell of the given item id. */
   onShopAction?(action: "buy" | "sell", item: string, qty: number): void;
+  /** Called for an equip (by inventory slot) / unequip (by equipment-slot index). */
+  onEquipAction?(action: "equip" | "unequip", slot: number): void;
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
@@ -60,6 +62,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   // Panel-local modes for the bank/shop panels (which digit actions mean).
   let bankMode: "deposit" | "withdraw" = "deposit";
   let shopMode: "buy" | "sell" = "buy";
+  let equipMode: "equip" | "unequip" = "equip";
 
   renderer.setFrameCallback(async () => {
     const buffer = renderer.nextRenderBuffer;
@@ -228,6 +231,23 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         for (const cell of textCells(label, 2, startRow + 2 + i, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, SHOP_COLOR, BLACK);
       }
     }
+
+    // Equipment panel (modal, left side). Lists the three slots in EQUIP_SLOTS order.
+    if (state.equipOpen) {
+      const EQUIP_COLOR = RGBA.fromInts(150, 200, 230, 255);
+      const startRow = skillLines.length + 2;
+      const header = `[ Equipment — ${equipMode.toUpperCase()} ]`;
+      for (const cell of textCells(header, 2, startRow, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, EQUIP_COLOR, BLACK);
+      const hint = "q equip · u unequip · 1-9 slot · Esc close";
+      for (const cell of textCells(hint, 2, startRow + 1, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, DIM, BLACK);
+      for (let i = 0; i < EQUIP_SLOTS.length; i++) {
+        const slot = EQUIP_SLOTS[i];
+        const item = state.equipment[slot];
+        const slotName = slot.charAt(0).toUpperCase() + slot.slice(1);
+        const label = `${i + 1}: ${slotName}: ${item ? (ITEM_KINDS[item]?.name ?? item) : "(empty)"}`;
+        for (const cell of textCells(label, 2, startRow + 2 + i, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, EQUIP_COLOR, BLACK);
+      }
+    }
   });
 
   // OpenTUI dispatches mouse events only to renderables registered in the hit
@@ -296,6 +316,16 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       return;
     }
 
+    // Equipment panel open (modal): EQUIP picks an inventory slot, UNEQUIP an equipped slot.
+    if (state.equipOpen) {
+      if (key.name === "escape") { state.closeEquip(); return; }
+      if (key.name === "q") { equipMode = "equip"; return; }
+      if (key.name === "u") { equipMode = "unequip"; return; }
+      const m = /^([1-9])$/.exec(key.name ?? "");
+      if (m) hooks.onEquipAction?.(equipMode, parseInt(m[1], 10) - 1);
+      return;
+    }
+
     // Not in chat mode
     if (key.name === "return" || key.name === "enter") {
       chat.open();
@@ -313,6 +343,9 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       if (id) { shopMode = "buy"; hooks.onOpen?.("shop", id); }
       return;
     }
+
+    // Toggle the equipment panel (always available — no world object to open).
+    if (key.name === "e") { equipMode = "equip"; state.toggleEquip(); return; }
 
     // Inventory keys
     if (key.name === "g") { hooks.onPickup?.(); return; }

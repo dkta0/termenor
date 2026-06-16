@@ -322,3 +322,25 @@ test("shop message updates game-state and fires onShop", () => {
   expect(gs.shopOpen).toBe(true);
   expect(fired).toBe(true);
 });
+
+test("sendEquipAction serializes an equipAction message", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  conn.sendEquipAction("equip", 3);
+  expect(sock.lastDecoded()).toEqual({ t: "equipAction", action: "equip", slot: 3 });
+});
+
+test("equipment message updates game-state and fires onEquipment", () => {
+  const sock = new MockSocket();
+  const gs = new GameState();
+  let fired = false;
+  const conn = new Connection("ws://x", gs, {
+    socketFactory: () => sock, now: () => 0, username: "u", password: "p",
+    onEquipment: () => { fired = true; },
+  });
+  conn.connect();
+  sock.fireOpen();
+  sock.fireMessage(encode({ t: "equipment", weapon: "bronze_sword", body: null, shield: null }));
+  expect(gs.equipment).toEqual({ weapon: "bronze_sword", body: null, shield: null });
+  expect(fired).toBe(true);
+});

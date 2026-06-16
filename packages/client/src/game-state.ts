@@ -1,4 +1,4 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, ResourceState, ShopEntry } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, ResourceState, ShopEntry, Equipment } from "@termenor/protocol";
 import { SPLAT_MS, SKILLS, type HitEvent } from "@termenor/protocol";
 
 /**
@@ -30,6 +30,8 @@ export class GameState {
   bankOpen = false;
   shop: { shopId: string; name: string; entries: ShopEntry[] } | null = null;
   shopOpen = false;
+  equipment: Equipment = { weapon: null, body: null, shield: null };
+  equipOpen = false;
   private frames: Frame[] = []; // chronological, oldest → newest
   private splats: Splat[] = [];
 
@@ -44,6 +46,9 @@ export class GameState {
     this.shopOpen = open;
   }
   closeShop(): void { this.shopOpen = false; }
+  setEquipment(eq: Equipment): void { this.equipment = eq; }
+  toggleEquip(): void { this.equipOpen = !this.equipOpen; }
+  closeEquip(): void { this.equipOpen = false; }
 
   /** Id of the nearest visible resource of `type` to the local player, or null. */
   nearestResourceOfType(type: string, now: number): string | null {

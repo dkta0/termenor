@@ -1,4 +1,4 @@
-import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg, type OpenMsg, type BankActionMsg, type ShopActionMsg } from "@termenor/protocol";
+import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg, type OpenMsg, type BankActionMsg, type ShopActionMsg, type EquipActionMsg } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
@@ -24,6 +24,7 @@ export interface ConnectionOpts {
   onSkills?: () => void;
   onBank?: () => void;
   onShop?: () => void;
+  onEquipment?: () => void;
 }
 
 export type AuthResult = { ok: true } | { ok: false; reason: string };
@@ -57,6 +58,7 @@ export class Connection {
   private readonly onSkills: (() => void) | undefined;
   private readonly onBank: (() => void) | undefined;
   private readonly onShop: (() => void) | undefined;
+  private readonly onEquipment: (() => void) | undefined;
   private closedByUser = false;
 
   constructor(
@@ -78,6 +80,7 @@ export class Connection {
     this.onSkills = opts.onSkills;
     this.onBank = opts.onBank;
     this.onShop = opts.onShop;
+    this.onEquipment = opts.onEquipment;
   }
 
   connect(): void {
@@ -166,6 +169,11 @@ export class Connection {
     this.sock?.send(encode(msg));
   }
 
+  sendEquipAction(action: "equip" | "unequip", slot: number): void {
+    const msg: EquipActionMsg = { t: "equipAction", action, slot };
+    this.sock?.send(encode(msg));
+  }
+
   disconnect(): void {
     this.closedByUser = true;
     this.sock?.close();
@@ -213,6 +221,9 @@ export class Connection {
     } else if (msg.t === "shop") {
       this.state.setShop(msg.shopId, msg.name, msg.entries, msg.open);
       this.onShop?.();
+    } else if (msg.t === "equipment") {
+      this.state.setEquipment({ weapon: msg.weapon, body: msg.body, shield: msg.shield });
+      this.onEquipment?.();
     }
   }
 }

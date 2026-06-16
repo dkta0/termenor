@@ -324,3 +324,18 @@ test("nearestResourceOfType returns null when there is no local player", () => {
   const gs = new GameState();
   expect(gs.nearestResourceOfType("bank_booth", 1000)).toBeNull();
 });
+
+test("setEquipment stores the equipped items", () => {
+  const gs = new GameState();
+  gs.setEquipment({ weapon: "bronze_sword", body: null, shield: "bronze_shield" });
+  expect(gs.equipment).toEqual({ weapon: "bronze_sword", body: null, shield: "bronze_shield" });
+});
+
+test("toggleEquip flips the panel flag; closeEquip clears it", () => {
+  const gs = new GameState();
+  expect(gs.equipOpen).toBe(false);
+  gs.toggleEquip();
+  expect(gs.equipOpen).toBe(true);
+  gs.closeEquip();
+  expect(gs.equipOpen).toBe(false);
+});
