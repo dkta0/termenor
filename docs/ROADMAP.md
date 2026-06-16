@@ -22,7 +22,8 @@ The whole game, built as ordered vertical slices. Each row is one `/spec → /pl
 ## Content scale-out (reuse the engines)
 
 9. ✅ **Skill framework** generalized → mining, fishing, cooking, firemaking. *(merged)*
-10. **Banking + shops.**
+10. ✅ **Banking + shops** — persistent per-player bank (deposit/withdraw at a booth) + general
+    store (buy/sell for coins), server-authoritative, with bank/shop panels in the client. *(merged)*
 11. **Equipment + combat v2** — ranged/magic, prayer.
 12. **Quests** — scripting/state-machine system + one real quest.
 13. **World scale** — multiple regions, region streaming.

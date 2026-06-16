@@ -40,4 +40,5 @@ driven by `/goal`, one slice at a time.
 - Slice 7: ✅ combat v1 — melee, HP, death/respawn, damage splats (merged to main).
 - Slice 8: ✅ woodcutting — XP/levels, tool check, tree nodes + respawn, skill engine (merged to main).
 - Slice 9: ✅ skill framework — data-driven RESOURCE_TYPES + use() action; mining, fishing, firemaking, cooking (merged to main).
-- Slice 10: banking + shops — next.
+- Slice 10: ✅ banking + shops — persistent per-player bank + general store, server-authoritative, bank/shop panels (merged to main).
+- Slice 11: equipment + combat v2 — next.
