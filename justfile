@@ -33,8 +33,12 @@ render:
 click:
     bun run verify:click
 
-# full pre-commit gate: tests + typecheck + render + click
-check: test typecheck render click
+# real-terminal login → world smoke test (hermetic, own temp DB)
+login:
+    bun run verify:login
+
+# full pre-commit gate: tests + typecheck + render + click + login
+check: test typecheck render click login
 
 # free port 3000 by stopping the rivalmark web container that squats on it
 free-port:

@@ -8,7 +8,8 @@
     "server": "bun run packages/server/src/index.ts",
     "client": "bun run packages/client/src/index.ts",
     "verify:render": "python3 scripts/pty-render-check.py",
-    "verify:click": "python3 scripts/pty-click-check.py"
+    "verify:click": "python3 scripts/pty-click-check.py",
+    "verify:login": "python3 scripts/pty-login-check.py"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
