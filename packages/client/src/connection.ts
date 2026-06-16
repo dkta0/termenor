@@ -1,4 +1,4 @@
-import { decodeServer, encode, PLAYER_MAX_HP, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg } from "@termenor/protocol";
+import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
@@ -16,13 +16,15 @@ export interface ConnectionOpts {
   socketFactory?: SocketFactory;
   now?: () => number;
   reconnectDelayMs?: number;
-  username: string;
-  password: string;
+  username?: string;
+  password?: string;
   onLoginError?: (reason: string) => void;
   onChatMsg?: (from: string, text: string) => void;
   onInventory?: (slots: (ItemStack | null)[]) => void;
   onSkills?: () => void;
 }
+
+export type AuthResult = { ok: true } | { ok: false; reason: string };
 
 /** Adapts the browser/Bun WebSocket to SocketLike. */
 function defaultFactory(url: string): SocketLike {
@@ -42,8 +44,12 @@ export class Connection {
   private readonly factory: SocketFactory;
   private readonly now: () => number;
   private readonly reconnectDelayMs: number;
-  private readonly username: string;
-  private readonly password: string;
+  private username: string;
+  private password: string;
+  private mode: "login" | "register" | undefined;
+  private authenticated = false;
+  private suppressReconnect = false;
+  private pendingAuth: ((r: AuthResult) => void) | null = null;
   private readonly onLoginError: (reason: string) => void;
   private readonly onChatMsg: (from: string, text: string) => void;
   private readonly onInventory: ((slots: (ItemStack | null)[]) => void) | undefined;
@@ -58,8 +64,8 @@ export class Connection {
     this.factory = opts.socketFactory ?? defaultFactory;
     this.now = opts.now ?? (() => performance.now());
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 500;
-    this.username = opts.username;
-    this.password = opts.password;
+    this.username = opts.username ?? "";
+    this.password = opts.password ?? "";
     this.onLoginError = opts.onLoginError ?? ((reason) => {
       console.error(`Login failed: ${reason}`);
       process.exit(1);
@@ -72,13 +78,32 @@ export class Connection {
   connect(): void {
     const sock = this.factory(this.url);
     this.sock = sock;
-    sock.onopen = () => sock.send(encode({ t: "login", username: this.username, password: this.password }));
+    sock.onopen = () => {
+      const frame: LoginMsg = this.mode
+        ? { t: "login", mode: this.mode, username: this.username, password: this.password }
+        : { t: "login", username: this.username, password: this.password };
+      sock.send(encode(frame));
+    };
     sock.onmessage = (data) => this.handle(data);
     sock.onclose = () => {
-      if (this.closedByUser) return;
+      if (this.closedByUser || this.suppressReconnect) return;
       if (this.reconnectDelayMs <= 0) this.connect();
       else setTimeout(() => this.connect(), this.reconnectDelayMs);
     };
+  }
+
+  /** Connect and attempt auth with the given mode. Resolves once the server
+   *  replies with welcome (ok) or loginError (failure). On failure, the socket
+   *  is not auto-reconnected, so the caller can retry with new credentials. */
+  authenticate(mode: "login" | "register" | undefined, username: string, password: string): Promise<AuthResult> {
+    this.mode = mode;
+    this.username = username;
+    this.password = password;
+    this.suppressReconnect = false;
+    return new Promise<AuthResult>((resolve) => {
+      this.pendingAuth = resolve;
+      this.connect();
+    });
   }
 
   sendMoveTo(x: number, y: number): void {
@@ -125,8 +150,20 @@ export class Connection {
     let msg;
     try { msg = decodeServer(data); } catch { return; }
     if (msg.t === "loginError") {
-      this.onLoginError(msg.reason);
+      const pending = this.pendingAuth;
+      if (pending) {
+        this.suppressReconnect = true;
+        this.pendingAuth = null;
+        pending({ ok: false, reason: msg.reason });
+      } else {
+        this.onLoginError(msg.reason);
+      }
     } else if (msg.t === "welcome") {
+      this.authenticated = true;
+      this.mode = "login"; // any later reconnect logs into the now-existing account
+      const pending = this.pendingAuth;
+      this.pendingAuth = null;
+      pending?.({ ok: true });
       this.state.setLocalId(msg.playerId);
       this.state.setMap(msg.map);
       // seed initial position so renderer has a starting frame before first snapshot

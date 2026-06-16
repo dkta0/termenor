@@ -208,3 +208,36 @@ test("inventory message updates GameState", () => {
   sock.fireMessage(encode({ t: "inventory", slots }));
   expect(gs.inventory[0]).toEqual({ item: "coins", qty: 5 });
 });
+
+test("authenticate resolves ok when welcome arrives, and sends mode", async () => {
+  const sock = new MockSocket();
+  const conn = new Connection("ws://x", new GameState(), { socketFactory: () => sock, now: () => 0 });
+  const p = conn.authenticate("register", "newbie", "pw");
+  sock.fireOpen();
+  expect(sock.lastDecoded()).toEqual({ t: "login", mode: "register", username: "newbie", password: "pw" });
+  sock.fireMessage(encode({
+    t: "welcome", playerId: "newbie", tickRate: 15, x: 0, y: 0, facing: "south",
+    map: { width: 2, height: 1, tiles: [0, 0], heights: [0, 0] },
+  }));
+  await expect(p).resolves.toEqual({ ok: true });
+});
+
+test("authenticate resolves with the error reason on loginError and does NOT reconnect", async () => {
+  const sockets: MockSocket[] = [];
+  const conn = new Connection("ws://x", new GameState(), {
+    socketFactory: () => { const s = new MockSocket(); sockets.push(s); return s; },
+    now: () => 0, reconnectDelayMs: 0,
+  });
+  const p = conn.authenticate("login", "ghost", "pw");
+  sockets[0].fireOpen();
+  sockets[0].fireMessage(encode({ t: "loginError", reason: "no such account" }));
+  await expect(p).resolves.toEqual({ ok: false, reason: "no such account" });
+  sockets[0].close(); // server-side close after the error
+  expect(sockets).toHaveLength(1); // suppressed: no auto-reconnect on auth failure
+});
+
+test("legacy connect() still sends a login frame without a mode key", () => {
+  const { sock } = setup({ username: "alice", password: "s3cr3t" });
+  sock.fireOpen();
+  expect(sock.lastDecoded()).toEqual({ t: "login", username: "alice", password: "s3cr3t" });
+});
