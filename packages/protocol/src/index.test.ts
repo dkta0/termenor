@@ -239,3 +239,10 @@ test("decodeClient still accepts a login message with no mode (legacy)", () => {
   if (msg.t !== "login") return;
   expect(msg.mode).toBeUndefined();
 });
+
+test("equipAction + equipment messages round-trip", () => {
+  const ea: ClientMsg = { t: "equipAction", action: "equip", slot: 3 };
+  expect(decodeClient(encode(ea))).toEqual(ea);
+  const em: ServerMsg = { t: "equipment", weapon: "bronze_sword", body: null, shield: null };
+  expect(decodeServer(encode(em))).toEqual(em);
+});

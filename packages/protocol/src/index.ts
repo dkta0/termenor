@@ -44,7 +44,8 @@ export interface UseMsg { t: "use"; action: string; slot: number; }
 export interface OpenMsg { t: "open"; what: "bank" | "shop"; targetId: string; }
 export interface BankActionMsg { t: "bankAction"; action: "deposit" | "withdraw"; slot: number; qty: number; }
 export interface ShopActionMsg { t: "shopAction"; action: "buy" | "sell"; item: string; qty: number; }
-export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg | UseMsg | OpenMsg | BankActionMsg | ShopActionMsg;
+export interface EquipActionMsg { t: "equipAction"; action: "equip" | "unequip"; slot: number; }
+export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg | UseMsg | OpenMsg | BankActionMsg | ShopActionMsg | EquipActionMsg;
 
 export interface WelcomeMsg {
   t: "welcome";
@@ -63,7 +64,8 @@ export interface InventoryMsg { t: "inventory"; slots: (ItemStack | null)[]; }
 export interface SkillsMsg { t: "skills"; skills: Record<string, { xp: number; level: number }>; }
 export interface BankMsg { t: "bank"; items: ItemStack[]; open: boolean; }
 export interface ShopMsg { t: "shop"; shopId: string; name: string; entries: ShopEntry[]; open: boolean; }
-export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg | ChatBroadcastMsg | InventoryMsg | SkillsMsg | BankMsg | ShopMsg;
+export interface EquipmentMsg { t: "equipment"; weapon: string | null; body: string | null; shield: string | null; }
+export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg | ChatBroadcastMsg | InventoryMsg | SkillsMsg | BankMsg | ShopMsg | EquipmentMsg;
 
 export function encode(msg: ClientMsg | ServerMsg): string {
   return JSON.stringify(msg);
@@ -71,8 +73,8 @@ export function encode(msg: ClientMsg | ServerMsg): string {
 
 export const MAX_CHAT_LEN = 200;
 
-const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack", "gather", "use", "open", "bankAction", "shopAction"]);
-const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg", "inventory", "skills", "bank", "shop"]);
+const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack", "gather", "use", "open", "bankAction", "shopAction", "equipAction"]);
+const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg", "inventory", "skills", "bank", "shop", "equipment"]);
 
 export function decodeClient(data: string): ClientMsg {
   const obj = JSON.parse(data);
@@ -90,3 +92,4 @@ export * from "./combat";
 export * from "./skills";
 export * from "./resources";
 export * from "./shops";
+export * from "./equipment";

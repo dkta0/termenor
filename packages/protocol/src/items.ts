@@ -32,6 +32,8 @@ export const ITEM_KINDS: Record<string, ItemKind> = {
   copper_ore:      { name: "Copper ore",       glyph: "o", color: [180, 110,  70], stackable: true  },
   raw_shrimp:      { name: "Raw shrimp",       glyph: "r", color: [255, 150, 120], stackable: true  },
   cooked_shrimp:   { name: "Cooked shrimp",    glyph: "s", color: [255, 120,  90], stackable: true  },
+  bronze_platebody:{ name: "Bronze platebody", glyph: "B", color: [205, 127,  50], stackable: false },
+  bronze_shield:   { name: "Bronze shield",    glyph: ")", color: [180, 120,  60], stackable: false },
 };
 
 export function isItem(id: string): boolean {
