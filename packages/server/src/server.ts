@@ -1,4 +1,4 @@
-import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, type InventoryMsg, type SkillsMsg } from "@termenor/protocol";
+import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, type InventoryMsg, type SkillsMsg, type BankMsg, type ShopMsg } from "@termenor/protocol";
 import { GameWorld } from "./game";
 import { createDefaultMap, SPAWN, SEED_ITEMS, NPC_SPAWNS, RESOURCE_SPAWNS, STARTER_AXE } from "./world";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
@@ -13,7 +13,7 @@ export function sanitizeChat(text: string): string {
 const TICK_RATE = 15;
 const SAVE_INTERVAL_TICKS = TICK_RATE * 5; // save all online players every ~5 seconds
 
-interface Conn { id: string; username: string | null; }
+interface Conn { id: string; username: string | null; shopId: string | null; }
 
 export interface RunningServer {
   port: number;
@@ -36,7 +36,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
   const server = Bun.serve<Conn>({
     port,
     fetch(req, srv) {
-      if (srv.upgrade(req, { data: { id: `p${nextId++}`, username: null } })) return;
+      if (srv.upgrade(req, { data: { id: `p${nextId++}`, username: null, shopId: null } })) return;
       return new Response("termenor server", { status: 200 });
     },
     websocket: {
@@ -128,13 +128,47 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
           game.gather(ws.data.username, msg.targetId);
         } else if (msg.t === "use") {
           game.use(ws.data.username, msg.action, msg.slot);
+        } else if (msg.t === "open") {
+          const u = ws.data.username;
+          if (msg.what === "bank") {
+            if (game.openBank(u, msg.targetId)) {
+              ws.send(encode({ t: "bank", items: game.getBank(u), open: true } satisfies BankMsg));
+            }
+          } else {
+            const sid = game.openShop(u, msg.targetId);
+            if (sid) {
+              const shop = game.getShop(sid);
+              if (shop) {
+                ws.data.shopId = sid;
+                ws.send(encode({ t: "shop", shopId: sid, name: shop.name, entries: shop.entries, open: true } satisfies ShopMsg));
+              }
+            }
+          }
+        } else if (msg.t === "bankAction") {
+          const u = ws.data.username;
+          if (msg.action === "deposit") game.deposit(u, msg.slot, msg.qty);
+          else game.withdraw(u, msg.slot, msg.qty);
+          ws.send(encode({ t: "bank", items: game.getBank(u), open: true } satisfies BankMsg));
+          const inv = game.getInventory(u);
+          if (inv) ws.send(encode({ t: "inventory", slots: inv } satisfies InventoryMsg));
+        } else if (msg.t === "shopAction") {
+          const u = ws.data.username;
+          const sid = ws.data.shopId;
+          if (sid) {
+            if (msg.action === "buy") game.buy(u, sid, msg.item, msg.qty);
+            else game.sell(u, sid, msg.item, msg.qty);
+            const shop = game.getShop(sid);
+            if (shop) ws.send(encode({ t: "shop", shopId: sid, name: shop.name, entries: shop.entries, open: true } satisfies ShopMsg));
+            const inv = game.getInventory(u);
+            if (inv) ws.send(encode({ t: "inventory", slots: inv } satisfies InventoryMsg));
+          }
         }
       },
       close(ws) {
         const { username } = ws.data;
         if (username === null) return;
         const state = game.getPlayerState(username);
-        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, []);
+        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, state.bank ?? []);
         game.removePlayer(username);
         online.delete(username);
         sockets.delete(username);
@@ -169,7 +203,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
       // persist all currently online players
       for (const username of online) {
         const state = game.getPlayerState(username);
-        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, []);
+        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, state.bank ?? []);
       }
     }
   }, 1000 / TICK_RATE);

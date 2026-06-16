@@ -66,10 +66,12 @@ export interface ResourceSpawn { type: string; x: number; y: number; }
 
 /** Resource node spawns near the player start. */
 export const RESOURCE_SPAWNS: ResourceSpawn[] = [
-  { type: "tree",         x: 26, y: 26 },
-  { type: "tree",         x: 22, y: 23 },
-  { type: "rock",         x: 27, y: 25 },
-  { type: "fishing_spot", x: 23, y: 26 },
+  { type: "tree",          x: 26, y: 26 },
+  { type: "tree",          x: 22, y: 23 },
+  { type: "rock",          x: 27, y: 25 },
+  { type: "fishing_spot",  x: 23, y: 26 },
+  { type: "bank_booth",    x: 25, y: 22 },
+  { type: "general_store", x: 22, y: 24 },
 ];
 
 /** Starter axe item seeded on the ground near spawn so any player can grab one. */
