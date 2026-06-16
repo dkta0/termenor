@@ -1,5 +1,22 @@
 import { test, expect } from "bun:test";
-import { textCells } from "./overlay";
+import { textCells, centerCol } from "./overlay";
+
+test("centerCol does not jitter as the anchor drifts sub-pixel (odd or even length)", () => {
+  // Regression: the camera-pinned player's screen-x sits at a fixed integer ± a sub-pixel
+  // wobble (e.g. ~98.0..98.49). Centering must yield ONE stable column across that wobble,
+  // for both odd and even label lengths — `round(x - len/2)` flipped ±1 for odd lengths.
+  // The pinned player's screen-x spans [F-0.5, F+0.5) (here F=98) as it drifts sub-pixel.
+  for (const len of [3, 4, 5, 6, 7, 8]) {
+    const out = new Set<number>();
+    for (let i = 0; i <= 50; i++) out.add(centerCol(97.5 + i * 0.0199, len)); // x in [97.5, 98.49]
+    expect(out.size).toBe(1);
+  }
+});
+
+test("centerCol centers a label on its anchor column", () => {
+  expect(centerCol(98, 1)).toBe(98);      // single char sits on the anchor
+  expect(centerCol(98, 5)).toBe(96);      // 5-wide → starts 2 left, spans 96..100, centered on 98
+});
 
 test("places a string starting at (col, row) within bounds", () => {
   const cells = textCells("hi", 2, 1, 10, 5);

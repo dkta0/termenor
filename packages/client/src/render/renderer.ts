@@ -15,7 +15,7 @@ import { rasterizeIso, type IsoFrame } from "./rasterize";
 import { cellGridFor, selectTier, type CapsLike } from "./tiers";
 import { arrowDelta } from "./input";
 import { tileToScreen } from "./iso";
-import { textCells } from "./overlay";
+import { textCells, centerCol } from "./overlay";
 import { type CellGrid, type Tier } from "./types";
 
 export interface RendererHandle {
@@ -90,7 +90,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       const labelSy = sy - cam.oy - 6;
       const labelRow = tier === "halfblock" ? Math.round(labelSy / 2) - 1 : Math.round(labelSy) - 1;
       const labelSx = sx - cam.ox;
-      const labelCol = Math.round(labelSx - p.id.length / 2);
+      const labelCol = centerCol(labelSx, p.id.length); // jitter-free centering (see overlay.ts)
       const color = p.id === state.localId ? YELLOW : WHITE;
       for (const cell of textCells(p.id, labelCol, labelRow, cols, rows)) {
         buffer.setCell(cell.col, cell.row, cell.char, color, BLACK);
@@ -104,7 +104,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       const labelRow = tier === "halfblock" ? Math.round(labelSy / 2) - 1 : Math.round(labelSy) - 1;
       const labelSx = sx - cam.ox;
       const label = NPC_KINDS[npc.type]?.name ?? npc.type;
-      const labelCol = Math.round(labelSx - label.length / 2);
+      const labelCol = centerCol(labelSx, label.length);
       const entry = NPC_KINDS[npc.type];
       const [r, g, b] = entry ? entry.color : [200, 200, 200];
       const color = RGBA.fromInts(r, g, b, 255);
@@ -126,7 +126,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       const splatRow = tier === "halfblock" ? Math.round(splatSy / 2) - 1 : Math.round(splatSy) - 1;
       const splatSx = sx - cam.ox;
       const label = `-${splat.amount}`;
-      const splatCol = Math.round(splatSx - label.length / 2);
+      const splatCol = centerCol(splatSx, label.length);
       for (const cell of textCells(label, splatCol, splatRow, cols, rows)) {
         buffer.setCell(cell.col, cell.row, cell.char, RED, BLACK);
       }

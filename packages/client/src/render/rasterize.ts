@@ -14,6 +14,17 @@ const LOCAL_RGB: RGB = [255, 210, 60];
 const SHADOW_RGB: RGB = [14, 28, 14];
 const WALL_RISE = 3; // height units a blocked tile extrudes upward
 
+// Depth = x + y; higher wins the depth test. Floor tiles use x+y exactly, so an
+// entity at a *fractional* position (mid-move) had a lower depth than the front
+// floor tiles around it and got clipped by the ground. The bias must also clear
+// terrain elevation: a tile one step ahead that's raised (ELEV_PX) reaches up
+// into the sprite's body, so +1 wasn't enough on rolling hills — the player's
+// feet got eaten and flickered while walking. +2 keeps an actor in front of the
+// adjacent ground even up a 1-height step (adjacent terrain deltas are <= 1).
+// Walls get +3 so a real wall one tile ahead still occludes (walk-behind kept).
+const ENTITY_DEPTH_BIAS = 2;
+const WALL_DEPTH_BIAS = 3;
+
 export interface IsoFrame {
   buf: PixelBuffer;
   depth: Float32Array; // per pixel; -Infinity = empty
@@ -41,12 +52,34 @@ export function plot(f: IsoFrame, px: number, py: number, depth: number, kind: n
   if (tile >= 0) f.pick[i] = tile;
 }
 
-function fillDiamond(f: IsoFrame, cx: number, cy: number, depth: number, kind: number, rgb: RGB, tile: number): void {
+/**
+ * Pixel write for actors (sprites + their shadows). An actor stands ON the ground, so it
+ * ALWAYS draws over floor/skirt/shadow/empty regardless of depth. This is what stops the
+ * ground flickering through it: the camera-pinned local player's shadow sits at the
+ * ground depth (x+y), so a plain depth test made it win/lose against the scrolling tiles
+ * pixel-by-pixel every frame. Against walls and other actors it still depth-tests, so
+ * walk-behind and entity ordering hold.
+ */
+function plotEntity(f: IsoFrame, px: number, py: number, depth: number, kind: number, rgb: RGB, _tile: number): void {
+  if (px < 0 || py < 0 || px >= f.buf.width || py >= f.buf.height) return;
+  const i = py * f.buf.width + px;
+  const existing = f.buf.kinds[i];
+  const overGround = existing === Kind.EMPTY || existing === Kind.FLOOR || existing === Kind.SHADOW;
+  if (!overGround && depth < f.depth[i]) return;
+  f.depth[i] = depth;
+  f.buf.kinds[i] = kind;
+  const o = i * 3;
+  f.buf.rgb[o] = rgb[0]; f.buf.rgb[o + 1] = rgb[1]; f.buf.rgb[o + 2] = rgb[2];
+}
+
+type Plotter = (f: IsoFrame, px: number, py: number, depth: number, kind: number, rgb: RGB, tile: number) => void;
+
+function fillDiamond(f: IsoFrame, cx: number, cy: number, depth: number, kind: number, rgb: RGB, tile: number, write: Plotter = plot): void {
   const hw = TILE_W / 2, hh = TILE_H / 2;
   for (let dy = -hh; dy <= hh; dy++) {
     const t = 1 - Math.abs(dy) / hh;
     const halfw = Math.ceil(hw * t); // ceil + inclusive range → diamonds overlap, no seams
-    for (let dx = -halfw; dx <= halfw; dx++) plot(f, Math.round(cx + dx), Math.round(cy + dy), depth, kind, rgb, tile);
+    for (let dx = -halfw; dx <= halfw; dx++) write(f, Math.round(cx + dx), Math.round(cy + dy), depth, kind, rgb, tile);
   }
 }
 
@@ -78,8 +111,14 @@ function drawSkirt(f: IsoFrame, cx: number, cyGround: number, skirtPx: number, r
 
 function drawBillboard(f: IsoFrame, cx: number, cyFeet: number, depth: number, kind: number, rgb: RGB): void {
   const H = 4, W = 2;
+  // Snap the sprite's top edge to a half-block cell boundary (even pixel row). Each
+  // terminal cell is 2px (fg=top, bg=bottom); if the sprite only half-filled an edge
+  // cell, the scrolling terrain in the other half strobed the sprite during movement.
+  // H is even, so H rows from an even top fill whole cells — no terrain bleed.
+  let top = Math.round(cyFeet) - (H - 1);
+  top -= top & 1; // round down to an even row (cell top)
   for (let dy = 0; dy < H; dy++)
-    for (let dx = 0; dx < W; dx++) plot(f, Math.round(cx + dx - W / 2), Math.round(cyFeet - dy), depth, kind, rgb, -1);
+    for (let dx = 0; dx < W; dx++) plotEntity(f, Math.round(cx + dx - W / 2), top + dy, depth, kind, rgb, -1);
 }
 
 const BAR_W = 5;
@@ -89,17 +128,26 @@ const HP_RED: RGB = [200, 40, 40];
 /** Draw a small HP bar one pixel above the billboard head (cyFeet - billboardH - 1). */
 function drawHpBar(f: IsoFrame, cx: number, cyFeet: number, depth: number, hp: number, maxHp: number): void {
   if (maxHp <= 0) return;
-  const barY = Math.round(cyFeet) - 4 - 1; // billboard H=4; 1px gap above head
+  // Snap to a cell boundary and fill the whole 2px cell. A 1px-tall bar always
+  // half-filled a cell, so scrolling terrain in the other half strobed it during
+  // movement; a full-cell bar is stable (anti-shimmer).
+  let barTop = Math.round(cyFeet) - 4 - 1; // billboard H=4; 1px gap above head
+  barTop -= barTop & 1; // round down to an even row (cell top)
   const filled = Math.round((hp / maxHp) * BAR_W);
   const startX = Math.round(cx) - Math.floor(BAR_W / 2);
   for (let dx = 0; dx < BAR_W; dx++) {
     const rgb = dx < filled ? HP_GREEN : HP_RED;
     const px = startX + dx;
-    if (px < 0 || px >= f.buf.width || barY < 0 || barY >= f.buf.height) continue;
-    const i = barY * f.buf.width + px;
-    f.buf.kinds[i] = Kind.FLOOR; // neutral kind for UI overlay
-    const o = i * 3;
-    f.buf.rgb[o] = rgb[0]; f.buf.rgb[o + 1] = rgb[1]; f.buf.rgb[o + 2] = rgb[2];
+    if (px < 0 || px >= f.buf.width) continue;
+    for (let dy = 0; dy < 2; dy++) {
+      const by = barTop + dy;
+      if (by < 0 || by >= f.buf.height) continue;
+      const i = by * f.buf.width + px;
+      f.buf.kinds[i] = Kind.FLOOR; // neutral kind for UI overlay
+      f.depth[i] = Infinity; // keep on top so later entities can't overwrite it
+      const o = i * 3;
+      f.buf.rgb[o] = rgb[0]; f.buf.rgb[o + 1] = rgb[1]; f.buf.rgb[o + 2] = rgb[2];
+    }
   }
 }
 
@@ -131,7 +179,7 @@ export function rasterizeIso(
     const tint = Math.min(1.4, 1 + h * 0.06);
     const ground: RGB = [Math.round(GROUND_RGB[0] * tint), Math.round(GROUND_RGB[1] * tint), Math.round(GROUND_RGB[2] * tint)];
     fillDiamond(f, cx, cy, depth, Kind.FLOOR, ground, i);
-    if (map.tiles[i] === 1) drawBlock(f, cx, cy, depth, i);
+    if (map.tiles[i] === 1) drawBlock(f, cx, cy, depth + WALL_DEPTH_BIAS, i);
     else drawSkirt(f, cx, cy, ELEV_PX, shade(ground, "left"), depth, i); // fill elevation steps
   }
 
@@ -139,8 +187,9 @@ export function rasterizeIso(
   for (const p of players) {
     const s = tileToScreen(p.x, p.y, p.h);
     const cx = s.sx - camOx, cy = s.sy - camOy;
-    const depth = p.x + p.y; // entity occluded by walls of greater x+y (in front)
-    fillDiamond(f, cx, cy, depth, Kind.SHADOW, SHADOW_RGB, -1); // shadow on the ground
+    const groundDepth = p.x + p.y;             // shadow stays on the ground plane
+    const depth = groundDepth + ENTITY_DEPTH_BIAS; // billboard sorts in front of straddled floor
+    fillDiamond(f, cx, cy, groundDepth, Kind.SHADOW, SHADOW_RGB, -1, plotEntity); // shadow on the ground
     const kind = p.id === localId ? Kind.LOCAL : Kind.PLAYER;
     const rgb = p.id === localId ? LOCAL_RGB : PLAYER_RGB;
     drawBillboard(f, cx, cy, depth, kind, rgb);
@@ -152,7 +201,7 @@ export function rasterizeIso(
     const h = map.heights[Math.round(gi.y) * map.width + Math.round(gi.x)] ?? 0;
     const s = tileToScreen(gi.x, gi.y, h);
     const cx = s.sx - camOx, cy = s.sy - camOy;
-    const depth = gi.x + gi.y;
+    const depth = gi.x + gi.y + ENTITY_DEPTH_BIAS;
     const entry = ITEM_KINDS[gi.item];
     const rgb: RGB = entry ? entry.color : [200, 200, 200];
     // draw a 2x2 pixel sprite at the tile center
@@ -165,8 +214,9 @@ export function rasterizeIso(
   for (const npc of npcs) {
     const s = tileToScreen(npc.x, npc.y, npc.h);
     const cx = s.sx - camOx, cy = s.sy - camOy;
-    const depth = npc.x + npc.y;
-    fillDiamond(f, cx, cy, depth, Kind.SHADOW, SHADOW_RGB, -1);
+    const groundDepth = npc.x + npc.y;
+    const depth = groundDepth + ENTITY_DEPTH_BIAS;
+    fillDiamond(f, cx, cy, groundDepth, Kind.SHADOW, SHADOW_RGB, -1, plotEntity);
     const entry = NPC_KINDS[npc.type];
     const rgb: RGB = entry ? entry.color : [200, 200, 200];
     drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
@@ -177,7 +227,7 @@ export function rasterizeIso(
   for (const res of resources) {
     const s = tileToScreen(res.x, res.y, res.h);
     const cx = s.sx - camOx, cy = s.sy - camOy;
-    const depth = res.x + res.y;
+    const depth = res.x + res.y + ENTITY_DEPTH_BIAS;
     const entry = RESOURCE_KINDS[res.type];
     const rgb: RGB = entry ? entry.color : [40, 120, 40];
     drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
