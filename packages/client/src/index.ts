@@ -35,6 +35,9 @@ const handle = await startRenderer(state, chatState, {
   onAttack: (id) => conn.sendAttack(id),
   onGather: (id) => conn.sendGather(id),
   onUse: (action, slot) => conn.sendUse(action, slot),
+  onOpen: (what, targetId) => conn.sendOpen(what, targetId),
+  onBankAction: (action, slot, qty) => conn.sendBankAction(action, slot, qty),
+  onShopAction: (action, item, qty) => conn.sendShopAction(action, item, qty),
 });
 
 const shutdown = () => { handle.stop(); conn.disconnect(); process.exit(0); };

@@ -1,4 +1,4 @@
-import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg } from "@termenor/protocol";
+import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg, type OpenMsg, type BankActionMsg, type ShopActionMsg } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
@@ -22,6 +22,8 @@ export interface ConnectionOpts {
   onChatMsg?: (from: string, text: string) => void;
   onInventory?: (slots: (ItemStack | null)[]) => void;
   onSkills?: () => void;
+  onBank?: () => void;
+  onShop?: () => void;
 }
 
 export type AuthResult = { ok: true } | { ok: false; reason: string };
@@ -53,6 +55,8 @@ export class Connection {
   private readonly onChatMsg: (from: string, text: string) => void;
   private readonly onInventory: ((slots: (ItemStack | null)[]) => void) | undefined;
   private readonly onSkills: (() => void) | undefined;
+  private readonly onBank: (() => void) | undefined;
+  private readonly onShop: (() => void) | undefined;
   private closedByUser = false;
 
   constructor(
@@ -72,6 +76,8 @@ export class Connection {
     this.onChatMsg = opts.onChatMsg ?? (() => {});
     this.onInventory = opts.onInventory;
     this.onSkills = opts.onSkills;
+    this.onBank = opts.onBank;
+    this.onShop = opts.onShop;
   }
 
   connect(): void {
@@ -145,6 +151,21 @@ export class Connection {
     this.sock?.send(encode(msg));
   }
 
+  sendOpen(what: "bank" | "shop", targetId: string): void {
+    const msg: OpenMsg = { t: "open", what, targetId };
+    this.sock?.send(encode(msg));
+  }
+
+  sendBankAction(action: "deposit" | "withdraw", slot: number, qty: number): void {
+    const msg: BankActionMsg = { t: "bankAction", action, slot, qty };
+    this.sock?.send(encode(msg));
+  }
+
+  sendShopAction(action: "buy" | "sell", item: string, qty: number): void {
+    const msg: ShopActionMsg = { t: "shopAction", action, item, qty };
+    this.sock?.send(encode(msg));
+  }
+
   disconnect(): void {
     this.closedByUser = true;
     this.sock?.close();
@@ -186,6 +207,12 @@ export class Connection {
     } else if (msg.t === "skills") {
       this.state.setSkills((msg as SkillsMsg).skills);
       this.onSkills?.();
+    } else if (msg.t === "bank") {
+      this.state.setBank(msg.items, msg.open);
+      this.onBank?.();
+    } else if (msg.t === "shop") {
+      this.state.setShop(msg.shopId, msg.name, msg.entries, msg.open);
+      this.onShop?.();
     }
   }
 }

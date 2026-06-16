@@ -38,6 +38,12 @@ export interface RendererHooks {
   onGather?(id: string): void;
   /** Called when the player presses 'f' or 'k' to use a skill on an inventory slot. */
   onUse?(action: string, slot: number): void;
+  /** Called when the player presses 'b'/'o' near a bank booth / store to open it. */
+  onOpen?(what: "bank" | "shop", targetId: string): void;
+  /** Called for a bank deposit/withdraw on the given slot (qty=-1 means "all"). */
+  onBankAction?(action: "deposit" | "withdraw", slot: number, qty: number): void;
+  /** Called for a shop buy/sell of the given item id. */
+  onShopAction?(action: "buy" | "sell", item: string, qty: number): void;
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
@@ -51,6 +57,9 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   const tier: Tier = selectTier((renderer.capabilities as CapsLike | null) ?? null);
 
   let lastFrame: IsoFrame | null = null;
+  // Panel-local modes for the bank/shop panels (which digit actions mean).
+  let bankMode: "deposit" | "withdraw" = "deposit";
+  let shopMode: "buy" | "sell" = "buy";
 
   renderer.setFrameCallback(async () => {
     const buffer = renderer.nextRenderBuffer;
@@ -183,6 +192,42 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         buffer.setCell(cell.col, cell.row, cell.char, PANEL_COLOR, BLACK);
       }
     }
+
+    // Bank panel (modal, left side below the skills HUD). Lists bank entries by
+    // index — withdraw mode picks from here; deposit mode picks from inventory.
+    if (state.bankOpen) {
+      const BANK_COLOR = RGBA.fromInts(210, 195, 90, 255);
+      const startRow = skillLines.length + 2;
+      const header = `[ Bank — ${bankMode.toUpperCase()} ]`;
+      for (const cell of textCells(header, 2, startRow, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, BANK_COLOR, BLACK);
+      const hint = "d deposit · w withdraw · 1-9 item · Esc close";
+      for (const cell of textCells(hint, 2, startRow + 1, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, DIM, BLACK);
+      const maxRows = Math.max(0, rows - startRow - 4);
+      const max = Math.min(state.bank.length, maxRows);
+      for (let i = 0; i < max; i++) {
+        const it = state.bank[i];
+        const label = `${i + 1}: ${ITEM_KINDS[it.item]?.name ?? it.item} x${it.qty}`;
+        for (const cell of textCells(label, 2, startRow + 2 + i, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, BANK_COLOR, BLACK);
+      }
+    }
+
+    // Shop panel (modal, left side). Same index set for buy and sell.
+    if (state.shopOpen && state.shop) {
+      const SHOP_COLOR = RGBA.fromInts(210, 130, 210, 255);
+      const startRow = skillLines.length + 2;
+      const header = `[ ${state.shop.name} — ${shopMode.toUpperCase()} ]`;
+      for (const cell of textCells(header, 2, startRow, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, SHOP_COLOR, BLACK);
+      const hint = "b buy · s sell · 1-9 item · Esc close";
+      for (const cell of textCells(hint, 2, startRow + 1, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, DIM, BLACK);
+      const entries = state.shop.entries;
+      const maxRows = Math.max(0, rows - startRow - 4);
+      const max = Math.min(entries.length, maxRows);
+      for (let i = 0; i < max; i++) {
+        const e = entries[i];
+        const label = `${i + 1}: ${ITEM_KINDS[e.item]?.name ?? e.item}  ${e.price}gp (${e.stock})`;
+        for (const cell of textCells(label, 2, startRow + 2 + i, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, SHOP_COLOR, BLACK);
+      }
+    }
   });
 
   // OpenTUI dispatches mouse events only to renderables registered in the hit
@@ -225,9 +270,47 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       return; // always return early — block arrows/mouse movement while typing
     }
 
+    // Bank panel open (modal): consume all keys so digits never fall through to onDrop.
+    if (state.bankOpen) {
+      if (key.name === "escape") { state.closeBank(); return; }
+      if (key.name === "d") { bankMode = "deposit"; return; }
+      if (key.name === "w") { bankMode = "withdraw"; return; }
+      const m = /^([1-9])$/.exec(key.name ?? "");
+      if (m) {
+        const idx = parseInt(m[1], 10) - 1;
+        hooks.onBankAction?.(bankMode, idx, -1); // -1 = all
+      }
+      return;
+    }
+
+    // Shop panel open (modal): same index set for buy and sell.
+    if (state.shopOpen) {
+      if (key.name === "escape") { state.closeShop(); return; }
+      if (key.name === "b") { shopMode = "buy"; return; }
+      if (key.name === "s") { shopMode = "sell"; return; }
+      const m = /^([1-9])$/.exec(key.name ?? "");
+      if (m) {
+        const entry = state.shop?.entries[parseInt(m[1], 10) - 1];
+        if (entry) hooks.onShopAction?.(shopMode, entry.item, 1);
+      }
+      return;
+    }
+
     // Not in chat mode
     if (key.name === "return" || key.name === "enter") {
       chat.open();
+      return;
+    }
+
+    // Open the bank booth / store nearest the player.
+    if (key.name === "b") {
+      const id = state.nearestResourceOfType("bank_booth", performance.now());
+      if (id) { bankMode = "deposit"; hooks.onOpen?.("bank", id); }
+      return;
+    }
+    if (key.name === "o") {
+      const id = state.nearestResourceOfType("general_store", performance.now());
+      if (id) { shopMode = "buy"; hooks.onOpen?.("shop", id); }
       return;
     }
 

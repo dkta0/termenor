@@ -269,3 +269,56 @@ test("a superseded socket closing after a failed-auth retry does NOT spawn a str
   sockets[1].fireMessage(encode({ t: "loginError", reason: "no such account" }));
   await p2;
 });
+
+test("sendOpen serializes an open message", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  conn.sendOpen("bank", "booth-1");
+  expect(sock.lastDecoded()).toEqual({ t: "open", what: "bank", targetId: "booth-1" });
+});
+
+test("sendBankAction serializes a bankAction message", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  conn.sendBankAction("deposit", 2, -1);
+  expect(sock.lastDecoded()).toEqual({ t: "bankAction", action: "deposit", slot: 2, qty: -1 });
+});
+
+test("sendShopAction serializes a shopAction message", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  conn.sendShopAction("buy", "logs", 1);
+  expect(sock.lastDecoded()).toEqual({ t: "shopAction", action: "buy", item: "logs", qty: 1 });
+});
+
+test("bank message updates game-state and fires onBank", () => {
+  const sock = new MockSocket();
+  const gs = new GameState();
+  let fired = false;
+  const conn = new Connection("ws://x", gs, {
+    socketFactory: () => sock, now: () => 0,
+    username: "u", password: "p", onBank: () => { fired = true; },
+  });
+  conn.connect();
+  sock.fireOpen();
+  sock.fireMessage(encode({ t: "bank", items: [{ item: "logs", qty: 7 }], open: true }));
+  expect(gs.bank).toEqual([{ item: "logs", qty: 7 }]);
+  expect(gs.bankOpen).toBe(true);
+  expect(fired).toBe(true);
+});
+
+test("shop message updates game-state and fires onShop", () => {
+  const sock = new MockSocket();
+  const gs = new GameState();
+  let fired = false;
+  const conn = new Connection("ws://x", gs, {
+    socketFactory: () => sock, now: () => 0,
+    username: "u", password: "p", onShop: () => { fired = true; },
+  });
+  conn.connect();
+  sock.fireOpen();
+  sock.fireMessage(encode({ t: "shop", shopId: "general_store", name: "General Store", entries: [{ item: "logs", price: 4, stock: 100 }], open: true }));
+  expect(gs.shop).toEqual({ shopId: "general_store", name: "General Store", entries: [{ item: "logs", price: 4, stock: 100 }] });
+  expect(gs.shopOpen).toBe(true);
+  expect(fired).toBe(true);
+});

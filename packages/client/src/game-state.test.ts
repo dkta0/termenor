@@ -262,3 +262,65 @@ test("firstSlotOf returns -1 when item not in inventory", () => {
   gs.setInventory([{ item: "bronze_axe", qty: 1 }, null]);
   expect(gs.firstSlotOf("logs")).toBe(-1);
 });
+
+test("setBank stores items and opens the bank panel", () => {
+  const gs = new GameState();
+  gs.setBank([{ item: "logs", qty: 10 }], true);
+  expect(gs.bank).toEqual([{ item: "logs", qty: 10 }]);
+  expect(gs.bankOpen).toBe(true);
+});
+
+test("closeBank clears the open flag but keeps items", () => {
+  const gs = new GameState();
+  gs.setBank([{ item: "coins", qty: 5 }], true);
+  gs.closeBank();
+  expect(gs.bankOpen).toBe(false);
+  expect(gs.bank).toEqual([{ item: "coins", qty: 5 }]);
+});
+
+test("setShop stores the shop and opens the shop panel", () => {
+  const gs = new GameState();
+  gs.setShop("general_store", "General Store", [{ item: "logs", price: 4, stock: 100 }], true);
+  expect(gs.shop).toEqual({ shopId: "general_store", name: "General Store", entries: [{ item: "logs", price: 4, stock: 100 }] });
+  expect(gs.shopOpen).toBe(true);
+});
+
+test("closeShop clears the open flag but keeps shop data", () => {
+  const gs = new GameState();
+  gs.setShop("general_store", "General Store", [], true);
+  gs.closeShop();
+  expect(gs.shopOpen).toBe(false);
+  expect(gs.shop?.shopId).toBe("general_store");
+});
+
+const snapWithResources = (px: number, py: number, resources: ResourceState[]): SnapshotMsg => ({
+  t: "snapshot", tick: 1,
+  players: [{ id: "me", x: px, y: py, facing: "south", hp: 10, maxHp: 10 }],
+  ground: [], npcs: [], hits: [], resources,
+});
+
+test("nearestResourceOfType returns the id of the closest matching resource", () => {
+  const gs = new GameState();
+  gs.setMap({ width: 10, height: 10, tiles: new Array(100).fill(0), heights: new Array(100).fill(0) });
+  gs.setLocalId("me");
+  gs.applySnapshot(snapWithResources(5, 5, [
+    { id: "booth-far", type: "bank_booth", x: 9, y: 9 },
+    { id: "booth-near", type: "bank_booth", x: 6, y: 5 },
+    { id: "store", type: "general_store", x: 5, y: 6 },
+  ]), 1000);
+  expect(gs.nearestResourceOfType("bank_booth", 1000)).toBe("booth-near");
+  expect(gs.nearestResourceOfType("general_store", 1000)).toBe("store");
+});
+
+test("nearestResourceOfType returns null when no resource of that type exists", () => {
+  const gs = new GameState();
+  gs.setMap({ width: 10, height: 10, tiles: new Array(100).fill(0), heights: new Array(100).fill(0) });
+  gs.setLocalId("me");
+  gs.applySnapshot(snapWithResources(5, 5, [{ id: "tree", type: "tree", x: 6, y: 5 }]), 1000);
+  expect(gs.nearestResourceOfType("bank_booth", 1000)).toBeNull();
+});
+
+test("nearestResourceOfType returns null when there is no local player", () => {
+  const gs = new GameState();
+  expect(gs.nearestResourceOfType("bank_booth", 1000)).toBeNull();
+});

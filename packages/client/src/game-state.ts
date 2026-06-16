@@ -1,4 +1,4 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, ResourceState } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, ResourceState, ShopEntry } from "@termenor/protocol";
 import { SPLAT_MS, SKILLS, type HitEvent } from "@termenor/protocol";
 
 /**
@@ -26,6 +26,10 @@ export class GameState {
   inventory: (ItemStack | null)[] = [];
   resources: ResourceState[] = [];
   skills: Record<string, { xp: number; level: number }> = {};
+  bank: ItemStack[] = [];
+  bankOpen = false;
+  shop: { shopId: string; name: string; entries: ShopEntry[] } | null = null;
+  shopOpen = false;
   private frames: Frame[] = []; // chronological, oldest → newest
   private splats: Splat[] = [];
 
@@ -33,6 +37,28 @@ export class GameState {
   setLocalId(id: string): void { this.localId = id; }
   setInventory(slots: (ItemStack | null)[]): void { this.inventory = slots; }
   setSkills(s: Record<string, { xp: number; level: number }>): void { this.skills = s; }
+  setBank(items: ItemStack[], open: boolean): void { this.bank = items; this.bankOpen = open; }
+  closeBank(): void { this.bankOpen = false; }
+  setShop(shopId: string, name: string, entries: ShopEntry[], open: boolean): void {
+    this.shop = { shopId, name, entries };
+    this.shopOpen = open;
+  }
+  closeShop(): void { this.shopOpen = false; }
+
+  /** Id of the nearest visible resource of `type` to the local player, or null. */
+  nearestResourceOfType(type: string, now: number): string | null {
+    if (this.localId === null) return null;
+    const me = this.samplePositions(now).find((p) => p.id === this.localId);
+    if (!me) return null;
+    let bestId: string | null = null;
+    let bestD = Infinity;
+    for (const r of this.sampleResources()) {
+      if (r.type !== type) continue;
+      const d = Math.hypot(r.x - me.x, r.y - me.y);
+      if (d < bestD) { bestD = d; bestId = r.id; }
+    }
+    return bestId;
+  }
 
   applySnapshot(snap: SnapshotMsg, now: number): void {
     const players = new Map(snap.players.map((p) => [p.id, p]));
