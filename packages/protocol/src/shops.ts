@@ -9,5 +9,8 @@ export const SHOPS: Record<string, { name: string; entries: ShopEntry[] }> = {
     { item: "bronze_pickaxe",price: 16, stock: 5 },
     { item: "tinderbox",     price: 8,  stock: 5 },
     { item: "small_net",     price: 8,  stock: 5 },
+    { item: "bronze_sword",     price: 26, stock: 5 },
+    { item: "bronze_platebody", price: 40, stock: 5 },
+    { item: "bronze_shield",    price: 24, stock: 5 },
   ] },
 };

@@ -76,3 +76,10 @@ export const RESOURCE_SPAWNS: ResourceSpawn[] = [
 
 /** Starter axe item seeded on the ground near spawn so any player can grab one. */
 export const STARTER_AXE: SeedItem = { item: "bronze_axe", qty: 1, x: 25, y: 23 };
+
+/** Starter gear seeded on the ground near spawn so any player can equip. */
+export const STARTER_GEAR: SeedItem[] = [
+  { item: "bronze_sword",     qty: 1, x: 23, y: 23 },
+  { item: "bronze_platebody", qty: 1, x: 23, y: 22 },
+  { item: "bronze_shield",    qty: 1, x: 24, y: 22 },
+];

@@ -1,6 +1,6 @@
-import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, emptyEquipment, type InventoryMsg, type SkillsMsg, type BankMsg, type ShopMsg } from "@termenor/protocol";
+import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, emptyEquipment, type InventoryMsg, type SkillsMsg, type BankMsg, type ShopMsg, type EquipmentMsg } from "@termenor/protocol";
 import { GameWorld } from "./game";
-import { createDefaultMap, SPAWN, SEED_ITEMS, NPC_SPAWNS, RESOURCE_SPAWNS, STARTER_AXE } from "./world";
+import { createDefaultMap, SPAWN, SEED_ITEMS, NPC_SPAWNS, RESOURCE_SPAWNS, STARTER_AXE, STARTER_GEAR } from "./world";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import { emptyInventory } from "./inventory";
 import type { Database } from "bun:sqlite";
@@ -25,6 +25,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
   const game = new GameWorld(map, SPAWN);
   for (const s of SEED_ITEMS) game.addGroundItem(s.item, s.qty, s.x, s.y);
   game.addGroundItem(STARTER_AXE.item, STARTER_AXE.qty, STARTER_AXE.x, STARTER_AXE.y);
+  for (const g of STARTER_GEAR) game.addGroundItem(g.item, g.qty, g.x, g.y);
   for (const n of NPC_SPAWNS) game.spawnNpc(n.type, n.x, n.y, n.radius);
   for (const r of RESOURCE_SPAWNS) game.spawnResource(r.type, r.x, r.y);
   const db: Database = openDb(dbPath);
@@ -99,6 +100,8 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
           ws.send(encode(invMsg));
           const skillsMsg: SkillsMsg = { t: "skills", skills: game.getPlayerSkills(username) };
           ws.send(encode(skillsMsg));
+          const eq = game.getEquipment(username);
+          ws.send(encode({ t: "equipment", weapon: eq.weapon, body: eq.body, shield: eq.shield } satisfies EquipmentMsg));
           return;
         }
 
@@ -162,13 +165,21 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
             const inv = game.getInventory(u);
             if (inv) ws.send(encode({ t: "inventory", slots: inv } satisfies InventoryMsg));
           }
+        } else if (msg.t === "equipAction") {
+          const u = ws.data.username;
+          if (msg.action === "equip") game.equip(u, msg.slot);
+          else game.unequip(u, msg.slot);
+          const eq = game.getEquipment(u);
+          ws.send(encode({ t: "equipment", weapon: eq.weapon, body: eq.body, shield: eq.shield } satisfies EquipmentMsg));
+          const inv = game.getInventory(u);
+          if (inv) ws.send(encode({ t: "inventory", slots: inv } satisfies InventoryMsg));
         }
       },
       close(ws) {
         const { username } = ws.data;
         if (username === null) return;
         const state = game.getPlayerState(username);
-        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, state.bank ?? [], emptyEquipment());
+        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, state.bank ?? [], state.equipment ?? emptyEquipment());
         game.removePlayer(username);
         online.delete(username);
         sockets.delete(username);
@@ -203,7 +214,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
       // persist all currently online players
       for (const username of online) {
         const state = game.getPlayerState(username);
-        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, state.bank ?? [], emptyEquipment());
+        if (state) savePlayerState(db, username, state.x, state.y, state.facing, state.inventory ?? emptyInventory(), state.skills ?? {}, state.bank ?? [], state.equipment ?? emptyEquipment());
       }
     }
   }, 1000 / TICK_RATE);
