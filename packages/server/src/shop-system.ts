@@ -1,7 +1,7 @@
 import { addToInventory } from "./inventory";
 import { isAdjacent } from "./combat";
 import { SELL_RATE } from "@termenor/protocol";
-import type { ShopEntry } from "@termenor/protocol";
+import type { ShopEntry, ItemStack } from "@termenor/protocol";
 import type { PlayerEntity } from "./entities";
 import type { GameWorld } from "./game";
 
@@ -17,18 +17,20 @@ function itemCount(p: PlayerEntity, item: string): number {
 }
 
 /** Remove up to n of an item across slots, clearing emptied slots. */
-function removeItems(p: PlayerEntity, item: string, n: number): void {
+function removeFromSlots(slots: (ItemStack | null)[], item: string, n: number): void {
   let remaining = n;
-  for (let i = 0; i < p.inventory.length && remaining > 0; i++) {
-    const s = p.inventory[i];
+  for (let i = 0; i < slots.length && remaining > 0; i++) {
+    const s = slots[i];
     if (s?.item === item) {
       const take = Math.min(remaining, s.qty);
       s.qty -= take;
       remaining -= take;
-      if (s.qty <= 0) p.inventory[i] = null;
+      if (s.qty <= 0) slots[i] = null;
     }
   }
 }
+
+const removeItems = (p: PlayerEntity, item: string, n: number): void => removeFromSlots(p.inventory, item, n);
 
 const coinCount = (p: PlayerEntity): number => itemCount(p, "coins");
 const removeCoins = (p: PlayerEntity, n: number): void => removeItems(p, "coins", n);
@@ -101,9 +103,18 @@ export function sell(w: GameWorld, playerId: string, shopId: string, item: strin
     return false;
   }
   const sellQty = Math.min(qty, owned);
-  const unitPrice = Math.floor(entry.price * SELL_RATE);
-  removeItems(p, item, sellQty);
-  const { slots } = addToInventory(p.inventory, { item: "coins", qty: unitPrice * sellQty });
+  const payout = Math.floor(entry.price * SELL_RATE) * sellQty;
+
+  // Sell is all-or-nothing: build the result on a trial copy (remove the items,
+  // then add the coins) and only commit if the coins fully fit. Otherwise the
+  // payout would be silently dropped on a full inventory with no coins slot.
+  const trial = p.inventory.map((s) => (s ? { ...s } : null));
+  removeFromSlots(trial, item, sellQty);
+  const { slots, leftover } = addToInventory(trial, { item: "coins", qty: payout });
+  if (leftover !== null) {
+    notice(w, playerId, "You don't have enough inventory space for the coins.");
+    return false;
+  }
   p.inventory = slots;
   entry.stock += sellQty;
   return true;

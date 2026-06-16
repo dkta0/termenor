@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { GameWorld } from "./game";
-import { SELL_RATE, SHOPS } from "@termenor/protocol";
+import { SELL_RATE, SHOPS, INV_SIZE } from "@termenor/protocol";
 import type { MapData } from "@termenor/protocol";
 
 const MAP: MapData = {
@@ -126,4 +126,36 @@ test("openShop requires an adjacent general_store", () => {
   expect(w.openShop("p1", adjacent)).toBe("general_store");
   expect(w.openShop("p1", faraway)).toBe(null);
   expect(w.openShop("p1", "nonexistent")).toBe(null);
+});
+
+test("sell is refused (no value lost) when the coins can't fit a full inventory", () => {
+  const w = world();
+  w.addPlayer("p1");
+  const inv = w.getInventory("p1")!;
+  // Fill every slot, NO coins slot, and a partial logs stack that won't clear on sale.
+  inv.fill(null);
+  inv[0] = { item: "logs", qty: 2 };
+  for (let i = 1; i < INV_SIZE; i++) inv[i] = { item: "bronze_axe", qty: 1 };
+
+  expect(w.sell("p1", "general_store", "logs", 1)).toBe(false);
+  // No item destroyed, no coins conjured.
+  const after = w.getInventory("p1")!;
+  expect(after[0]).toEqual({ item: "logs", qty: 2 });
+  expect(after.some((s) => s?.item === "coins")).toBe(false);
+  expect(w.getShop("general_store")!.entries.find((e) => e.item === "logs")!.stock).toBe(100);
+});
+
+test("sell succeeds on a full inventory when an existing coins slot can absorb the payout", () => {
+  const w = world();
+  w.addPlayer("p1");
+  const inv = w.getInventory("p1")!;
+  inv.fill(null);
+  inv[0] = { item: "coins", qty: 5 };
+  inv[1] = { item: "logs", qty: 2 };
+  for (let i = 2; i < INV_SIZE; i++) inv[i] = { item: "bronze_axe", qty: 1 };
+
+  const logsPrice = SHOPS.general_store.entries.find((e) => e.item === "logs")!.price;
+  expect(w.sell("p1", "general_store", "logs", 1)).toBe(true);
+  const after = w.getInventory("p1")!;
+  expect(after.find((s) => s?.item === "coins")!.qty).toBe(5 + Math.floor(logsPrice * SELL_RATE));
 });
