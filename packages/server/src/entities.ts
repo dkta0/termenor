@@ -1,4 +1,4 @@
-import type { Facing, ItemStack } from "@termenor/protocol";
+import type { Facing, ItemStack, Equipment } from "@termenor/protocol";
 import type { Point } from "./pathfinding";
 
 export interface PlayerEntity {
@@ -7,6 +7,7 @@ export interface PlayerEntity {
   target: string | null; attackCd: number;
   skills: Record<string, number>; gatherTarget: string | null; gatherCd: number;
   bank: ItemStack[];
+  equipment: Equipment;
 }
 
 export interface NpcEntity {

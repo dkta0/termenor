@@ -1,5 +1,5 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState, ShopEntry } from "@termenor/protocol";
-import { NPC_KINDS, PLAYER_MAX_HP, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, SKILLS, SHOPS } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState, ShopEntry, Equipment } from "@termenor/protocol";
+import { NPC_KINDS, PLAYER_MAX_HP, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, SKILLS, SHOPS, emptyEquipment } from "@termenor/protocol";
 import { type Point } from "./pathfinding";
 import { emptyInventory, addToInventory } from "./inventory";
 import type { PlayerEntity, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
@@ -11,6 +11,7 @@ import * as gatherSys from "./gather-system";
 import * as actionSys from "./action-system";
 import * as bankSys from "./bank-system";
 import * as shopSys from "./shop-system";
+import * as equipSys from "./equipment-system";
 
 const GATHER_COOLDOWN_TICKS = 30;
 
@@ -21,6 +22,7 @@ export interface RestoredState {
   inventory?: (ItemStack | null)[];
   skills?: Record<string, number>;
   bank?: ItemStack[];
+  equipment?: Equipment;
 }
 
 export class GameWorld {
@@ -72,7 +74,8 @@ export class GameWorld {
       inventory = slots;
     }
     const bank = state?.bank ?? [];
-    this.players.set(id, { id, x, y, facing, path: [], inventory, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, target: null, attackCd: 0, skills, gatherTarget: null, gatherCd: 0, bank });
+    const equipment = state?.equipment ?? emptyEquipment();
+    this.players.set(id, { id, x, y, facing, path: [], inventory, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, target: null, attackCd: 0, skills, gatherTarget: null, gatherCd: 0, bank, equipment });
   }
 
   removePlayer(id: string): void {
@@ -107,7 +110,7 @@ export class GameWorld {
   getPlayerState(id: string): RestoredState | null {
     const p = this.players.get(id);
     if (!p) return null;
-    return { x: p.x, y: p.y, facing: p.facing, inventory: p.inventory, skills: p.skills, bank: p.bank };
+    return { x: p.x, y: p.y, facing: p.facing, inventory: p.inventory, skills: p.skills, bank: p.bank, equipment: p.equipment };
   }
 
   queueMove(id: string, x: number, y: number): void {
@@ -185,6 +188,17 @@ export class GameWorld {
   }
   sell(id: string, shopId: string, item: string, qty: number): boolean {
     return shopSys.sell(this, id, shopId, item, qty);
+  }
+
+  // --- Equipment (delegates to equipment-system) ---
+  getEquipment(id: string): Equipment {
+    return equipSys.getEquipment(this, id);
+  }
+  equip(id: string, invSlot: number): boolean {
+    return equipSys.equip(this, id, invSlot);
+  }
+  unequip(id: string, equipIndex: number): boolean {
+    return equipSys.unequip(this, id, equipIndex);
   }
 
   getPlayerSkills(id: string): Record<string, { xp: number; level: number }> {
