@@ -51,7 +51,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
           // unauthenticated — only accept login
           if (msg.t !== "login") return;
 
-          const { username, password } = msg;
+          const { username, password, mode } = msg;
 
           // validate non-empty, length-bounded credentials before touching the DB
           if (
@@ -73,7 +73,7 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
           online.add(username);
 
           const spawn = { x: SPAWN.x, y: SPAWN.y, facing: "south" as const };
-          const result = await getOrCreateAccount(db, username, password, spawn);
+          const result = await getOrCreateAccount(db, username, password, spawn, mode);
 
           if (!result.ok) {
             online.delete(username); // release the reservation on auth failure

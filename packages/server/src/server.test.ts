@@ -410,3 +410,53 @@ test("persist across reconnect: inventory survives disconnect and reconnect", as
 
   c2.close();
 }, 15_000);
+
+test("register mode on a taken name returns loginError 'that name is taken'", async () => {
+  srv = startServer(0, ":memory:");
+
+  const c1 = wsClient(srv.port);
+  await c1.waitForOpen();
+  c1.send(JSON.stringify({ t: "login", mode: "register", username: "dup", password: "pw" }));
+  await c1.waitForMessage("welcome");
+  c1.close();
+  await sleep(100); // let close propagate so "dup" is offline
+
+  const c2 = wsClient(srv.port);
+  await c2.waitForOpen();
+  const errP = c2.waitForMessage("loginError");
+  c2.send(JSON.stringify({ t: "login", mode: "register", username: "dup", password: "pw" }));
+  const err = await errP;
+  expect(String(err.reason)).toMatch(/taken/i);
+  c2.close();
+});
+
+test("login mode on a missing account returns loginError 'no such account'", async () => {
+  srv = startServer(0, ":memory:");
+
+  const c = wsClient(srv.port);
+  await c.waitForOpen();
+  const errP = c.waitForMessage("loginError");
+  c.send(JSON.stringify({ t: "login", mode: "login", username: "nobody", password: "pw" }));
+  const err = await errP;
+  expect(String(err.reason)).toMatch(/no such account/i);
+  c.close();
+});
+
+test("login mode with wrong password returns loginError 'wrong password'", async () => {
+  srv = startServer(0, ":memory:");
+
+  const c1 = wsClient(srv.port);
+  await c1.waitForOpen();
+  c1.send(JSON.stringify({ t: "login", mode: "register", username: "pwuser", password: "right" }));
+  await c1.waitForMessage("welcome");
+  c1.close();
+  await sleep(100); // let close propagate so "pwuser" is offline
+
+  const c2 = wsClient(srv.port);
+  await c2.waitForOpen();
+  const errP = c2.waitForMessage("loginError");
+  c2.send(JSON.stringify({ t: "login", mode: "login", username: "pwuser", password: "wrong" }));
+  const err = await errP;
+  expect(String(err.reason)).toMatch(/wrong password/i);
+  c2.close();
+});
