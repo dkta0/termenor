@@ -1,6 +1,7 @@
 import { rollDamage, isAdjacent } from "./combat";
 import { stepToward } from "./movement-system";
-import { ATTACK_COOLDOWN_TICKS, PLAYER_MAX_HIT, RESPAWN_TICKS, type Facing } from "@termenor/protocol";
+import { playerMaxHit, playerDefence } from "./equipment-system";
+import { ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, type Facing } from "@termenor/protocol";
 import { type Point } from "./pathfinding";
 import type { GameWorld } from "./game";
 
@@ -17,12 +18,17 @@ export function stepCombat(w: GameWorld): void {
   // Combat pass: players attack npcs, npcs attack their target
   for (const p of w.players.values()) {
     if (p.attackCd > 0) p.attackCd--;
-    combatStepActor(w, p, (id) => w.npcs.find((n) => n.id === id && n.respawnAt < 0) ?? null, PLAYER_MAX_HIT);
+    // NPC victims have no armour → no defence reduction.
+    combatStepActor(w, p, (id) => w.npcs.find((n) => n.id === id && n.respawnAt < 0) ?? null, playerMaxHit(p), () => 0);
   }
   for (const npc of w.npcs) {
     if (npc.respawnAt >= 0) continue;
     if (npc.attackCd > 0) npc.attackCd--;
-    combatStepActor(w, npc, (id) => w.players.get(id) ?? null, npc.maxHit);
+    // Player victims reduce incoming damage by their equipped armour defence.
+    combatStepActor(w, npc, (id) => w.players.get(id) ?? null, npc.maxHit, (id) => {
+      const pl = w.players.get(id);
+      return pl ? playerDefence(pl) : 0;
+    });
   }
 }
 
@@ -60,6 +66,7 @@ function combatStepActor(
   actor: { x: number; y: number; facing: Facing; path: Point[]; target: string | null; attackCd: number },
   findTarget: (id: string) => { id: string; x: number; y: number; hp: number } | null,
   maxHit: number,
+  defenceOf: (targetId: string) => number,
 ): void {
   if (!actor.target) return;
   const tgt = findTarget(actor.target);
@@ -68,7 +75,7 @@ function combatStepActor(
   if (isAdjacent(actor, tgt)) {
     actor.path = [];
     if (actor.attackCd === 0) {
-      const dmg = rollDamage(maxHit, w.rng);
+      const dmg = Math.max(0, rollDamage(maxHit, w.rng) - defenceOf(tgt.id));
       tgt.hp = Math.max(0, tgt.hp - dmg);
       actor.attackCd = ATTACK_COOLDOWN_TICKS;
       w.hits.push({ targetId: tgt.id, amount: dmg, tick: w.tick });
