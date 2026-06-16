@@ -1,64 +1,112 @@
 # Termenor
 
-A RuneScape-inspired MMO that runs entirely in your terminal — isometric world,
-real-time multiplayer movement, combat, gathering skills, inventory, NPCs, and a
-shared persistent world. Built to dip into on a break.
+**RuneScape, in your terminal.** An isometric, real-time multiplayer RPG that
+renders with truecolor half-blocks over a WebSocket — click to walk, chop trees,
+fight goblins, and watch other players move around you, all from a terminal tab.
 
-## Play
+> **Status: early alpha, actively built.** The engine and the first skills are
+> playable today. Banking, quests, equipment, and a hosted public server are on
+> the way — see the [roadmap](docs/ROADMAP.md). For now you run your own server
+> (one command); it's fully playable solo or with friends on your network.
+
+---
+
+## Quick start
+
+Termenor is a server plus a terminal client. Until the public server is live,
+you run both — two terminals, ~10 seconds:
 
 ```bash
 git clone https://github.com/dkta0/termenor
 cd termenor
-./play
+
+just server      # terminal 1 — start a local server (ws://localhost:3000)
+./play           # terminal 2 — launch the game
 ```
 
-That's it — `./play` checks for [Bun](https://bun.sh), installs dependencies on
-first run, connects you to the public server, and shows a login screen. Register a
-name and you're in. Use **ghostty** or **kitty** for the best rendering.
+`./play` checks for [Bun](https://bun.sh), installs dependencies on first run, and
+opens a login screen. **Register a name and you're in.** Already running a server
+elsewhere? Point at it: `./play ws://host:3000`.
 
-Connect to a different server: `./play ws://host:3000`.
+> Use **ghostty** or **kitty** for crisp truecolor half-block rendering. Anything
+> else still works — Termenor falls back to a plain ASCII view automatically.
 
-### Controls
+## Controls
 
-- **Click a tile** to walk there (the server pathfinds around walls).
-- **Arrow keys** step one tile.
-- Gather, fight, and manage inventory with the on-screen hotkeys.
+| Key | Action |
+| --- | --- |
+| **Click a tile** | Walk there — the server pathfinds around walls |
+| **Arrow keys** | Step one tile |
+| **Enter** | Open chat (Enter to send, Esc to cancel) |
+| **g** | Pick up the item under you |
+| **1**–**9** | Drop that inventory slot |
+| **a** | Attack the nearest NPC |
+| **c** | Chop / mine / fish the nearest resource |
+| **f** | Light a fire (uses logs) |
+| **k** | Cook (raw shrimp on a nearby fire) |
 
-## What's in the world
+## What you can do today
 
-- Smooth, server-authoritative multiplayer movement on an isometric tile map.
-- Accounts with persistent state (position, inventory, skills).
-- Public chat and nearby-player name labels.
-- 28-slot inventory with ground items (pick up / drop).
-- NPCs with wander AI, melee combat (HP, death/respawn, damage splats).
-- Gathering skills with XP and levels: woodcutting, mining, fishing, cooking, firemaking.
+- **Explore** a shared isometric world with rolling terrain, walls, and smooth
+  server-authoritative movement you can click-to-path across.
+- **Play together** — see other players move in real time, with name labels and
+  public chat.
+- **Keep your progress** — accounts persist your position, inventory, and skills
+  across sessions.
+- **Carry stuff** — a 28-slot inventory with items you can pick up off the ground
+  and drop.
+- **Fight** — NPCs wander, aggro, and hit back; combat has HP, death/respawn, and
+  floating damage splats.
+- **Train skills** — earn XP and levels in woodcutting, mining, fishing, firemaking,
+  and cooking.
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's shipped and what's next.
+## How it works
+
+Three small, independently tested packages talk over one JSON wire protocol:
+
+- **`packages/protocol`** — the message types and codec; the single source of truth
+  both sides share.
+- **`packages/server`** — an authoritative 15 Hz game loop: A\* pathfinding, combat,
+  skills, and SQLite persistence. The client never decides anything that matters.
+- **`packages/client`** — netcode → an interpolating game-state model → a tiered
+  terminal renderer. Data flows one way: the network layer writes state, the
+  renderer only reads it.
+
+Deeper notes live in [`CONTEXT.md`](CONTEXT.md) and [`docs/`](docs/).
 
 ## Develop
 
-Requires [Bun](https://bun.sh).
+Requires [Bun](https://bun.sh). [`just`](https://github.com/casey/just) runs the
+common tasks:
 
 ```bash
 bun install
-just server     # run the server locally (ws://localhost:3000)
-just client     # run a client against it (dev account via env)
-just check      # full gate: tests + typecheck + render/click/login smoke
+just server      # run the server (PORT overridable: just port=3005 server)
+just client      # run a client against it (dev account via env vars)
+just check       # full gate: tests + typecheck + render/click/login smoke tests
 ```
 
-Architecture and contributor notes: see [`CONTEXT.md`](CONTEXT.md) and
-[`docs/`](docs/).
+`just check` is the pre-commit gate. Alongside unit and integration tests it drives
+real OpenTUI clients inside pseudo-terminals and inspects the actual escape bytes —
+the closest automated proxy for "does it look right in a real terminal." (Needs
+`python3`.)
 
-## Rendering tiers
+The project is built one vertical slice at a time; see
+[`docs/OPERATING-PROCEDURE.md`](docs/OPERATING-PROCEDURE.md) and the
+[roadmap](docs/ROADMAP.md).
 
-Fidelity scales with the terminal, detected at startup from OpenTUI's
-capabilities: **halfblock** (truecolor/256-color) renders at sub-cell resolution
-for smooth movement; **ascii** is the always-playable glyph fallback.
+## Rendering
 
-## Deploy (Docker)
+Fidelity is detected from the terminal at startup:
 
-```bash
-docker compose up -d --build   # server on :3000
-```
+- **halfblock** (truecolor / 256-color): draws two vertical sub-pixels per cell with
+  `▀`, so interpolated movement glides instead of stepping.
+- **ascii**: a glyph fallback that's always playable.
+
+## Deploy
 
 The server is the deployable; clients run in players' terminals.
+
+```bash
+docker compose up -d --build   # server on :3000, SQLite on a persistent volume
+```
