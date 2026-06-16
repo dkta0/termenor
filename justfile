@@ -13,8 +13,12 @@ default:
 server:
     PORT={{port}} bun run server
 
-# run the client, auto-pointed at the local server on the same port
+# run the client normally — shows the login screen (register or log in)
 client:
+    SERVER_URL=ws://localhost:{{port}} bun run client
+
+# run the client with auto-login (dev account, bypasses the login screen) — for testing
+client-dev:
     SERVER_URL=ws://localhost:{{port}} TERMENOR_USER={{user}} TERMENOR_PASS={{pass}} bun run client
 
 # unit + integration tests

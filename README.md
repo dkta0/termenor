@@ -82,7 +82,8 @@ common tasks:
 ```bash
 bun install
 just server      # run the server (PORT overridable: just port=3005 server)
-just client      # run a client against it (dev account via env vars)
+just client      # play normally — shows the login screen
+just client-dev  # auto-login as a dev account (skips login), for testing
 just check       # full gate: tests + typecheck + render/click/login smoke tests
 ```
 
