@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import { existsSync, rmSync } from "node:fs";
 import { emptyInventory } from "./inventory";
+import { emptyEquipment } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 
 const SPAWN = { x: 24, y: 24, facing: "south" as const };
@@ -41,7 +42,7 @@ test("wrong password is rejected", async () => {
 
 test("savePlayerState persists and restores position", async () => {
   await getOrCreateAccount(db, "diana", "pw", SPAWN);
-  savePlayerState(db, "diana", 10.5, 15.0, "east", emptyInventory(), {}, []);
+  savePlayerState(db, "diana", 10.5, 15.0, "east", emptyInventory(), {}, [], emptyEquipment());
   const result = await getOrCreateAccount(db, "diana", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -77,7 +78,7 @@ test("new account returns empty inventory", async () => {
 test("savePlayerState persists inventory and restores it", async () => {
   await getOrCreateAccount(db, "inv2", "pw", SPAWN);
   const inv = [{ item: "coins", qty: 10 }, ...new Array(27).fill(null)];
-  savePlayerState(db, "inv2", SPAWN.x, SPAWN.y, SPAWN.facing, inv, {}, []);
+  savePlayerState(db, "inv2", SPAWN.x, SPAWN.y, SPAWN.facing, inv, {}, [], emptyEquipment());
   const result = await getOrCreateAccount(db, "inv2", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -115,7 +116,7 @@ test("new account returns empty skills", async () => {
 test("savePlayerState persists skills and restores them", async () => {
   await getOrCreateAccount(db, "woodcutter", "pw", SPAWN);
   const skills = { woodcutting: 100 };
-  savePlayerState(db, "woodcutter", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), skills, []);
+  savePlayerState(db, "woodcutter", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), skills, [], emptyEquipment());
   const result = await getOrCreateAccount(db, "woodcutter", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -175,7 +176,7 @@ test("new account returns empty bank", async () => {
 test("savePlayerState persists bank and restores it", async () => {
   await getOrCreateAccount(db, "banker", "pw", SPAWN);
   const bank: ItemStack[] = [{ item: "logs", qty: 50 }];
-  savePlayerState(db, "banker", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), {}, bank);
+  savePlayerState(db, "banker", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), {}, bank, emptyEquipment());
   const result = await getOrCreateAccount(db, "banker", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -189,4 +190,29 @@ test("NULL or corrupt bank column yields empty bank", async () => {
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(result.state.bank).toEqual([]);
+});
+
+test("new account starts with empty equipment", async () => {
+  const result = await getOrCreateAccount(db, "freshgear", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.equipment).toEqual({ weapon: null, body: null, shield: null });
+});
+
+test("savePlayerState persists equipment and restores it", async () => {
+  await getOrCreateAccount(db, "eq", "pw", SPAWN);
+  savePlayerState(db, "eq", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), {}, [], { weapon: "bronze_sword", body: null, shield: "bronze_shield" });
+  const result = await getOrCreateAccount(db, "eq", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.equipment).toEqual({ weapon: "bronze_sword", body: null, shield: "bronze_shield" });
+});
+
+test("NULL or corrupt equipment column yields empty equipment", async () => {
+  await getOrCreateAccount(db, "corruptgear", "pw", SPAWN);
+  db.run("UPDATE accounts SET equipment = 'not json' WHERE username = ?", ["corruptgear"]);
+  const result = await getOrCreateAccount(db, "corruptgear", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.equipment).toEqual({ weapon: null, body: null, shield: null });
 });
