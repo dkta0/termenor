@@ -1,85 +1,59 @@
 # Termenor
 
-A RuneScape-inspired MMO rendered in the terminal. This vertical slice delivers
-smooth, server-authoritative multiplayer **movement** on a tile map — no combat,
-skilling, inventory, NPCs, or economy yet. Movement first.
+A RuneScape-inspired MMO that runs entirely in your terminal — isometric world,
+real-time multiplayer movement, combat, gathering skills, inventory, NPCs, and a
+shared persistent world. Built to dip into on a break.
 
-## Run locally
+## Play
 
-Terminal 1 — server:
+```bash
+git clone https://github.com/dkta0/termenor
+cd termenor
+./play
+```
+
+That's it — `./play` checks for [Bun](https://bun.sh), installs dependencies on
+first run, connects you to the public server, and shows a login screen. Register a
+name and you're in. Use **ghostty** or **kitty** for the best rendering.
+
+Connect to a different server: `./play ws://host:3000`.
+
+### Controls
+
+- **Click a tile** to walk there (the server pathfinds around walls).
+- **Arrow keys** step one tile.
+- Gather, fight, and manage inventory with the on-screen hotkeys.
+
+## What's in the world
+
+- Smooth, server-authoritative multiplayer movement on an isometric tile map.
+- Accounts with persistent state (position, inventory, skills).
+- Public chat and nearby-player name labels.
+- 28-slot inventory with ground items (pick up / drop).
+- NPCs with wander AI, melee combat (HP, death/respawn, damage splats).
+- Gathering skills with XP and levels: woodcutting, mining, fishing, cooking, firemaking.
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's shipped and what's next.
+
+## Develop
+
+Requires [Bun](https://bun.sh).
 
 ```bash
 bun install
-bun run server                 # ws://localhost:3000  (set PORT to change)
+just server     # run the server locally (ws://localhost:3000)
+just client     # run a client against it (dev account via env)
+just check      # full gate: tests + typecheck + render/click/login smoke
 ```
 
-Terminals 2 and 3 — two clients (use **ghostty** or **kitty** for best fidelity):
-
-```bash
-bun run client                 # connects to ws://localhost:3000
-# or point at another host: bun run client ws://host:3000
-# or: SERVER_URL=ws://host:3000 bun run client
-```
-
-**Or one command** (server + two clients side-by-side in tmux — run it in
-ghostty/kitty):
-
-```bash
-./scripts/demo.sh
-```
-
-**Click a tile** to walk there (the server pathfinds around walls);
-**arrow keys** step one tile. Each client sees the other player move in real time.
+Architecture and contributor notes: see [`CONTEXT.md`](CONTEXT.md) and
+[`docs/`](docs/).
 
 ## Rendering tiers
 
 Fidelity scales with the terminal, detected at startup from OpenTUI's
-capabilities:
-
-- **halfblock** (truecolor / 256-color): sub-cell `▀` rendering at 4 px/tile, so
-  interpolated movement glides smoothly.
-- **ascii**: glyph fallback (`@` you, `o` others, `#` wall, `·` floor) — always
-  playable.
-
-> OpenTUI 0.4.1 reports `kitty_graphics` / `sixel` support but does not yet expose
-> APIs to *drive* those protocols, so those terminals use the halfblock tier. The
-> tier selector (`packages/client/src/render/tiers.ts`) is structured to add real
-> image tiers when OpenTUI matures — this is the graceful degradation the design
-> called for.
-
-## Architecture
-
-Three independently testable units, communicating over a shared wire protocol:
-
-- `packages/protocol` — wire types + JSON codec (single source of truth).
-- `packages/server` — authoritative 15 Hz game loop, A* pathfinding, `Bun.serve`
-  WebSocket. Continuous (float) tile positions stream in snapshots; the static map
-  is sent once on join.
-- `packages/client` — `Connection` (netcode) → `GameState` (interpolating model) →
-  tiered renderer. One-way data flow: the renderer only reads `GameState`; the net
-  layer only writes it.
-
-## Test
-
-```bash
-bun test                       # unit + integration (protocol, server, client, render)
-bun run typecheck              # tsc --noEmit
-bun run scripts/smoke.ts       # headless: two clients see each other move
-bun run scripts/render-smoke.ts# headless: full render pipeline → ASCII frame
-bun run verify:render          # PTY: two real OpenTUI clients, verify the actual
-                               #   escape-byte output (truecolor half-block,
-                               #   both players, animation on movement)
-```
-
-`verify:render` drives two real clients in pseudo-terminals and inspects the
-exact bytes a terminal would paint — the closest automated proxy for "looks good
-in ghostty/kitty" without a human at the keyboard. (Requires `python3`.)
-
-```bash
-bun run scripts/render-png.ts  # renders client A's live view to PNG frames
-                               #   (/tmp/termenor-hero.png, -strip.png) as a
-                               #   remote player walks — visual smoke. (ImageMagick)
-```
+capabilities: **halfblock** (truecolor/256-color) renders at sub-cell resolution
+for smooth movement; **ascii** is the always-playable glyph fallback.
 
 ## Deploy (Docker)
 
@@ -88,15 +62,3 @@ docker compose up -d --build   # server on :3000
 ```
 
 The server is the deployable; clients run in players' terminals.
-
-## Manual acceptance checklist
-
-Validate in **ghostty/kitty**, then in **foot** and **Alacritty**:
-
-- [ ] Start server + two clients.
-- [ ] Each client renders the map (floor/walls) and both player sprites.
-- [ ] Clicking a far tile makes the local player **glide smoothly** (not teleport)
-      along a path that routes around walls.
-- [ ] The other client sees that movement in real time.
-- [ ] Arrow keys step the player one tile.
-- [ ] ghostty/kitty show crisp half-block color; foot/Alacritty remain playable.
