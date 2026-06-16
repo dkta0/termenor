@@ -182,3 +182,19 @@ test("snapshot with rock and fire resources round-trips", () => {
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
+
+test("decodeClient accepts a login message carrying an explicit mode", () => {
+  const wire = encode({ t: "login", mode: "register", username: "alice", password: "pw" });
+  const msg = decodeClient(wire);
+  expect(msg.t).toBe("login");
+  if (msg.t !== "login") return;
+  expect(msg.mode).toBe("register");
+  expect(msg.username).toBe("alice");
+});
+
+test("decodeClient still accepts a login message with no mode (legacy)", () => {
+  const msg = decodeClient(encode({ t: "login", username: "bob", password: "pw" }));
+  expect(msg.t).toBe("login");
+  if (msg.t !== "login") return;
+  expect(msg.mode).toBeUndefined();
+});

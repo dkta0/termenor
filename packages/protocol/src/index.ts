@@ -32,7 +32,7 @@ export interface PlayerState {
   maxHp: number;
 }
 
-export interface LoginMsg { t: "login"; username: string; password: string; }
+export interface LoginMsg { t: "login"; mode?: "login" | "register"; username: string; password: string; }
 export interface MoveToMsg { t: "moveTo"; x: number; y: number; }
 export interface ChatMsg { t: "chat"; text: string; }
 export interface PickupMsg { t: "pickup"; }
