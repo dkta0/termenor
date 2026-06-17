@@ -1,4 +1,5 @@
 import type { ItemStack, GroundItem } from "./items";
+import type { Intent } from "./intents";
 export type { ItemStack, GroundItem } from "./items";
 export { ITEM_KINDS, isItem, INV_SIZE } from "./items";
 export type { ItemKind } from "./items";
@@ -45,7 +46,8 @@ export interface OpenMsg { t: "open"; what: "bank" | "shop"; targetId: string; }
 export interface BankActionMsg { t: "bankAction"; action: "deposit" | "withdraw"; slot: number; qty: number; }
 export interface ShopActionMsg { t: "shopAction"; action: "buy" | "sell"; item: string; qty: number; }
 export interface EquipActionMsg { t: "equipAction"; action: "equip" | "unequip"; slot: number; }
-export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg | UseMsg | OpenMsg | BankActionMsg | ShopActionMsg | EquipActionMsg;
+export interface IntentMsg { t: "intent"; intent: Intent; }
+export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg | UseMsg | OpenMsg | BankActionMsg | ShopActionMsg | EquipActionMsg | IntentMsg;
 
 export interface WelcomeMsg {
   t: "welcome";
@@ -73,7 +75,7 @@ export function encode(msg: ClientMsg | ServerMsg): string {
 
 export const MAX_CHAT_LEN = 200;
 
-const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack", "gather", "use", "open", "bankAction", "shopAction", "equipAction"]);
+const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack", "gather", "use", "open", "bankAction", "shopAction", "equipAction", "intent"]);
 const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg", "inventory", "skills", "bank", "shop", "equipment"]);
 
 export function decodeClient(data: string): ClientMsg {
@@ -93,3 +95,4 @@ export * from "./skills";
 export * from "./resources";
 export * from "./shops";
 export * from "./equipment";
+export * from "./intents";
