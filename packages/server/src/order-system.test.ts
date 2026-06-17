@@ -126,3 +126,36 @@ function countLogs(p: { inventory: ({ item: string; qty: number } | null)[] }): 
   for (const s of p.inventory) if (s && s.item === "logs") n += s.qty;
   return n;
 }
+
+test("combat order engages the nearest matching npc and counts kills", () => {
+  const w = world(); // rng pinned to 0.99 → unarmed max-hit lands every swing
+  w.spawnNpc("goblin", 3, 2, 0); // maxHp 5, adjacent
+  w.setOrder("c", "combat", "goblin", { kind: "count", n: 1 });
+  runUntilIdle(w, "c");
+  const p = w.players.get("c")!;
+  expect(p.order).toBeNull(); // one kill satisfies count 1
+  expect(p.target).toBeNull(); // safe-idle
+  expect(w.consumeOrderNotices().some((n) => n.id === "c" && /complete/i.test(n.text))).toBe(true);
+});
+
+test("combat forever keeps the order active after a kill", () => {
+  const w = world();
+  w.spawnNpc("goblin", 3, 2, 0);
+  w.setOrder("c", "combat", "goblin", { kind: "forever" });
+  for (let i = 0; i < 80; i++) w.step(1 / 15); // long enough for at least one kill + respawn wait
+  expect(w.players.get("c")!.order).not.toBeNull();
+});
+
+test("combat order re-acquires a second npc after the first kill", () => {
+  const w = world();
+  w.spawnNpc("goblin", 3, 2, 0); // adjacent
+  w.spawnNpc("goblin", 1, 2, 0); // other side, also reachable
+  w.setOrder("c", "combat", "goblin", { kind: "count", n: 2 });
+  runUntilIdle(w, "c");
+  const p = w.players.get("c")!;
+  expect(p.order).toBeNull(); // both kills counted
+  // both goblins are dead/respawning (respawnAt >= 0)
+  const goblins = w.npcs.filter((n) => n.type === "goblin");
+  expect(goblins.length).toBe(2);
+  expect(goblins.every((n) => n.respawnAt >= 0)).toBe(true);
+});

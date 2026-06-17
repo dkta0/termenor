@@ -3,6 +3,7 @@ import type { StopCondition } from "@termenor/protocol";
 import { addToInventory } from "./inventory";
 import type { GameWorld } from "./game";
 import type { ActiveOrder, PlayerEntity } from "./entities";
+import * as combatSys from "./combat-system";
 
 /** Total quantity of a given item across the inventory. */
 function countItem(p: PlayerEntity, item: string): number {
@@ -97,6 +98,15 @@ export function stepOrders(w: GameWorld): void {
         order.unitsDone += current - order.baselineYield;
         order.baselineYield = current;
       }
+    } else if (order.engagedNpcId !== null) {
+      // Kill is observed the tick AFTER it lands: stepOrders runs before stepCombat/
+      // resolveDeaths, so resolveDeaths(T) sets respawnAt and we count it on T+1.
+      // combat: the engaged npc dying (respawnAt set) or vanishing counts as a kill
+      const npc = w.npcs.find((n) => n.id === order.engagedNpcId);
+      if (!npc || npc.respawnAt >= 0) {
+        order.unitsDone++;
+        order.engagedNpcId = null;
+      }
     }
 
     // 2. check stop-condition
@@ -114,6 +124,15 @@ export function stepOrders(w: GameWorld): void {
       );
       const res = nearest(p, candidates);
       if (res) p.gatherTarget = res.id;
+    }
+
+    if (order.activity === "combat" && p.target === null) {
+      const candidates = w.npcs.filter((n) => n.type === order.targetType && n.respawnAt < 0);
+      const npc = nearest(p, candidates);
+      if (npc) {
+        combatSys.setTarget(w, p.id, npc.id);
+        order.engagedNpcId = npc.id;
+      }
     }
   }
 }
