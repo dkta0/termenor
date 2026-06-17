@@ -35,3 +35,13 @@ test("pickup with nothing underfoot returns no inventory message", () => {
   const res = executeIntent(g, "alice", { kind: "pickup" }, {});
   expect(res).toEqual({ self: [], world: [] });
 });
+
+test("equip intent returns both an equipment message and an inventory message", () => {
+  const g = world();
+  const inv = g.getInventory("alice")!;
+  inv.fill(null);
+  inv[0] = { item: "bronze_sword", qty: 1 };
+  const res = executeIntent(g, "alice", { kind: "equip", slot: 0 }, {});
+  expect(res.self.some((m) => m.t === "equipment")).toBe(true);
+  expect(res.self.some((m) => m.t === "inventory")).toBe(true);
+});

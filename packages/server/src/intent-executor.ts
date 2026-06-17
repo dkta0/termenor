@@ -10,6 +10,7 @@ export interface IntentResult { self: ServerMsg[]; world: ServerMsg[]; }
 
 const NOTHING: IntentResult = { self: [], world: [] };
 
+// Nullable because getInventory returns null for an unknown/absent player; callers must guard before including this message.
 function inventoryMsg(game: GameWorld, playerId: string): InventoryMsg | null {
   const inv = game.getInventory(playerId);
   return inv ? { t: "inventory", slots: inv } : null;
