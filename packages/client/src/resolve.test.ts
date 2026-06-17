@@ -68,3 +68,63 @@ test("completions returns verbs matching a prefix", () => {
   expect(completions("ba")).toContain("bank");
   expect(completions("mi")).toContain("mine");
 });
+
+test("mine ... until full produces a gather order intent with the resource type", () => {
+  expect(resolveCommand("mine copper until full", ctx())).toEqual({
+    ok: true,
+    intent: { kind: "order", activity: "gather", targetType: "copper_rock", stop: { kind: "untilFull" } },
+  });
+});
+
+test("chop ... count N produces a gather order intent", () => {
+  expect(resolveCommand("chop tree count 5", ctx())).toEqual({
+    ok: true,
+    intent: { kind: "order", activity: "gather", targetType: "tree", stop: { kind: "count", n: 5 } },
+  });
+});
+
+test("gather ... until level N produces a gather order intent", () => {
+  expect(resolveCommand("mine copper until level 30", ctx())).toEqual({
+    ok: true,
+    intent: { kind: "order", activity: "gather", targetType: "copper_rock", stop: { kind: "untilLevel", level: 30 } },
+  });
+});
+
+test("fight ... forever produces a combat order intent", () => {
+  expect(resolveCommand("fight goblin forever", ctx())).toEqual({
+    ok: true,
+    intent: { kind: "order", activity: "combat", targetType: "goblin", stop: { kind: "forever" } },
+  });
+});
+
+test("fight ... count N produces a combat order intent", () => {
+  expect(resolveCommand("attack goblin count 10", ctx())).toEqual({
+    ok: true,
+    intent: { kind: "order", activity: "combat", targetType: "goblin", stop: { kind: "count", n: 10 } },
+  });
+});
+
+test("combat rejects gather-only stop-conditions", () => {
+  const r = resolveCommand("fight goblin until full", ctx());
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.message).toContain("combat");
+});
+
+test("a bare gather/attack verb is still a one-shot intent (back-compat)", () => {
+  expect(resolveCommand("mine copper", ctx())).toEqual({ ok: true, intent: { kind: "gather", targetId: "res-1" } });
+  expect(resolveCommand("attack goblin", ctx())).toEqual({ ok: true, intent: { kind: "attack", targetId: "npc-1" } });
+});
+
+test("malformed count is a friendly error", () => {
+  const r = resolveCommand("chop tree count abc", ctx());
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.message).toContain("count");
+});
+
+test("halt is an alias for stop", () => {
+  expect(resolveCommand("halt", ctx())).toEqual({ ok: true, intent: { kind: "stopOrder" } });
+});
+
+test("stop cancels the active order", () => {
+  expect(resolveCommand("stop", ctx())).toEqual({ ok: true, intent: { kind: "stopOrder" } });
+});
