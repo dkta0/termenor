@@ -3,6 +3,7 @@ import { GameWorld } from "./game";
 import { createDefaultMap, SPAWN, SEED_ITEMS, NPC_SPAWNS, RESOURCE_SPAWNS, STARTER_AXE, STARTER_GEAR } from "./world";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import { emptyInventory } from "./inventory";
+import { executeIntent } from "./intent-executor";
 import type { Database } from "bun:sqlite";
 
 /** Trim whitespace then truncate to MAX_CHAT_LEN. Returns "" for blank input. */
@@ -106,7 +107,13 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
         }
 
         // authenticated — handle game messages
-        if (msg.t === "moveTo") {
+        if (msg.t === "intent") {
+          const session = { shopId: ws.data.shopId ?? undefined };
+          const result = executeIntent(game, ws.data.username, msg.intent, session);
+          ws.data.shopId = session.shopId ?? null;
+          for (const m of result.self) ws.send(encode(m));
+          for (const m of result.world) server.publish("world", encode(m));
+        } else if (msg.t === "moveTo") {
           game.queueMove(ws.data.username, msg.x, msg.y);
         } else if (msg.t === "chat") {
           const text = sanitizeChat(msg.text);
