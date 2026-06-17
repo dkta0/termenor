@@ -27,6 +27,13 @@ The whole game, built as ordered vertical slices. Each row is one `/spec → /pl
 11. ⏳ **Equipment + combat v2** — ranged/magic, prayer. *(equipment foundation shipped: equip/unequip
     weapon+armour feeding flat melee — weapon→max hit, armour→damage reduction. Ranged/magic/prayer +
     combat skills remain as follow-up slices.)*
+A. ✅ **Intent boundary (command line)** — shared `Intent` vocabulary + `IntentMsg` wire format;
+   server typed intent-executor (handler registry + dispatch); client command line (`:` to open,
+   history, verb registry + name resolution + did-you-mean + completions, tiered event-log
+   skeleton). *(merged — sits alongside the quests slice as infrastructure groundwork)*
+   Deferred: existing hotkey handlers not yet migrated onto the executor; Tab key not yet bound
+   to completions; standing orders / AFK loop = future Slice B; real event tiers + single-key
+   responses = future Slice C.
 12. **Quests** — scripting/state-machine system + one real quest.
 13. **World scale** — multiple regions, region streaming.
 

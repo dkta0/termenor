@@ -42,4 +42,5 @@ driven by `/goal`, one slice at a time.
 - Slice 9: ✅ skill framework — data-driven RESOURCE_TYPES + use() action; mining, fishing, firemaking, cooking (merged to main).
 - Slice 10: ✅ banking + shops — persistent per-player bank + general store, server-authoritative, bank/shop panels (merged to main).
 - Slice 11: ⏳ equipment + combat v2 — equipment foundation shipped (equip/unequip weapon+armour feeding flat melee combat: weapon→max hit, armour→damage reduction; modal equipment panel). Ranged/magic/prayer + combat skills deferred to follow-up slices (merged to main).
+- Slice A: ✅ intent boundary — shared Intent vocabulary + IntentMsg; server intent-executor (typed handler registry + dispatch); client command line (`:` to open, history, verb registry, name resolution, did-you-mean, completions, tiered event-log skeleton). Deferred: hotkey migration onto executor, Tab key binding, standing orders (Slice B), real event tiers + single-key responses (Slice C). (merged to main)
 - Slice 12: quests — next.
