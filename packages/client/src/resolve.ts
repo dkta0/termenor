@@ -1,4 +1,4 @@
-import type { Intent } from "@termenor/protocol";
+import type { Intent, StopCondition } from "@termenor/protocol";
 import type { ItemStack, Equipment } from "@termenor/protocol";
 
 export interface EntityRef { id: string; type: string; name: string; x: number; y: number; }
@@ -51,14 +51,52 @@ function parseQty(token: string | undefined): number {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
+/**
+ * Peel a trailing stop-clause off command args: `forever`, `count N`,
+ * `until full`, or `until level N`. Returns the remaining name tokens and the
+ * parsed stop (null when no clause is present), or a friendly error.
+ * NOTE: entity names must not contain the keywords `forever`, `count`, or `until`,
+ * since the first occurrence of one splits the name from the stop-clause.
+ */
+function parseStopCondition(args: string[]): { stop: StopCondition | null; nameTokens: string[]; error: string | null } {
+  const lower = args.map((a) => a.toLowerCase());
+  const i = lower.findIndex((t) => t === "forever" || t === "count" || t === "until");
+  if (i === -1) return { stop: null, nameTokens: args, error: null };
+  const nameTokens = args.slice(0, i);
+  const kw = lower[i];
+  if (kw === "forever") return { stop: { kind: "forever" }, nameTokens, error: null };
+  if (kw === "count") {
+    const n = parseInt(args[i + 1] ?? "", 10);
+    if (!Number.isFinite(n) || n < 1) return { stop: null, nameTokens, error: "count how many? e.g. `count 10`" };
+    return { stop: { kind: "count", n }, nameTokens, error: null };
+  }
+  // kw === "until"
+  const next = lower[i + 1];
+  if (next === "full") return { stop: { kind: "untilFull" }, nameTokens, error: null };
+  if (next === "level") {
+    const level = parseInt(args[i + 2] ?? "", 10);
+    if (!Number.isFinite(level) || level < 1) return { stop: null, nameTokens, error: "until what level? e.g. `until level 50`" };
+    return { stop: { kind: "untilLevel", level }, nameTokens, error: null };
+  }
+  return { stop: null, nameTokens, error: "stop-condition must be `until full` or `until level N`" };
+}
+
 export const COMMANDS: CommandSpec[] = [
   {
     verbs: ["attack", "fight", "kill"],
     help: "attack <enemy> — fight the named enemy",
     parse: (args, ctx) => {
       if (args.length === 0) return err("attack what? e.g. `attack goblin`");
-      const target = matchEntity(args.join(" "), ctx.npcs, ctx.player);
-      return target ? ok({ kind: "attack", targetId: target.id }) : err(`no enemy matching "${args.join(" ")}" nearby`);
+      const sc = parseStopCondition(args);
+      if (sc.error) return err(sc.error);
+      const query = sc.nameTokens.join(" ");
+      if (query.length === 0) return err("attack what? e.g. `fight goblin forever`");
+      const target = matchEntity(query, ctx.npcs, ctx.player);
+      if (!target) return err(`no enemy matching "${query}" nearby`);
+      if (sc.stop === null) return ok({ kind: "attack", targetId: target.id });
+      if (sc.stop.kind === "untilFull" || sc.stop.kind === "untilLevel")
+        return err("can't use that stop-condition with combat — try `forever` or `count N`");
+      return ok({ kind: "order", activity: "combat", targetType: target.type, stop: sc.stop });
     },
   },
   {
@@ -66,8 +104,14 @@ export const COMMANDS: CommandSpec[] = [
     help: "gather <resource> — harvest the named resource",
     parse: (args, ctx) => {
       if (args.length === 0) return err("gather what? e.g. `mine copper`");
-      const target = matchEntity(args.join(" "), ctx.resources, ctx.player);
-      return target ? ok({ kind: "gather", targetId: target.id }) : err(`no resource matching "${args.join(" ")}" nearby`);
+      const sc = parseStopCondition(args);
+      if (sc.error) return err(sc.error);
+      const query = sc.nameTokens.join(" ");
+      if (query.length === 0) return err("gather what? e.g. `mine copper until full`");
+      const target = matchEntity(query, ctx.resources, ctx.player);
+      if (!target) return err(`no resource matching "${query}" nearby`);
+      if (sc.stop === null) return ok({ kind: "gather", targetId: target.id });
+      return ok({ kind: "order", activity: "gather", targetType: target.type, stop: sc.stop });
     },
   },
   {
@@ -167,6 +211,11 @@ export const COMMANDS: CommandSpec[] = [
       if (ctx.equipment[slotName as keyof Equipment] == null) return err(`nothing equipped in ${slotName}`);
       return ok({ kind: "unequip", index });
     },
+  },
+  {
+    verbs: ["stop", "halt"],
+    help: "stop — cancel the current standing order",
+    parse: () => ok({ kind: "stopOrder" }),
   },
 ];
 

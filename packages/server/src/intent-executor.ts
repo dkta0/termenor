@@ -118,6 +118,14 @@ const handlers: Handlers = {
     const inv = inventoryMsg(game, playerId);
     return { self: inv ? [equipmentMsg(game, playerId), inv] : [equipmentMsg(game, playerId)], world: [] };
   },
+  order: (game, playerId, intent) => {
+    const text = game.setOrder(playerId, intent.activity, intent.targetType, intent.stop);
+    return { self: text ? [{ t: "chatMsg", from: "", text }] : [], world: [] };
+  },
+  stopOrder: (game, playerId) => {
+    const text = game.clearOrder(playerId);
+    return { self: text ? [{ t: "chatMsg", from: "", text }] : [], world: [] };
+  },
 };
 
 /** Execute any intent against the world, returning the messages to send. */

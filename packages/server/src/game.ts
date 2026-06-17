@@ -1,4 +1,4 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState, ShopEntry, Equipment } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, HitEvent, ResourceState, ShopEntry, Equipment, StopCondition } from "@termenor/protocol";
 import { NPC_KINDS, PLAYER_MAX_HP, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, SKILLS, SHOPS, emptyEquipment } from "@termenor/protocol";
 import { type Point } from "./pathfinding";
 import { emptyInventory, addToInventory } from "./inventory";
@@ -8,6 +8,7 @@ import * as moveSys from "./movement-system";
 import * as combatSys from "./combat-system";
 import * as resourceSys from "./resource-system";
 import * as gatherSys from "./gather-system";
+import * as orderSys from "./order-system";
 import * as actionSys from "./action-system";
 import * as bankSys from "./bank-system";
 import * as shopSys from "./shop-system";
@@ -45,7 +46,7 @@ export class GameWorld {
   resources: ResourceEntity[] = [];
   fires: FireEntity[] = [];
   nextResourceId = 1;
-  events: GameEvents = { skillChanged: new Set(), levelUps: [], gatherNotices: [] };
+  events: GameEvents = { skillChanged: new Set(), levelUps: [], gatherNotices: [], orderNotices: [] };
   /** @internal — in-memory shop stock; a deep copy of the SHOPS catalog so stock mutates without touching the imported constant. Read/written by shop-system. */
   shops: Record<string, { name: string; entries: ShopEntry[] }>;
 
@@ -75,7 +76,7 @@ export class GameWorld {
     }
     const bank = state?.bank ?? [];
     const equipment = state?.equipment ?? emptyEquipment();
-    this.players.set(id, { id, x, y, facing, path: [], inventory, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, target: null, attackCd: 0, skills, gatherTarget: null, gatherCd: 0, bank, equipment });
+    this.players.set(id, { id, x, y, facing, path: [], inventory, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, target: null, attackCd: 0, skills, gatherTarget: null, gatherCd: 0, bank, equipment, order: null });
   }
 
   removePlayer(id: string): void {
@@ -120,6 +121,7 @@ export class GameWorld {
   /** Advance the world by dt seconds. Pure orchestration of the System modules. */
   step(dt: number): void {
     this.tick++;
+    orderSys.stepOrders(this);
     combatSys.stepNpcRespawn(this);
     moveSys.stepMovement(this, dt);
     combatSys.stepCombat(this);
@@ -227,6 +229,19 @@ export class GameWorld {
   consumeGatherNotices(): { id: string; text: string }[] {
     const notices = this.events.gatherNotices;
     this.events.gatherNotices = [];
+    return notices;
+  }
+
+  // --- Standing orders (delegates to order-system) ---
+  setOrder(id: string, activity: "gather" | "combat", targetType: string, stop: StopCondition): string {
+    return orderSys.setOrder(this, id, activity, targetType, stop);
+  }
+  clearOrder(id: string): string {
+    return orderSys.clearOrder(this, id);
+  }
+  consumeOrderNotices(): { id: string; text: string }[] {
+    const notices = this.events.orderNotices;
+    this.events.orderNotices = [];
     return notices;
   }
 

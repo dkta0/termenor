@@ -34,6 +34,13 @@ A. ✅ **Intent boundary (command line)** — shared `Intent` vocabulary + `Inte
    Deferred: existing hotkey handlers not yet migrated onto the executor; Tab key not yet bound
    to completions; standing orders / AFK loop = future Slice B; real event tiers + single-key
    responses = future Slice C.
+B. ✅ **Standing orders / AFK floor** — server-side per-player order supervisor (`order-system.ts`)
+   running gather + combat activities autonomously across ticks; stop-conditions
+   (`forever` / `count N` / `until full` / `until level N`) registered alongside intents;
+   command grammar suffixes (`mine tree count 50`, `fight goblin forever`) + `stop` verb;
+   safe-idle (stop & hold) on completion/cancel. *(merged)* Deferred to later slices: order
+   queue / `then` / `repeat`, banking-as-order, richer safe-idle policies, order persistence,
+   combat `until level` (needs combat skills), and the event-tier system (Slice C).
 12. **Quests** — scripting/state-machine system + one real quest.
 13. **World scale** — multiple regions, region streaming.
 
