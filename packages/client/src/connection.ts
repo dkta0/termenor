@@ -1,4 +1,4 @@
-import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg, type OpenMsg, type BankActionMsg, type ShopActionMsg, type EquipActionMsg } from "@termenor/protocol";
+import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg, type OpenMsg, type BankActionMsg, type ShopActionMsg, type EquipActionMsg, type Intent, type IntentMsg } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
@@ -171,6 +171,11 @@ export class Connection {
 
   sendEquipAction(action: "equip" | "unequip", slot: number): void {
     const msg: EquipActionMsg = { t: "equipAction", action, slot };
+    this.sock?.send(encode(msg));
+  }
+
+  sendIntent(intent: Intent): void {
+    const msg: IntentMsg = { t: "intent", intent };
     this.sock?.send(encode(msg));
   }
 

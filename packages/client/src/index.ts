@@ -39,6 +39,7 @@ const handle = await startRenderer(state, chatState, {
   onBankAction: (action, slot, qty) => conn.sendBankAction(action, slot, qty),
   onShopAction: (action, item, qty) => conn.sendShopAction(action, item, qty),
   onEquipAction: (action, slot) => conn.sendEquipAction(action, slot),
+  onIntent: (intent) => conn.sendIntent(intent),
 });
 
 const shutdown = () => { handle.stop(); conn.disconnect(); process.exit(0); };

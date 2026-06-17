@@ -7,8 +7,11 @@ import {
   type MouseEvent as TuiMouseEvent,
   type OptimizedBuffer,
 } from "@opentui/core";
-import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS, EQUIP_SLOTS } from "@termenor/protocol";
+import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS, EQUIP_SLOTS, type Intent } from "@termenor/protocol";
 import type { GameState } from "../game-state";
+import { CommandLine } from "../command-line";
+import { LogState, type LogTier } from "../log";
+import { resolveCommand, type ResolveContext, type EntityRef } from "../resolve";
 import type { ChatState } from "../chat";
 import { isoCamera, pickTile } from "./camera";
 import { rasterizeIso, type IsoFrame } from "./rasterize";
@@ -46,9 +49,31 @@ export interface RendererHooks {
   onShopAction?(action: "buy" | "sell", item: string, qty: number): void;
   /** Called for an equip (by inventory slot) / unequip (by equipment-slot index). */
   onEquipAction?(action: "equip" | "unequip", slot: number): void;
+  /** Called when the command line resolves a valid intent. */
+  onIntent?(intent: Intent): void;
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
+
+function buildResolveContext(state: GameState, _log: LogState): ResolveContext {
+  const now = performance.now();
+  const me = state.samplePositions(now).find((p) => p.id === state.localId);
+  const player = me ? { x: me.x, y: me.y } : { x: 0, y: 0 };
+  const npcs: EntityRef[] = state.sampleNpcs(now).map((n) => ({
+    id: n.id, type: n.type, name: n.type.replace(/_/g, " "), x: n.x, y: n.y,
+  }));
+  const resources: EntityRef[] = state.sampleResources().map((r) => ({
+    id: r.id, type: r.type, name: (RESOURCE_KINDS[r.type]?.name ?? r.type).toLowerCase(), x: r.x, y: r.y,
+  }));
+  return {
+    player, npcs, resources,
+    inventory: state.inventory,
+    equipment: state.equipment,
+    itemName: (id) => ITEM_KINDS[id]?.name ?? id,
+    nearestOfType: (type) => state.nearestResourceOfType(type, now),
+    equipSlotName: (index) => (["weapon", "body", "shield"][index] ?? null),
+  };
+}
 
 /**
  * Boots OpenTUI, drives a 60fps frame callback that samples GameState and
@@ -63,6 +88,8 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   let bankMode: "deposit" | "withdraw" = "deposit";
   let shopMode: "buy" | "sell" = "buy";
   let equipMode: "equip" | "unequip" = "equip";
+  const cmd = new CommandLine();
+  const log = new LogState();
 
   renderer.setFrameCallback(async () => {
     const buffer = renderer.nextRenderBuffer;
@@ -163,6 +190,27 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       for (const cell of textCells(inputLine, 1, rows - 1, cols, rows)) {
         buffer.setCell(cell.col, cell.row, cell.char, CYAN, BLACK);
       }
+    }
+
+    // Tiered event log: rendered above the command input line
+    const TIER_COLORS: Record<LogTier, ReturnType<typeof RGBA.fromInts>> = {
+      ambient: DIM,
+      notable: RGBA.fromInts(230, 210, 140, 255),
+      critical: RGBA.fromInts(230, 110, 110, 255),
+    };
+    const logLines = log.recent(5);
+    const logTop = rows - 6 - logLines.length - (cmd.active ? 1 : 0);
+    for (let i = 0; i < logLines.length; i++) {
+      const e = logLines[i];
+      for (const cell of textCells(e.text, 1, logTop + i, cols, rows))
+        buffer.setCell(cell.col, cell.row, cell.char, TIER_COLORS[e.tier], BLACK);
+    }
+
+    // Command input line: shown when cmd is active
+    if (cmd.active) {
+      const cmdLine = `» ${cmd.input}_`;
+      for (const cell of textCells(cmdLine, 1, rows - 1, cols, rows))
+        buffer.setCell(cell.col, cell.row, cell.char, CYAN, BLACK);
     }
 
     // Skills HUD: top-left corner, one line per skill
@@ -275,6 +323,28 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   };
 
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
+    if (cmd.active) {
+      if (key.name === "return" || key.name === "enter") {
+        const line = cmd.submit();
+        if (line) {
+          const result = resolveCommand(line, buildResolveContext(state, log));
+          if (result.ok) { hooks.onIntent?.(result.intent); log.push("ambient", `» ${line}`); }
+          else log.push("notable", result.message);
+        }
+      } else if (key.name === "escape") {
+        cmd.cancel();
+      } else if (key.name === "backspace") {
+        cmd.backspace();
+      } else if (key.name === "up") {
+        cmd.historyPrev();
+      } else if (key.name === "down") {
+        cmd.historyNext();
+      } else {
+        cmd.type(key.sequence ?? key.name ?? "");
+      }
+      return;
+    }
+
     if (chat.active) {
       // Chat input mode — consume all keys; movement is gated
       if (key.name === "return" || key.name === "enter") {
@@ -331,6 +401,9 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       chat.open();
       return;
     }
+
+    // Open the command line
+    if (key.sequence === ":") { cmd.open(); return; }
 
     // Open the bank booth / store nearest the player.
     if (key.name === "b") {
