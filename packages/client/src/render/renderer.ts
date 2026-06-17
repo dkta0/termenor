@@ -199,7 +199,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       critical: RGBA.fromInts(230, 110, 110, 255),
     };
     const logLines = log.recent(5);
-    const logTop = rows - 6 - logLines.length - (cmd.active ? 1 : 0);
+    const logTop = rows - 7 - logLines.length - (cmd.active ? 1 : 0);
     for (let i = 0; i < logLines.length; i++) {
       const e = logLines[i];
       for (const cell of textCells(e.text, 1, logTop + i, cols, rows))

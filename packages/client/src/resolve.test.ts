@@ -40,6 +40,11 @@ test("equip resolves an inventory item to its slot", () => {
   expect(resolveCommand("equip bronze_sword", ctx())).toEqual({ ok: true, intent: { kind: "equip", slot: 2 } });
 });
 
+test("use resolves action and item to slot; errors if item arg missing", () => {
+  expect(resolveCommand("use firemaking logs", ctx())).toEqual({ ok: true, intent: { kind: "use", action: "firemaking", slot: 0 } });
+  expect(resolveCommand("use firemaking", ctx()).ok).toBe(false);
+});
+
 test("bank with no argument opens the nearest booth", () => {
   expect(resolveCommand("bank", ctx())).toEqual({ ok: true, intent: { kind: "openBank", targetId: "bank-1" } });
 });

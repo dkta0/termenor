@@ -164,6 +164,7 @@ export const COMMANDS: CommandSpec[] = [
       if (index < 0) return err("unequip weapon, body, or shield");
       const slotName = ctx.equipSlotName(index);
       if (!slotName) return err("nothing equipped there");
+      if (ctx.equipment[slotName as keyof Equipment] == null) return err(`nothing equipped in ${slotName}`);
       return ok({ kind: "unequip", index });
     },
   },
