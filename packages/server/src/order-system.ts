@@ -1,7 +1,8 @@
-import { RESOURCE_KINDS } from "@termenor/protocol";
+import { RESOURCE_KINDS, levelForXp } from "@termenor/protocol";
 import type { StopCondition } from "@termenor/protocol";
+import { addToInventory } from "./inventory";
 import type { GameWorld } from "./game";
-import type { PlayerEntity } from "./entities";
+import type { ActiveOrder, PlayerEntity } from "./entities";
 
 /** Total quantity of a given item across the inventory. */
 function countItem(p: PlayerEntity, item: string): number {
@@ -51,7 +52,68 @@ export function clearOrder(w: GameWorld, playerId: string): string {
   return "Order cancelled.";
 }
 
-/** Per-tick supervisor. Filled in by later tasks (gather + combat). */
-export function stepOrders(_w: GameWorld): void {
-  // implemented in Tasks 3 (gather) and 4 (combat)
+/** Nearest entity to the player by Euclidean distance, or null for an empty list. */
+function nearest<T extends { x: number; y: number }>(p: PlayerEntity, list: T[]): T | null {
+  let best: T | null = null;
+  let bestD = Infinity;
+  for (const e of list) {
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
+
+function stopMet(p: PlayerEntity, order: ActiveOrder): boolean {
+  const stop = order.stop;
+  switch (stop.kind) {
+    case "forever":
+      return false;
+    case "count":
+      return order.unitsDone >= stop.n;
+    case "untilFull": {
+      if (order.activity !== "gather") return false;
+      const yieldItem = RESOURCE_KINDS[order.targetType]?.yield ?? "";
+      const { leftover } = addToInventory(p.inventory, { item: yieldItem, qty: 1 });
+      return leftover !== null;
+    }
+    case "untilLevel": {
+      if (order.activity !== "gather") return false;
+      const skill = RESOURCE_KINDS[order.targetType]?.skill ?? "";
+      return levelForXp(p.skills[skill] ?? 0) >= stop.level;
+    }
+  }
+}
+
+export function stepOrders(w: GameWorld): void {
+  for (const p of w.players.values()) {
+    const order = p.order;
+    if (!order) continue;
+
+    // 1. account progress (observational)
+    if (order.activity === "gather") {
+      const yieldItem = RESOURCE_KINDS[order.targetType]?.yield ?? "";
+      const current = countItem(p, yieldItem);
+      if (current > order.baselineYield) {
+        order.unitsDone += current - order.baselineYield;
+        order.baselineYield = current;
+      }
+    }
+
+    // 2. check stop-condition
+    if (stopMet(p, order)) {
+      p.order = null;
+      safeIdle(p);
+      w.events.orderNotices.push({ id: p.id, text: `Order complete: ${describeOrder(order.activity, order.targetType, order.stop)}.` });
+      continue;
+    }
+
+    // 3. acquire the next target if the low-level action is idle
+    if (order.activity === "gather" && p.gatherTarget === null) {
+      const candidates = w.resources.filter(
+        (r) => r.type === order.targetType && r.respawnAt < 0 && RESOURCE_KINDS[r.type]?.gatherable !== false,
+      );
+      const res = nearest(p, candidates);
+      if (res) p.gatherTarget = res.id;
+    }
+  }
 }
