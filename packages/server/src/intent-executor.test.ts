@@ -45,3 +45,27 @@ test("equip intent returns both an equipment message and an inventory message", 
   expect(res.self.some((m) => m.t === "equipment")).toBe(true);
   expect(res.self.some((m) => m.t === "inventory")).toBe(true);
 });
+
+test("order intent sets a standing order and returns a chat notice", () => {
+  const g = world();
+  const res = executeIntent(g, "alice", { kind: "order", activity: "gather", targetType: "tree", stop: { kind: "forever" } }, {});
+  expect(g.players.get("alice")!.order).not.toBeNull();
+  expect(res.self.some((m) => m.t === "chatMsg")).toBe(true);
+  expect(res.world).toEqual([]);
+});
+
+test("stopOrder intent cancels the active order and returns a chat notice", () => {
+  const g = world();
+  g.setOrder("alice", "gather", "tree", { kind: "forever" });
+  const res = executeIntent(g, "alice", { kind: "stopOrder" }, {});
+  expect(g.players.get("alice")!.order).toBeNull();
+  expect(res.self.some((m) => m.t === "chatMsg")).toBe(true);
+  expect(res.world).toEqual([]);
+});
+
+test("stopOrder with no active order is a silent no-op", () => {
+  const g = world();
+  const res = executeIntent(g, "alice", { kind: "stopOrder" }, {});
+  expect(res.self).toEqual([]);
+  expect(res.world).toEqual([]);
+});

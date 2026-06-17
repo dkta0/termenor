@@ -214,6 +214,11 @@ export function startServer(port: number, dbPath = process.env.DB_PATH ?? ":memo
       const sock = sockets.get(id);
       if (sock) sock.send(encode({ t: "chatMsg", from: "", text }));
     }
+    // deliver standing-order notices (set / complete / cancelled)
+    for (const { id, text } of game.consumeOrderNotices()) {
+      const sock = sockets.get(id);
+      if (sock) sock.send(encode({ t: "chatMsg", from: "", text }));
+    }
 
     saveTick++;
     if (saveTick >= SAVE_INTERVAL_TICKS) {
