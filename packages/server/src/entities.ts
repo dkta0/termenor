@@ -1,5 +1,15 @@
-import type { Facing, ItemStack, Equipment } from "@termenor/protocol";
+import type { Facing, ItemStack, Equipment, StopCondition } from "@termenor/protocol";
 import type { Point } from "./pathfinding";
+
+/** A standing order: an autonomous activity + stop-condition the server runs across ticks (Slice B). */
+export interface ActiveOrder {
+  activity: "gather" | "combat";
+  targetType: string;          // entity .type key, re-resolved to nearest live each cycle
+  stop: StopCondition;
+  unitsDone: number;           // progress counter for `count`
+  baselineYield: number;       // gather: yield-item count in inventory at last sample
+  engagedNpcId: string | null; // combat: npc currently engaged, for kill detection
+}
 
 export interface PlayerEntity {
   id: string; x: number; y: number; facing: Facing; path: Point[];
@@ -8,6 +18,7 @@ export interface PlayerEntity {
   skills: Record<string, number>; gatherTarget: string | null; gatherCd: number;
   bank: ItemStack[];
   equipment: Equipment;
+  order: ActiveOrder | null;
 }
 
 export interface NpcEntity {
@@ -30,4 +41,5 @@ export interface GameEvents {
   skillChanged: Set<string>;
   levelUps: { id: string; skill: string; level: number }[];
   gatherNotices: { id: string; text: string }[];
+  orderNotices: { id: string; text: string }[];
 }
