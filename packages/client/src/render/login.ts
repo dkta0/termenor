@@ -45,8 +45,8 @@ export async function runLogin(attempt: (p: LoginResult) => Promise<AuthResult>)
       line(top, "T E R M E N O R", ACCENT);
       line(top + 1, "RuneScape in your terminal", DIM);
       const modeLabel = v.mode === "register"
-        ? "( ) Log in    (•) Register   [Tab: switch field · ←/→: toggle]"
-        : "(•) Log in    ( ) Register   [Tab: switch field · ←/→: toggle]";
+        ? "( ) Log in    (•) Register   [Tab: field · ← Log in · Register →]"
+        : "(•) Log in    ( ) Register   [Tab: field · ← Log in · Register →]";
       line(top + 3, modeLabel, DIM);
       line(top + 5, `${v.focus === "username" ? "›" : " "} Username  ${v.username || "_"}`,
         v.focus === "username" ? WHITE : DIM);
@@ -60,7 +60,8 @@ export async function runLogin(attempt: (p: LoginResult) => Promise<AuthResult>)
       if (busy) return;
       const name = key.name ?? "";
       if (name === "tab") { form.focusNext(); return; }
-      if (name === "left" || name === "right") { form.toggleMode(); return; }
+      if (name === "left") { form.setMode("login"); return; }
+      if (name === "right") { form.setMode("register"); return; }
       if (name === "backspace") { form.backspace(); return; }
       if (name === "return" || name === "enter") {
         if (!form.canSubmit()) { form.setError("enter a username and password"); return; }

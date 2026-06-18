@@ -21,6 +21,8 @@ import { arrowDelta } from "./input";
 import { tileToScreen } from "./iso";
 import { textCells, centerCol } from "./overlay";
 import { type CellGrid, type Tier } from "./types";
+import { isHudClick, type HudRegions } from "./click-gate";
+import { pageCount, clampPage, indexForDigit, pageSlice } from "./paging";
 
 export interface RendererHandle {
   stop(): void;
@@ -100,6 +102,12 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   let bankMode: "deposit" | "withdraw" = "deposit";
   let shopMode: "buy" | "sell" = "buy";
   let equipMode: "equip" | "unequip" = "equip";
+  const hud: HudRegions = { modalOpen: false, panelCol: 0, panelBottomRow: 0, skillsRows: 0, skillsWidth: 0 };
+  let modalPage = 0;
+  let lastModal: "bank" | "shop" | "equip" | null = null;
+  // Bank rows for the current frame/mode: withdraw -> bank entries, deposit -> the
+  // player's non-empty inventory slots. `slot` is the index the server action expects.
+  let bankRows: { slot: number; item: string; qty: number }[] = [];
   const cmd = new CommandLine();
   const log = new LogState();
 
@@ -123,6 +131,8 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   };
 
   renderer.setFrameCallback(async () => {
+    const curModal = state.bankOpen ? "bank" : state.shopOpen ? "shop" : state.equipOpen ? "equip" : null;
+    if (curModal !== lastModal) { modalPage = 0; lastModal = curModal; }
     const buffer = renderer.nextRenderBuffer;
     const map = state.map;
     if (!buffer || !map) return;
@@ -268,39 +278,53 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       }
     }
 
+    // Expose this frame's HUD layout to the click handler (cell coords).
+    hud.modalOpen = state.bankOpen || state.shopOpen || state.equipOpen;
+    hud.panelCol = PANEL_COL;
+    hud.panelBottomRow = maxSlots + 1; // header at row 1, items at rows 2..(maxSlots+1)
+    hud.skillsRows = skillLines.length;
+    hud.skillsWidth = skillLines.reduce((w, l) => Math.max(w, l.length), 0);
+
     // Bank panel (modal, left side below the skills HUD). Lists bank entries by
     // index — withdraw mode picks from here; deposit mode picks from inventory.
     if (state.bankOpen) {
       const BANK_COLOR = RGBA.fromInts(210, 195, 90, 255);
       const startRow = skillLines.length + 2;
+      // Withdraw picks from the bank; deposit picks from your inventory slots.
+      bankRows = bankMode === "withdraw"
+        ? state.bank.map((it, i) => ({ slot: i, item: it.item, qty: it.qty }))
+        : state.inventory
+            .map((s, i) => ({ s, i }))
+            .filter((e): e is { s: NonNullable<typeof e.s>; i: number } => e.s !== null)
+            .map(({ s, i }) => ({ slot: i, item: s.item, qty: s.qty }));
+      const pages = pageCount(bankRows.length);
       const header = `[ Bank — ${bankMode.toUpperCase()} ]`;
       for (const cell of textCells(header, 2, startRow, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, BANK_COLOR, BLACK);
-      const hint = "d deposit · w withdraw · 1-9 item · Esc close";
+      const hint = `d deposit · w withdraw · 1-9 item · [ ] page ${modalPage + 1}/${pages} · Esc close`;
       for (const cell of textCells(hint, 2, startRow + 1, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, DIM, BLACK);
-      const maxRows = Math.max(0, rows - startRow - 4);
-      const max = Math.min(state.bank.length, maxRows);
-      for (let i = 0; i < max; i++) {
-        const it = state.bank[i];
-        const label = `${i + 1}: ${ITEM_KINDS[it.item]?.name ?? it.item} x${it.qty}`;
-        for (const cell of textCells(label, 2, startRow + 2 + i, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, BANK_COLOR, BLACK);
+      const { start, end } = pageSlice(modalPage, bankRows.length);
+      for (let i = start; i < end; i++) {
+        const r = bankRows[i];
+        const label = `${i - start + 1}: ${ITEM_KINDS[r.item]?.name ?? r.item} x${r.qty}`;
+        for (const cell of textCells(label, 2, startRow + 2 + (i - start), cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, BANK_COLOR, BLACK);
       }
     }
 
-    // Shop panel (modal, left side). Same index set for buy and sell.
+    // Shop panel (modal, left side). Same paged entry list for buy and sell.
     if (state.shopOpen && state.shop) {
       const SHOP_COLOR = RGBA.fromInts(210, 130, 210, 255);
       const startRow = skillLines.length + 2;
+      const entries = state.shop.entries;
+      const pages = pageCount(entries.length);
       const header = `[ ${state.shop.name} — ${shopMode.toUpperCase()} ]`;
       for (const cell of textCells(header, 2, startRow, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, SHOP_COLOR, BLACK);
-      const hint = "b buy · s sell · 1-9 item · Esc close";
+      const hint = `b buy · s sell · 1-9 item · [ ] page ${modalPage + 1}/${pages} · Esc close`;
       for (const cell of textCells(hint, 2, startRow + 1, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, DIM, BLACK);
-      const entries = state.shop.entries;
-      const maxRows = Math.max(0, rows - startRow - 4);
-      const max = Math.min(entries.length, maxRows);
-      for (let i = 0; i < max; i++) {
+      const { start, end } = pageSlice(modalPage, entries.length);
+      for (let i = start; i < end; i++) {
         const e = entries[i];
-        const label = `${i + 1}: ${ITEM_KINDS[e.item]?.name ?? e.item}  ${e.price}gp (${e.stock})`;
-        for (const cell of textCells(label, 2, startRow + 2 + i, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, SHOP_COLOR, BLACK);
+        const label = `${i - start + 1}: ${ITEM_KINDS[e.item]?.name ?? e.item}  ${e.price}gp (${e.stock})`;
+        for (const cell of textCells(label, 2, startRow + 2 + (i - start), cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, SHOP_COLOR, BLACK);
       }
     }
 
@@ -362,6 +386,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
 
   clickLayer.onMouseDown = (e: TuiMouseEvent) => {
     if (cmd.active) return; // gate clicks while typing in Direct mode
+    if (isHudClick(e.x, e.y, hud)) return; // gate clicks on HUD chrome / open modals
     if (!lastFrame || !state.map) return;
     const px = e.x;
     const py = tier === "halfblock" ? e.y * 2 : e.y;
@@ -373,20 +398,29 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     // --- Modal panels (bank/shop/equip): consume all keys while open ---
     if (state.bankOpen) {
       if (key.name === "escape") { state.closeBank(); return; }
-      if (key.name === "d") { bankMode = "deposit"; return; }
-      if (key.name === "w") { bankMode = "withdraw"; return; }
+      if (key.name === "d") { bankMode = "deposit"; modalPage = 0; return; }
+      if (key.name === "w") { bankMode = "withdraw"; modalPage = 0; return; }
+      if (key.name === "]" || key.sequence === "]") { modalPage = clampPage(modalPage + 1, bankRows.length); return; }
+      if (key.name === "[" || key.sequence === "[") { modalPage = clampPage(modalPage - 1, bankRows.length); return; }
       const m = /^([1-9])$/.exec(key.name ?? "");
-      if (m) hooks.onBankAction?.(bankMode, parseInt(m[1], 10) - 1, -1); // -1 = all
+      if (m) {
+        const idx = indexForDigit(modalPage, parseInt(m[1], 10), bankRows.length);
+        if (idx >= 0) hooks.onBankAction?.(bankMode, bankRows[idx].slot, -1); // -1 = all
+      }
       return;
     }
     if (state.shopOpen) {
       if (key.name === "escape") { state.closeShop(); return; }
-      if (key.name === "b") { shopMode = "buy"; return; }
-      if (key.name === "s") { shopMode = "sell"; return; }
+      if (key.name === "b") { shopMode = "buy"; modalPage = 0; return; }
+      if (key.name === "s") { shopMode = "sell"; modalPage = 0; return; }
+      const entries = state.shop?.entries ?? [];
+      if (key.name === "]" || key.sequence === "]") { modalPage = clampPage(modalPage + 1, entries.length); return; }
+      if (key.name === "[" || key.sequence === "[") { modalPage = clampPage(modalPage - 1, entries.length); return; }
       const m = /^([1-9])$/.exec(key.name ?? "");
       if (m) {
-        const entry = state.shop?.entries[parseInt(m[1], 10) - 1];
-        if (entry) hooks.onShopAction?.(shopMode, entry.item, 1);
+        const idx = indexForDigit(modalPage, parseInt(m[1], 10), entries.length);
+        const entry = entries[idx];
+        if (idx >= 0 && entry) hooks.onShopAction?.(shopMode, entry.item, 1);
       }
       return;
     }

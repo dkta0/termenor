@@ -71,3 +71,13 @@ test("canSubmit requires both fields non-empty", () => {
   f.focusNext(); f.type("p");
   expect(f.canSubmit()).toBe(true);
 });
+
+test("setMode selects an explicit mode and is idempotent", () => {
+  const f = new LoginForm();          // default mode is "register"
+  f.setMode("login");
+  expect(f.view().mode).toBe("login");
+  f.setMode("login");                 // idempotent — no flip
+  expect(f.view().mode).toBe("login");
+  f.setMode("register");
+  expect(f.view().mode).toBe("register");
+});

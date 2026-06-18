@@ -22,6 +22,10 @@ export class LoginForm {
     this.mode = this.mode === "register" ? "login" : "register";
   }
 
+  setMode(mode: AuthMode): void {
+    this.mode = mode;
+  }
+
   focusNext(): void {
     this.focus = this.focus === "username" ? "password" : "username";
   }
