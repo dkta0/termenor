@@ -109,29 +109,302 @@ function drawSkirt(f: IsoFrame, cx: number, cyGround: number, skirtPx: number, r
   }
 }
 
-function drawBillboard(f: IsoFrame, cx: number, cyFeet: number, depth: number, kind: number, rgb: RGB): void {
-  const H = 4, W = 2;
-  // Snap the sprite's top edge to a half-block cell boundary (even pixel row). Each
-  // terminal cell is 2px (fg=top, bg=bottom); if the sprite only half-filled an edge
-  // cell, the scrolling terrain in the other half strobed the sprite during movement.
-  // H is even, so H rows from an even top fill whole cells — no terrain bleed.
-  let top = Math.round(cyFeet) - (H - 1);
-  top -= top & 1; // round down to an even row (cell top)
-  for (let dy = 0; dy < H; dy++)
-    for (let dx = 0; dx < W; dx++) plotEntity(f, Math.round(cx + dx - W / 2), top + dy, depth, kind, rgb, -1);
+function getSpritePixels(type: string, facing: string, now: number, baseColor: RGB): { H: number; W: number; pixels: RGB[] } {
+  if (type === "player") {
+    const hair: RGB = [110, 70, 40];
+    const skin: RGB = [240, 180, 140];
+    const eyes: RGB = [40, 40, 40];
+    const boots: RGB = [60, 50, 40];
+    const shadeTorso: RGB = [Math.round(baseColor[0] * 0.8), Math.round(baseColor[1] * 0.8), Math.round(baseColor[2] * 0.8)];
+
+    if (facing === "north") {
+      return {
+        H: 4, W: 2,
+        pixels: [
+          hair, hair,
+          hair, hair,
+          baseColor, shadeTorso,
+          boots, boots,
+        ],
+      };
+    } else if (facing === "east") {
+      return {
+        H: 4, W: 2,
+        pixels: [
+          hair, hair,
+          hair, skin,
+          baseColor, shadeTorso,
+          boots, boots,
+        ],
+      };
+    } else if (facing === "west") {
+      return {
+        H: 4, W: 2,
+        pixels: [
+          hair, hair,
+          skin, hair,
+          shadeTorso, baseColor,
+          boots, boots,
+        ],
+      };
+    } else { // south
+      return {
+        H: 4, W: 2,
+        pixels: [
+          hair, hair,
+          skin, eyes,
+          baseColor, shadeTorso,
+          boots, boots,
+        ],
+      };
+    }
+  }
+
+  if (type === "goblin") {
+    const green: RGB = [80, 160, 60];
+    const darkGreen: RGB = [50, 110, 40];
+    const eyes: RGB = [220, 40, 40];
+    const loincloth: RGB = [110, 70, 40];
+
+    if (facing === "north") {
+      return {
+        H: 4, W: 2,
+        pixels: [
+          green, green,
+          green, green,
+          loincloth, loincloth,
+          green, green,
+        ],
+      };
+    } else if (facing === "east") {
+      return {
+        H: 4, W: 2,
+        pixels: [
+          green, green,
+          green, eyes,
+          loincloth, loincloth,
+          green, green,
+        ],
+      };
+    } else if (facing === "west") {
+      return {
+        H: 4, W: 2,
+        pixels: [
+          green, green,
+          eyes, green,
+          loincloth, loincloth,
+          green, green,
+        ],
+      };
+    } else { // south
+      return {
+        H: 4, W: 2,
+        pixels: [
+          green, green,
+          green, eyes,
+          loincloth, loincloth,
+          green, green,
+        ],
+      };
+    }
+  }
+
+  if (type === "rat") {
+    const fur: RGB = [140, 120, 100];
+    const darkFur: RGB = [100, 85, 70];
+    const nose: RGB = [220, 120, 120];
+
+    if (facing === "east") {
+      return {
+        H: 2, W: 2,
+        pixels: [
+          fur, nose,
+          darkFur, fur,
+        ],
+      };
+    } else if (facing === "west") {
+      return {
+        H: 2, W: 2,
+        pixels: [
+          nose, fur,
+          fur, darkFur,
+        ],
+      };
+    } else if (facing === "north") {
+      return {
+        H: 2, W: 2,
+        pixels: [
+          fur, fur,
+          darkFur, darkFur,
+        ],
+      };
+    } else { // south
+      return {
+        H: 2, W: 2,
+        pixels: [
+          fur, fur,
+          nose, fur,
+        ],
+      };
+    }
+  }
+
+  if (type === "tree") {
+    const lightLeaf: RGB = [40, 160, 40];
+    const leaf: RGB = [40, 120, 40];
+    const trunk: RGB = [110, 70, 40];
+    return {
+      H: 4, W: 2,
+      pixels: [
+        lightLeaf, leaf,
+        leaf, lightLeaf,
+        leaf, leaf,
+        trunk, trunk,
+      ],
+    };
+  }
+
+  if (type === "rock") {
+    const grey1: RGB = [120, 120, 130];
+    const grey2: RGB = [100, 100, 110];
+    const grey3: RGB = [140, 140, 150];
+    const grey4: RGB = [80, 80, 90];
+    return {
+      H: 4, W: 2,
+      pixels: [
+        grey1, grey2,
+        grey2, grey3,
+        grey1, grey1,
+        grey4, grey4,
+      ],
+    };
+  }
+
+  if (type === "fishing_spot") {
+    const blue1: RGB = [60, 120, 200];
+    const blue2: RGB = [100, 160, 255];
+    const blue3: RGB = [40, 80, 160];
+    const step = Math.floor(now / 300) % 2;
+    return {
+      H: 4, W: 2,
+      pixels: step === 0 ? [
+        blue1, blue2,
+        blue2, blue1,
+        blue1, blue1,
+        blue3, blue3,
+      ] : [
+        blue2, blue1,
+        blue1, blue2,
+        blue2, blue2,
+        blue3, blue3,
+      ],
+    };
+  }
+
+  if (type === "fire") {
+    const orange: RGB = [240, 140, 30];
+    const yellow: RGB = [240, 200, 40];
+    const red: RGB = [180, 80, 20];
+    const coal: RGB = [100, 60, 30];
+    const step = Math.floor(now / 150) % 2;
+    return {
+      H: 4, W: 2,
+      pixels: step === 0 ? [
+        orange, yellow,
+        yellow, orange,
+        red, red,
+        coal, coal,
+      ] : [
+        yellow, orange,
+        red, yellow,
+        orange, red,
+        coal, coal,
+      ],
+    };
+  }
+
+  if (type === "bank_booth") {
+    const gold: RGB = [240, 200, 40];
+    const brown: RGB = [110, 70, 40];
+    const darkBrown: RGB = [80, 50, 30];
+    return {
+      H: 4, W: 2,
+      pixels: [
+        gold, gold,
+        brown, brown,
+        brown, brown,
+        darkBrown, darkBrown,
+      ],
+    };
+  }
+
+  if (type === "general_store") {
+    const purple: RGB = [200, 120, 200];
+    const pink: RGB = [220, 150, 220];
+    const brown: RGB = [110, 70, 40];
+    const darkBrown: RGB = [80, 50, 30];
+    return {
+      H: 4, W: 2,
+      pixels: [
+        purple, pink,
+        brown, brown,
+        brown, brown,
+        darkBrown, darkBrown,
+      ],
+    };
+  }
+
+  return {
+    H: 4, W: 2,
+    pixels: new Array(8).fill(baseColor),
+  };
 }
+
+function drawBillboard(
+  f: IsoFrame, cx: number, cyFeet: number, depth: number, kind: number, rgb: RGB,
+  type: string, facing: string = "south", isMoving: boolean = false, now: number = 0,
+): { H: number; bobY: number } {
+  const { H, W, pixels } = getSpritePixels(type, facing, now, rgb);
+
+  let bobY = 0;
+  let swayX = 0;
+  if (type === "player" || type === "goblin" || type === "rat") {
+    if (isMoving) {
+      const walkCycle = now * 0.015;
+      bobY = -Math.abs(Math.round(Math.sin(walkCycle) * 1.0));
+      swayX = Math.round(Math.cos(walkCycle) * 0.5);
+    } else if (now > 0) {
+      bobY = Math.round(Math.sin(now * 0.005) * 0.4);
+    }
+  }
+
+  const animCx = cx + swayX;
+  const animCy = cyFeet + bobY;
+
+  let top = Math.round(animCy) - (H - 1);
+  top -= top & 1; // round down to an even row (cell top)
+  for (let dy = 0; dy < H; dy++) {
+    for (let dx = 0; dx < W; dx++) {
+      const pixelRgb = pixels[dy * W + dx];
+      plotEntity(f, Math.round(animCx + dx - W / 2), top + dy, depth, kind, pixelRgb, -1);
+    }
+  }
+
+  return { H, bobY };
+}
+
 
 const BAR_W = 5;
 const HP_GREEN: RGB = [40, 200, 40];
 const HP_RED: RGB = [200, 40, 40];
 
 /** Draw a small HP bar one pixel above the billboard head (cyFeet - billboardH - 1). */
-function drawHpBar(f: IsoFrame, cx: number, cyFeet: number, depth: number, hp: number, maxHp: number): void {
+function drawHpBar(f: IsoFrame, cx: number, cyFeet: number, depth: number, hp: number, maxHp: number, H: number = 4, bobY: number = 0): void {
   if (maxHp <= 0) return;
   // Snap to a cell boundary and fill the whole 2px cell. A 1px-tall bar always
   // half-filled a cell, so scrolling terrain in the other half strobed it during
   // movement; a full-cell bar is stable (anti-shimmer).
-  let barTop = Math.round(cyFeet) - 4 - 1; // billboard H=4; 1px gap above head
+  let barTop = Math.round(cyFeet + bobY) - H - 1; // billboard height H; 1px gap above head
   barTop -= barTop & 1; // round down to an even row (cell top)
   const filled = Math.round((hp / maxHp) * BAR_W);
   const startX = Math.round(cx) - Math.floor(BAR_W / 2);
@@ -162,6 +435,7 @@ export function rasterizeIso(
   ground: GroundItem[] = [],
   npcs: NpcRender[] = [],
   resources: (ResourceState & { h: number })[] = [],
+  now: number = 0,
 ): IsoFrame {
   const f = newIsoFrame(pxW, pxH);
 
@@ -192,8 +466,9 @@ export function rasterizeIso(
     fillDiamond(f, cx, cy, groundDepth, Kind.SHADOW, SHADOW_RGB, -1, plotEntity); // shadow on the ground
     const kind = p.id === localId ? Kind.LOCAL : Kind.PLAYER;
     const rgb = p.id === localId ? LOCAL_RGB : PLAYER_RGB;
-    drawBillboard(f, cx, cy, depth, kind, rgb);
-    drawHpBar(f, cx, cy, depth, p.hp, p.maxHp);
+    const isMoving = Math.abs(p.x - Math.round(p.x)) > 0.01 || Math.abs(p.y - Math.round(p.y)) > 0.01;
+    const { H, bobY } = drawBillboard(f, cx, cy, depth, kind, rgb, "player", p.facing, isMoving, now);
+    drawHpBar(f, cx, cy, depth, p.hp, p.maxHp, H, bobY);
   }
 
   // ground items — render as small colored sprites, depth = x+y (sits on ground)
@@ -219,8 +494,9 @@ export function rasterizeIso(
     fillDiamond(f, cx, cy, groundDepth, Kind.SHADOW, SHADOW_RGB, -1, plotEntity);
     const entry = NPC_KINDS[npc.type];
     const rgb: RGB = entry ? entry.color : [200, 200, 200];
-    drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
-    drawHpBar(f, cx, cy, depth, npc.hp, npc.maxHp);
+    const isMoving = Math.abs(npc.x - Math.round(npc.x)) > 0.01 || Math.abs(npc.y - Math.round(npc.y)) > 0.01;
+    const { H, bobY } = drawBillboard(f, cx, cy, depth, Kind.NPC, rgb, npc.type, npc.facing, isMoving, now);
+    drawHpBar(f, cx, cy, depth, npc.hp, npc.maxHp, H, bobY);
   }
 
   // Resources — static billboards (no HP bar)
@@ -230,7 +506,7 @@ export function rasterizeIso(
     const depth = res.x + res.y + ENTITY_DEPTH_BIAS;
     const entry = RESOURCE_KINDS[res.type];
     const rgb: RGB = entry ? entry.color : [40, 120, 40];
-    drawBillboard(f, cx, cy, depth, Kind.NPC, rgb);
+    drawBillboard(f, cx, cy, depth, Kind.NPC, rgb, res.type, "south", false, now);
   }
 
   return f;

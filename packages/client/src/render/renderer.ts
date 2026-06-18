@@ -109,7 +109,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     const center = me ? tileToScreen(me.x, me.y, me.h) : tileToScreen(map.width / 2, map.height / 2, 0);
     const cam = isoCamera(center.sx, center.sy, pxW, pxH);
 
-    const frame = rasterizeIso(map, players, cam.ox, cam.oy, pxW, pxH, state.localId, state.ground, npcs, resources);
+    const frame = rasterizeIso(map, players, cam.ox, cam.oy, pxW, pxH, state.localId, state.ground, npcs, resources, now);
     lastFrame = frame;
     const grid = cellGridFor(tier, frame.buf);
     blit(buffer, grid);
