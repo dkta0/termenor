@@ -446,6 +446,39 @@ with:
     }
 ```
 
+- [ ] **Step 4b: Gate mouse clicks while in Direct mode (bug fix)**
+
+The `clickLayer.onMouseDown` handler currently gates on `chat.active`, which is now always false — so a click would fire movement while the player is typing. Change the guard to `cmd.active`.
+
+Find in `clickLayer.onMouseDown`:
+
+```ts
+    if (chat.active) return; // gate clicks while typing
+```
+
+Replace with:
+
+```ts
+    if (cmd.active) return; // gate clicks while typing in Direct mode
+```
+
+- [ ] **Step 4c: Refresh stale hook JSDoc**
+
+The legacy hotkeys named in `RendererHooks` JSDoc (`onDrop` "number key", `onUse` "'f' or 'k'", `onOpen` "'b'/'o'") no longer exist. These hooks remain part of the public hook surface (wired in `index.ts`) but are now reached via the command/intent path, not hotkeys. Update only the comments (not the signatures):
+
+```ts
+  /** Drop an inventory slot (now via the `/drop` command → intent path). */
+  onDrop?(slot: number): void;
+```
+```ts
+  /** Use a skill on an inventory slot (now via the `/use` command → intent path). */
+  onUse?(action: string, slot: number): void;
+```
+```ts
+  /** Open a bank booth / store (now via the `/bank` / `/shop` command → intent path). */
+  onOpen?(what: "bank" | "shop", targetId: string): void;
+```
+
 - [ ] **Step 5: Render the legend strip**
 
 At the very end of the frame callback, just before the closing `});` of `setFrameCallback` (after the equipment-panel block, ~line 298), add:
