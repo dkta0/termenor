@@ -310,7 +310,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       }
     }
 
-    // Shop panel (modal, left side). Same index set for buy and sell.
+    // Shop panel (modal, left side). Same paged entry list for buy and sell.
     if (state.shopOpen && state.shop) {
       const SHOP_COLOR = RGBA.fromInts(210, 130, 210, 255);
       const startRow = skillLines.length + 2;
