@@ -21,6 +21,7 @@ import { arrowDelta } from "./input";
 import { tileToScreen } from "./iso";
 import { textCells, centerCol } from "./overlay";
 import { type CellGrid, type Tier } from "./types";
+import { isHudClick, type HudRegions } from "./click-gate";
 
 export interface RendererHandle {
   stop(): void;
@@ -100,6 +101,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   let bankMode: "deposit" | "withdraw" = "deposit";
   let shopMode: "buy" | "sell" = "buy";
   let equipMode: "equip" | "unequip" = "equip";
+  const hud: HudRegions = { modalOpen: false, panelCol: 0, panelBottomRow: 0, skillsRows: 0, skillsWidth: 0 };
   const cmd = new CommandLine();
   const log = new LogState();
 
@@ -268,6 +270,13 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       }
     }
 
+    // Expose this frame's HUD layout to the click handler (cell coords).
+    hud.modalOpen = state.bankOpen || state.shopOpen || state.equipOpen;
+    hud.panelCol = PANEL_COL;
+    hud.panelBottomRow = maxSlots + 1; // header at row 1, items at rows 2..(maxSlots+1)
+    hud.skillsRows = skillLines.length;
+    hud.skillsWidth = skillLines.reduce((w, l) => Math.max(w, l.length), 0);
+
     // Bank panel (modal, left side below the skills HUD). Lists bank entries by
     // index — withdraw mode picks from here; deposit mode picks from inventory.
     if (state.bankOpen) {
@@ -362,6 +371,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
 
   clickLayer.onMouseDown = (e: TuiMouseEvent) => {
     if (cmd.active) return; // gate clicks while typing in Direct mode
+    if (isHudClick(e.x, e.y, hud)) return; // gate clicks on HUD chrome / open modals
     if (!lastFrame || !state.map) return;
     const px = e.x;
     const py = tier === "halfblock" ? e.y * 2 : e.y;
