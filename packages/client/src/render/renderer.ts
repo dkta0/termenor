@@ -34,15 +34,15 @@ export interface RendererHooks {
   onChat(text: string): void;
   /** Called when the player presses 'g' to pick up a ground item. */
   onPickup?(): void;
-  /** Called when the player presses a number key to drop inventory slot `slot`. */
+  /** Drop an inventory slot (now via the `/drop` command → intent path). */
   onDrop?(slot: number): void;
   /** Called when the player presses 'a' to attack the nearest NPC. */
   onAttack?(targetId: string): void;
   /** Called when the player presses 'c' to chop/gather the nearest resource. */
   onGather?(id: string): void;
-  /** Called when the player presses 'f' or 'k' to use a skill on an inventory slot. */
+  /** Use a skill on an inventory slot (now via the `/use` command → intent path). */
   onUse?(action: string, slot: number): void;
-  /** Called when the player presses 'b'/'o' near a bank booth / store to open it. */
+  /** Open a bank booth / store (now via the `/bank` / `/shop` command → intent path). */
   onOpen?(what: "bank" | "shop", targetId: string): void;
   /** Called for a bank deposit/withdraw on the given slot (qty=-1 means "all"). */
   onBankAction?(action: "deposit" | "withdraw", slot: number, qty: number): void;
@@ -55,6 +55,17 @@ export interface RendererHooks {
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
+
+/** Nearest entity to (ox, oy) by Euclidean distance, or null for an empty list. */
+function nearest<T extends { x: number; y: number }>(list: T[], ox: number, oy: number): T | null {
+  let best: T | null = null;
+  let bestD = Infinity;
+  for (const e of list) {
+    const d = Math.hypot(e.x - ox, e.y - oy);
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
 
 function buildResolveContext(state: GameState, _log: LogState): ResolveContext {
   const now = performance.now();
@@ -194,21 +205,13 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     // Chat log: bottom-left, last 6 messages
     const LOG_LINES = 6;
     const recentMsgs = chat.recent(LOG_LINES);
-    const logStartRow = rows - LOG_LINES - (chat.active ? 2 : 1);
+    const logStartRow = rows - LOG_LINES - (cmd.active ? 2 : 1);
     for (let i = 0; i < recentMsgs.length; i++) {
       const { from, text } = recentMsgs[i];
       const line = `${from}: ${text}`;
       const row = logStartRow + i;
       for (const cell of textCells(line, 1, row, cols, rows)) {
         buffer.setCell(cell.col, cell.row, cell.char, DIM, BLACK);
-      }
-    }
-
-    // Input line: shown when chat is active
-    if (chat.active) {
-      const inputLine = `> ${chat.input}_`;
-      for (const cell of textCells(inputLine, 1, rows - 1, cols, rows)) {
-        buffer.setCell(cell.col, cell.row, cell.char, CYAN, BLACK);
       }
     }
 
@@ -226,9 +229,10 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         buffer.setCell(cell.col, cell.row, cell.char, TIER_COLORS[e.tier], BLACK);
     }
 
-    // Command input line: shown when cmd is active
+    // Direct-mode input line: "»" prompt for commands (leading "/"), ">" for chat.
     if (cmd.active) {
-      const cmdLine = `» ${cmd.input}_`;
+      const prompt = cmd.input.startsWith("/") ? "»" : ">";
+      const cmdLine = `${prompt} ${cmd.input}_`;
       for (const cell of textCells(cmdLine, 1, rows - 1, cols, rows))
         buffer.setCell(cell.col, cell.row, cell.char, CYAN, BLACK);
     }
@@ -316,6 +320,29 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         for (const cell of textCells(label, 2, startRow + 2 + i, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, EQUIP_COLOR, BLACK);
       }
     }
+
+    // --- Control legend: a single bottom strip, generated from live state ---
+    const LEGEND_COLOR = RGBA.fromInts(120, 200, 160, 255);
+    const mode: Mode = cmd.active ? "direct" : "play";
+    const meTileX = me ? Math.round(me.x) : null;
+    const meTileY = me ? Math.round(me.y) : null;
+    const under = meTileX !== null
+      ? state.ground.find((gi) => gi.x === meTileX && gi.y === meTileY)
+      : undefined;
+    const enemy = me ? nearest(npcs, me.x, me.y) : null;
+    const gatherables = resources.filter((r) => RESOURCE_KINDS[r.type]?.gatherable);
+    const res = me ? nearest(gatherables, me.x, me.y) : null;
+    const legend = legendLines({
+      mode,
+      nearestEnemy: enemy ? (NPC_KINDS[enemy.type]?.name ?? enemy.type) : null,
+      nearestResource: res ? (RESOURCE_KINDS[res.type]?.name ?? res.type) : null,
+      itemUnderfoot: under ? (ITEM_KINDS[under.item]?.name ?? under.item) : null,
+    });
+    // Bottom row in Play mode; one row up in Direct mode so it clears the input line.
+    const legendRow = rows - 1 - (cmd.active ? 1 : 0);
+    for (const cell of textCells(legend.join("   "), 1, legendRow, cols, rows)) {
+      buffer.setCell(cell.col, cell.row, cell.char, LEGEND_COLOR, BLACK);
+    }
   });
 
   // OpenTUI dispatches mouse events only to renderables registered in the hit
@@ -334,7 +361,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   renderer.root.add(clickLayer);
 
   clickLayer.onMouseDown = (e: TuiMouseEvent) => {
-    if (chat.active) return; // gate clicks while typing
+    if (cmd.active) return; // gate clicks while typing in Direct mode
     if (!lastFrame || !state.map) return;
     const px = e.x;
     const py = tier === "halfblock" ? e.y * 2 : e.y;
