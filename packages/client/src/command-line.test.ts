@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { CommandLine } from "./command-line";
+import { CommandLine, classifyDirectInput } from "./command-line";
 
 test("initially inactive with empty input", () => {
   const c = new CommandLine();
@@ -54,4 +54,19 @@ test("history recall walks previous submissions newest-first", () => {
   expect(c.input).toBe("bank");
   c.historyNext();
   expect(c.input).toBe("mine copper");
+});
+
+test("classifyDirectInput: leading slash is a command with the slash stripped", () => {
+  expect(classifyDirectInput("/mine copper")).toEqual({ kind: "command", command: "mine copper" });
+});
+
+test("classifyDirectInput: no prefix is chat verbatim", () => {
+  expect(classifyDirectInput("hey anyone selling logs?")).toEqual({
+    kind: "chat",
+    text: "hey anyone selling logs?",
+  });
+});
+
+test("classifyDirectInput: bare slash is an empty command", () => {
+  expect(classifyDirectInput("/")).toEqual({ kind: "command", command: "" });
 });
