@@ -57,3 +57,16 @@ export class CommandLine {
     this.input = this.cursor >= this.history.length ? "" : this.history[this.cursor];
   }
 }
+
+export type DirectInput =
+  | { kind: "command"; command: string }
+  | { kind: "chat"; text: string };
+
+/**
+ * Route a submitted Direct-mode line. A leading "/" marks a command (the slash
+ * is stripped and the remainder trimmed); anything else is chat, verbatim.
+ */
+export function classifyDirectInput(line: string): DirectInput {
+  if (line.startsWith("/")) return { kind: "command", command: line.slice(1).trim() };
+  return { kind: "chat", text: line };
+}

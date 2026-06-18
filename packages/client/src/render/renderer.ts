@@ -9,7 +9,8 @@ import {
 } from "@opentui/core";
 import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS, EQUIP_SLOTS, type Intent } from "@termenor/protocol";
 import type { GameState } from "../game-state";
-import { CommandLine } from "../command-line";
+import { CommandLine, classifyDirectInput } from "../command-line";
+import { legendLines, type Mode } from "./legend";
 import { LogState, type LogTier } from "../log";
 import { resolveCommand, type ResolveContext, type EntityRef } from "../resolve";
 import type { ChatState } from "../chat";
@@ -33,15 +34,15 @@ export interface RendererHooks {
   onChat(text: string): void;
   /** Called when the player presses 'g' to pick up a ground item. */
   onPickup?(): void;
-  /** Called when the player presses a number key to drop inventory slot `slot`. */
+  /** Drop an inventory slot (now via the `/drop` command → intent path). */
   onDrop?(slot: number): void;
   /** Called when the player presses 'a' to attack the nearest NPC. */
   onAttack?(targetId: string): void;
   /** Called when the player presses 'c' to chop/gather the nearest resource. */
   onGather?(id: string): void;
-  /** Called when the player presses 'f' or 'k' to use a skill on an inventory slot. */
+  /** Use a skill on an inventory slot (now via the `/use` command → intent path). */
   onUse?(action: string, slot: number): void;
-  /** Called when the player presses 'b'/'o' near a bank booth / store to open it. */
+  /** Open a bank booth / store (now via the `/bank` / `/shop` command → intent path). */
   onOpen?(what: "bank" | "shop", targetId: string): void;
   /** Called for a bank deposit/withdraw on the given slot (qty=-1 means "all"). */
   onBankAction?(action: "deposit" | "withdraw", slot: number, qty: number): void;
@@ -54,6 +55,17 @@ export interface RendererHooks {
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
+
+/** Nearest entity to (ox, oy) by Euclidean distance, or null for an empty list. */
+function nearest<T extends { x: number; y: number }>(list: T[], ox: number, oy: number): T | null {
+  let best: T | null = null;
+  let bestD = Infinity;
+  for (const e of list) {
+    const d = Math.hypot(e.x - ox, e.y - oy);
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
 
 function buildResolveContext(state: GameState, _log: LogState): ResolveContext {
   const now = performance.now();
@@ -90,6 +102,25 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   let equipMode: "equip" | "unequip" = "equip";
   const cmd = new CommandLine();
   const log = new LogState();
+
+  // Route a submitted Direct-mode line. Commands (leading "/") go through the
+  // shared intent boundary; bare "/equip"|"/gear" toggles the client-only
+  // equipment view (it has no server intent); everything else is chat.
+  const routeDirectLine = (line: string): void => {
+    const input = classifyDirectInput(line);
+    if (input.kind === "chat") { hooks.onChat(input.text); return; }
+    const verb = input.command.split(/\s+/)[0]?.toLowerCase() ?? "";
+    if ((verb === "equip" || verb === "gear") && !/\s/.test(input.command)) {
+      equipMode = "equip";
+      state.toggleEquip();
+      log.push("ambient", "» equip");
+      return;
+    }
+    if (input.command.length === 0) { log.push("notable", "type a command, e.g. /mine copper"); return; }
+    const result = resolveCommand(input.command, buildResolveContext(state, log));
+    if (result.ok) { hooks.onIntent?.(result.intent); log.push("ambient", `» ${input.command}`); }
+    else log.push("notable", result.message);
+  };
 
   renderer.setFrameCallback(async () => {
     const buffer = renderer.nextRenderBuffer;
@@ -174,21 +205,13 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     // Chat log: bottom-left, last 6 messages
     const LOG_LINES = 6;
     const recentMsgs = chat.recent(LOG_LINES);
-    const logStartRow = rows - LOG_LINES - (chat.active ? 2 : 1);
+    const logStartRow = rows - LOG_LINES - (cmd.active ? 2 : 1);
     for (let i = 0; i < recentMsgs.length; i++) {
       const { from, text } = recentMsgs[i];
       const line = `${from}: ${text}`;
       const row = logStartRow + i;
       for (const cell of textCells(line, 1, row, cols, rows)) {
         buffer.setCell(cell.col, cell.row, cell.char, DIM, BLACK);
-      }
-    }
-
-    // Input line: shown when chat is active
-    if (chat.active) {
-      const inputLine = `> ${chat.input}_`;
-      for (const cell of textCells(inputLine, 1, rows - 1, cols, rows)) {
-        buffer.setCell(cell.col, cell.row, cell.char, CYAN, BLACK);
       }
     }
 
@@ -206,9 +229,10 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         buffer.setCell(cell.col, cell.row, cell.char, TIER_COLORS[e.tier], BLACK);
     }
 
-    // Command input line: shown when cmd is active
+    // Direct-mode input line: "»" prompt for commands (leading "/"), ">" for chat.
     if (cmd.active) {
-      const cmdLine = `» ${cmd.input}_`;
+      const prompt = cmd.input.startsWith("/") ? "»" : ">";
+      const cmdLine = `${prompt} ${cmd.input}_`;
       for (const cell of textCells(cmdLine, 1, rows - 1, cols, rows))
         buffer.setCell(cell.col, cell.row, cell.char, CYAN, BLACK);
     }
@@ -296,6 +320,29 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         for (const cell of textCells(label, 2, startRow + 2 + i, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, EQUIP_COLOR, BLACK);
       }
     }
+
+    // --- Control legend: a single bottom strip, generated from live state ---
+    const LEGEND_COLOR = RGBA.fromInts(120, 200, 160, 255);
+    const mode: Mode = cmd.active ? "direct" : "play";
+    const meTileX = me ? Math.round(me.x) : null;
+    const meTileY = me ? Math.round(me.y) : null;
+    const under = meTileX !== null
+      ? state.ground.find((gi) => gi.x === meTileX && gi.y === meTileY)
+      : undefined;
+    const enemy = me ? nearest(npcs, me.x, me.y) : null;
+    const gatherables = resources.filter((r) => RESOURCE_KINDS[r.type]?.gatherable);
+    const res = me ? nearest(gatherables, me.x, me.y) : null;
+    const legend = legendLines({
+      mode,
+      nearestEnemy: enemy ? (NPC_KINDS[enemy.type]?.name ?? enemy.type) : null,
+      nearestResource: res ? (RESOURCE_KINDS[res.type]?.name ?? res.type) : null,
+      itemUnderfoot: under ? (ITEM_KINDS[under.item]?.name ?? under.item) : null,
+    });
+    // Bottom row in Play mode; one row up in Direct mode so it clears the input line.
+    const legendRow = rows - 1 - (cmd.active ? 1 : 0);
+    for (const cell of textCells(legend.join("   "), 1, legendRow, cols, rows)) {
+      buffer.setCell(cell.col, cell.row, cell.char, LEGEND_COLOR, BLACK);
+    }
   });
 
   // OpenTUI dispatches mouse events only to renderables registered in the hit
@@ -314,7 +361,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   renderer.root.add(clickLayer);
 
   clickLayer.onMouseDown = (e: TuiMouseEvent) => {
-    if (chat.active) return; // gate clicks while typing
+    if (cmd.active) return; // gate clicks while typing in Direct mode
     if (!lastFrame || !state.map) return;
     const px = e.x;
     const py = tier === "halfblock" ? e.y * 2 : e.y;
@@ -323,14 +370,40 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   };
 
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
+    // --- Modal panels (bank/shop/equip): consume all keys while open ---
+    if (state.bankOpen) {
+      if (key.name === "escape") { state.closeBank(); return; }
+      if (key.name === "d") { bankMode = "deposit"; return; }
+      if (key.name === "w") { bankMode = "withdraw"; return; }
+      const m = /^([1-9])$/.exec(key.name ?? "");
+      if (m) hooks.onBankAction?.(bankMode, parseInt(m[1], 10) - 1, -1); // -1 = all
+      return;
+    }
+    if (state.shopOpen) {
+      if (key.name === "escape") { state.closeShop(); return; }
+      if (key.name === "b") { shopMode = "buy"; return; }
+      if (key.name === "s") { shopMode = "sell"; return; }
+      const m = /^([1-9])$/.exec(key.name ?? "");
+      if (m) {
+        const entry = state.shop?.entries[parseInt(m[1], 10) - 1];
+        if (entry) hooks.onShopAction?.(shopMode, entry.item, 1);
+      }
+      return;
+    }
+    if (state.equipOpen) {
+      if (key.name === "escape") { state.closeEquip(); return; }
+      if (key.name === "q") { equipMode = "equip"; return; }
+      if (key.name === "u") { equipMode = "unequip"; return; }
+      const m = /^([1-9])$/.exec(key.name ?? "");
+      if (m) hooks.onEquipAction?.(equipMode, parseInt(m[1], 10) - 1);
+      return;
+    }
+
+    // --- Direct mode: the typing layer (commands + chat share one line) ---
     if (cmd.active) {
       if (key.name === "return" || key.name === "enter") {
         const line = cmd.submit();
-        if (line) {
-          const result = resolveCommand(line, buildResolveContext(state, log));
-          if (result.ok) { hooks.onIntent?.(result.intent); log.push("ambient", `» ${line}`); }
-          else log.push("notable", result.message);
-        }
+        if (line) routeDirectLine(line);
       } else if (key.name === "escape") {
         cmd.cancel();
       } else if (key.name === "backspace") {
@@ -345,96 +418,23 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       return;
     }
 
-    if (chat.active) {
-      // Chat input mode — consume all keys; movement is gated
-      if (key.name === "return" || key.name === "enter") {
-        const text = chat.submit();
-        if (text) hooks.onChat(text);
-      } else if (key.name === "escape") {
-        chat.cancel();
-      } else if (key.name === "backspace") {
-        chat.backspace();
-      } else {
-        chat.type(key.sequence ?? key.name ?? ""); // sequence carries the real glyph (space, uppercase)
-      }
-      return; // always return early — block arrows/mouse movement while typing
-    }
+    // --- Play mode ---
+    // Enter opens the typing layer chat-ready; "/" opens it command-ready.
+    if (key.name === "return" || key.name === "enter") { cmd.open(); return; }
+    if (key.sequence === "/") { cmd.open(); cmd.type("/"); return; }
 
-    // Bank panel open (modal): consume all keys so digits never fall through to onDrop.
-    if (state.bankOpen) {
-      if (key.name === "escape") { state.closeBank(); return; }
-      if (key.name === "d") { bankMode = "deposit"; return; }
-      if (key.name === "w") { bankMode = "withdraw"; return; }
-      const m = /^([1-9])$/.exec(key.name ?? "");
-      if (m) {
-        const idx = parseInt(m[1], 10) - 1;
-        hooks.onBankAction?.(bankMode, idx, -1); // -1 = all
-      }
-      return;
-    }
-
-    // Shop panel open (modal): same index set for buy and sell.
-    if (state.shopOpen) {
-      if (key.name === "escape") { state.closeShop(); return; }
-      if (key.name === "b") { shopMode = "buy"; return; }
-      if (key.name === "s") { shopMode = "sell"; return; }
-      const m = /^([1-9])$/.exec(key.name ?? "");
-      if (m) {
-        const entry = state.shop?.entries[parseInt(m[1], 10) - 1];
-        if (entry) hooks.onShopAction?.(shopMode, entry.item, 1);
-      }
-      return;
-    }
-
-    // Equipment panel open (modal): EQUIP picks an inventory slot, UNEQUIP an equipped slot.
-    if (state.equipOpen) {
-      if (key.name === "escape") { state.closeEquip(); return; }
-      if (key.name === "q") { equipMode = "equip"; return; }
-      if (key.name === "u") { equipMode = "unequip"; return; }
-      const m = /^([1-9])$/.exec(key.name ?? "");
-      if (m) hooks.onEquipAction?.(equipMode, parseInt(m[1], 10) - 1);
-      return;
-    }
-
-    // Not in chat mode
-    if (key.name === "return" || key.name === "enter") {
-      chat.open();
-      return;
-    }
-
-    // Open the command line
-    if (key.sequence === ":") { cmd.open(); return; }
-
-    // Open the bank booth / store nearest the player.
-    if (key.name === "b") {
-      const id = state.nearestResourceOfType("bank_booth", performance.now());
-      if (id) { bankMode = "deposit"; hooks.onOpen?.("bank", id); }
-      return;
-    }
-    if (key.name === "o") {
-      const id = state.nearestResourceOfType("general_store", performance.now());
-      if (id) { shopMode = "buy"; hooks.onOpen?.("shop", id); }
-      return;
-    }
-
-    // Toggle the equipment panel (always available — no world object to open).
-    if (key.name === "e") { equipMode = "equip"; state.toggleEquip(); return; }
-
-    // Inventory keys
+    // Pick up the item underfoot.
     if (key.name === "g") { hooks.onPickup?.(); return; }
-    const numMatch = /^([1-9])$/.exec(key.name ?? "");
-    if (numMatch) { hooks.onDrop?.(parseInt(numMatch[1], 10) - 1); return; }
 
-    // Attack nearest NPC
+    // Attack nearest NPC.
     if (key.name === "a") {
       const attackNow = performance.now();
-      const attackPlayers = state.samplePositions(attackNow);
-      const me = attackPlayers.find((p) => p.id === state.localId);
+      const meAtk = state.samplePositions(attackNow).find((p) => p.id === state.localId);
       const attackNpcs = state.sampleNpcs(attackNow);
-      if (me && attackNpcs.length > 0) {
+      if (meAtk && attackNpcs.length > 0) {
         let best = attackNpcs[0], bestD = Infinity;
         for (const n of attackNpcs) {
-          const d = Math.hypot(n.x - me.x, n.y - me.y);
+          const d = Math.hypot(n.x - meAtk.x, n.y - meAtk.y);
           if (d < bestD) { bestD = d; best = n; }
         }
         hooks.onAttack?.(best.id);
@@ -442,11 +442,10 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       return;
     }
 
-    // Gather nearest gatherable resource (excludes fire)
+    // Gather nearest gatherable resource.
     if (key.name === "c") {
       const gatherNow = performance.now();
-      const gatherPlayers = state.samplePositions(gatherNow);
-      const gatherMe = gatherPlayers.find((p) => p.id === state.localId);
+      const gatherMe = state.samplePositions(gatherNow).find((p) => p.id === state.localId);
       const gatherResources = state.sampleResources().filter((r) => RESOURCE_KINDS[r.type]?.gatherable);
       if (gatherMe && gatherResources.length > 0) {
         let best = gatherResources[0], bestD = Infinity;
@@ -459,27 +458,13 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       return;
     }
 
-    // Firemaking: use logs from inventory
-    if (key.name === "f") {
-      const s = state.firstSlotOf("logs");
-      if (s >= 0) hooks.onUse?.("firemaking", s);
-      return;
-    }
-
-    // Cooking: use raw_shrimp from inventory
-    if (key.name === "k") {
-      const s = state.firstSlotOf("raw_shrimp");
-      if (s >= 0) hooks.onUse?.("cooking", s);
-      return;
-    }
-
-    // Arrow key movement
+    // Arrow-key movement.
     const d = arrowDelta(key.name);
     if (!d) return;
     const players = state.samplePositions(performance.now());
-    const me = players.find((p) => p.id === state.localId);
-    if (!me) return;
-    hooks.onMoveTo(Math.round(me.x) + d.dx, Math.round(me.y) + d.dy);
+    const meMove = players.find((p) => p.id === state.localId);
+    if (!meMove) return;
+    hooks.onMoveTo(Math.round(meMove.x) + d.dx, Math.round(meMove.y) + d.dy);
   });
 
   renderer.start();
