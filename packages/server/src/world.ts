@@ -97,4 +97,3 @@ export const STARTER_GEAR: SeedItem[] = [
   { item: "bronze_platebody", qty: 1, x: 23, y: 22 },
   { item: "bronze_shield",    qty: 1, x: 24, y: 22 },
 ];
-

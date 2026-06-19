@@ -7,10 +7,10 @@ import { executeIntent } from "./intent-executor";
 import type { Database } from "bun:sqlite";
 
 // fail fast at startup if the model catalog is invalid
-const _modelErrors = validateAllModels();
-if (_modelErrors.length > 0) {
-  console.error("Invalid models in catalog:\n" + _modelErrors.join("\n"));
-  throw new Error(`Model catalog validation failed (${_modelErrors.length} error(s))`);
+const modelErrors = validateAllModels();
+if (modelErrors.length > 0) {
+  console.error("Invalid models in catalog:\n" + modelErrors.join("\n"));
+  throw new Error(`Model catalog validation failed (${modelErrors.length} error(s))`);
 }
 
 /** Trim whitespace then truncate to MAX_CHAT_LEN. Returns "" for blank input. */

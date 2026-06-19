@@ -2,7 +2,7 @@ import { type BillboardModel, type BlockModel, type Model, type MapData, type Fa
 import { TILE_W, TILE_H, ELEV_PX, tileToScreen } from "./iso";
 import { shade } from "./shade";
 import { Kind } from "./types";
-import { newIsoFrame, plot, type IsoFrame } from "./rasterize";
+import { plot, type IsoFrame } from "./rasterize";
 
 /** Resolve a billboard model's glyph grid to a flat pixel array (row-major, top row
  *  first). null = transparent (skipped by the plotter). `tint` fills any "tint" glyph. */
