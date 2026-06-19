@@ -103,8 +103,10 @@ import type { Facing } from "./index";
 
 export type RGB = [number, number, number];
 
-/** A palette maps single-char glyphs to a color, transparency, or the runtime tint. */
-export type PaletteEntry = RGB | "transparent" | "tint";
+/** A palette maps single-char glyphs to a color, transparency, or a runtime tint.
+ *  "tint" = the caller's color; "tint2" = the caller's color at 0.8 brightness
+ *  (the shaded far side of a tinted body, e.g. the player torso). */
+export type PaletteEntry = RGB | "transparent" | "tint" | "tint2";
 export type Palette = Record<string, PaletteEntry>;
 
 /**
@@ -125,6 +127,7 @@ export interface BillboardModel {
   facings: { south: string[]; north?: string[]; east?: string[]; west?: string[] };
   anim?: "bob" | "flicker";
   flickerAlt?: string[];
+  flickerMs?: number; // flicker half-period (default 150; fishing spot uses 300)
 }
 
 export interface BlockCell { height: number; color: RGB; solid: boolean }
@@ -159,7 +162,7 @@ export const MODELS: Record<string, Model> = {
   // ---- migrated billboards (pixel-for-pixel equivalents of getSpritePixels) ----
   player: {
     kind: "billboard", anim: "bob",
-    palette: { H: C.hair, S: C.skin, T: "tint", t: [0, 0, 0], E: C.eyes, B: C.boots, ".": "transparent" },
+    palette: { H: C.hair, S: C.skin, T: "tint", t: "tint2", E: C.eyes, B: C.boots, ".": "transparent" },
     facings: {
       south: ["HH", "SE", "Tt", "BB"],
       north: ["HH", "HH", "Tt", "BB"],
@@ -198,7 +201,7 @@ export const MODELS: Record<string, Model> = {
     facings: { south: ["ab", "bc", "aa", "dd"] },
   },
   fishing_spot: {
-    kind: "billboard", anim: "flicker",
+    kind: "billboard", anim: "flicker", flickerMs: 300,
     palette: { a: C.blue1, b: C.blue2, c: C.blue3 },
     facings: { south: ["ab", "ba", "aa", "cc"] },
     flickerAlt: ["ba", "ab", "bb", "cc"],
@@ -419,13 +422,16 @@ export function resolveBillboard(
   m: BillboardModel, facing: Facing, now: number, tint: RGB,
 ): { H: number; W: number; pixels: (RGB | null)[] } {
   let rows = m.facings[facing] ?? m.facings.south;
-  if (m.anim === "flicker" && m.flickerAlt && Math.floor(now / 150) % 2 === 1) rows = m.flickerAlt;
+  if (m.anim === "flicker" && m.flickerAlt && Math.floor(now / (m.flickerMs ?? 150)) % 2 === 1) rows = m.flickerAlt;
+  const tint2: RGB = [Math.round(tint[0] * 0.8), Math.round(tint[1] * 0.8), Math.round(tint[2] * 0.8)];
   const H = rows.length, W = rows[0].length;
   const pixels: (RGB | null)[] = [];
   for (let r = 0; r < H; r++)
     for (let c = 0; c < W; c++) {
       const e = m.palette[rows[r][c]];
-      pixels.push(e === undefined || e === "transparent" ? null : e === "tint" ? tint : e);
+      pixels.push(
+        e === undefined || e === "transparent" ? null : e === "tint" ? tint : e === "tint2" ? tint2 : e,
+      );
     }
   return { H, W, pixels };
 }
@@ -526,6 +532,7 @@ Add the volumetric `block` rendering primitive (per-cell extrusion at each cell'
 ```ts
 import { newIsoFrame } from "./rasterize";
 import { drawBlockModel } from "./model";
+import { Kind } from "./types";
 import type { BlockModel, MapData } from "@termenor/protocol";
 
 function flatMap(w: number, h: number): MapData {
@@ -533,27 +540,34 @@ function flatMap(w: number, h: number): MapData {
 }
 
 describe("drawBlockModel", () => {
-  test("writes wall-kind pixels and depth-sorts back cells behind front cells", () => {
+  test("writes WALL-kind pixels for a two-cell column", () => {
     const m: BlockModel = {
       kind: "block",
       cells: { W: { height: 3, color: [120, 120, 120], solid: true } },
-      facings: undefined as never, // not used by block
-    } as unknown as BlockModel;
-    (m as BlockModel).footprint = ["W", "W"]; // a back cell (dy0) and a front cell (dy1)
+      footprint: ["W", "W"], // a back cell (dy0) and a front cell (dy1)
+    };
     const f = newIsoFrame(64, 64);
     drawBlockModel(f, m, 4, 4, flatMap(16, 16), -32, -8);
-    // some WALL pixels were written
     let wallPixels = 0;
-    for (const k of f.buf.kinds) if (k === 5 /* Kind.WALL is 2; use literal check below */) wallPixels++;
-    // (kind check refined in implementation; assert at least one non-empty pixel)
-    let drawn = 0;
-    for (const d of f.depth) if (d > -Infinity) drawn++;
-    expect(drawn).toBeGreaterThan(0);
+    for (const k of f.buf.kinds) if (k === Kind.WALL) wallPixels++;
+    expect(wallPixels).toBeGreaterThan(0);
+  });
+
+  test("the front cell (greater x+y) wins the depth test where columns overlap", () => {
+    const m: BlockModel = {
+      kind: "block",
+      cells: { W: { height: 3, color: [120, 120, 120], solid: true } },
+      footprint: ["W", "W"],
+    };
+    const f = newIsoFrame(64, 64);
+    drawBlockModel(f, m, 4, 4, flatMap(16, 16), -32, -8);
+    // max stored depth equals the front cell's depth (4+5 + BLOCK_DEPTH_BIAS=3 = 12)
+    let maxDepth = -Infinity;
+    for (const d of f.depth) if (d > maxDepth) maxDepth = d;
+    expect(maxDepth).toBe(12);
   });
 });
 ```
-
-(Refine the kind assertion once `Kind.WALL` is imported; the essential assertion is that the block produced depth-tested pixels.)
 
 - [ ] **Step 2: Run to verify it fails**
 
