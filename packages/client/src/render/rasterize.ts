@@ -1,6 +1,7 @@
-import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS } from "@termenor/protocol";
-import type { GroundItem, MapData, ResourceState } from "@termenor/protocol";
+import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS, MODELS } from "@termenor/protocol";
+import type { BillboardModel, Facing, GroundItem, MapData, ResourceState } from "@termenor/protocol";
 import type { NpcRender, RenderPlayer } from "../game-state";
+import { resolveBillboard } from "./model";
 import { Kind, type PixelBuffer } from "./types";
 import { TILE_W, TILE_H, ELEV_PX, tileToScreen } from "./iso";
 import { shade } from "./shade";
@@ -60,7 +61,7 @@ export function plot(f: IsoFrame, px: number, py: number, depth: number, kind: n
  * pixel-by-pixel every frame. Against walls and other actors it still depth-tests, so
  * walk-behind and entity ordering hold.
  */
-function plotEntity(f: IsoFrame, px: number, py: number, depth: number, kind: number, rgb: RGB, _tile: number): void {
+export function plotEntity(f: IsoFrame, px: number, py: number, depth: number, kind: number, rgb: RGB, _tile: number): void {
   if (px < 0 || py < 0 || px >= f.buf.width || py >= f.buf.height) return;
   const i = py * f.buf.width + px;
   const existing = f.buf.kinds[i];
@@ -109,266 +110,19 @@ function drawSkirt(f: IsoFrame, cx: number, cyGround: number, skirtPx: number, r
   }
 }
 
-function getSpritePixels(type: string, facing: string, now: number, baseColor: RGB): { H: number; W: number; pixels: RGB[] } {
-  if (type === "player") {
-    const hair: RGB = [110, 70, 40];
-    const skin: RGB = [240, 180, 140];
-    const eyes: RGB = [40, 40, 40];
-    const boots: RGB = [60, 50, 40];
-    const shadeTorso: RGB = [Math.round(baseColor[0] * 0.8), Math.round(baseColor[1] * 0.8), Math.round(baseColor[2] * 0.8)];
-
-    if (facing === "north") {
-      return {
-        H: 4, W: 2,
-        pixels: [
-          hair, hair,
-          hair, hair,
-          baseColor, shadeTorso,
-          boots, boots,
-        ],
-      };
-    } else if (facing === "east") {
-      return {
-        H: 4, W: 2,
-        pixels: [
-          hair, hair,
-          hair, skin,
-          baseColor, shadeTorso,
-          boots, boots,
-        ],
-      };
-    } else if (facing === "west") {
-      return {
-        H: 4, W: 2,
-        pixels: [
-          hair, hair,
-          skin, hair,
-          shadeTorso, baseColor,
-          boots, boots,
-        ],
-      };
-    } else { // south
-      return {
-        H: 4, W: 2,
-        pixels: [
-          hair, hair,
-          skin, eyes,
-          baseColor, shadeTorso,
-          boots, boots,
-        ],
-      };
-    }
-  }
-
-  if (type === "goblin") {
-    const green: RGB = [80, 160, 60];
-    const darkGreen: RGB = [50, 110, 40];
-    const eyes: RGB = [220, 40, 40];
-    const loincloth: RGB = [110, 70, 40];
-
-    if (facing === "north") {
-      return {
-        H: 4, W: 2,
-        pixels: [
-          green, green,
-          green, green,
-          loincloth, loincloth,
-          green, green,
-        ],
-      };
-    } else if (facing === "east") {
-      return {
-        H: 4, W: 2,
-        pixels: [
-          green, green,
-          green, eyes,
-          loincloth, loincloth,
-          green, green,
-        ],
-      };
-    } else if (facing === "west") {
-      return {
-        H: 4, W: 2,
-        pixels: [
-          green, green,
-          eyes, green,
-          loincloth, loincloth,
-          green, green,
-        ],
-      };
-    } else { // south
-      return {
-        H: 4, W: 2,
-        pixels: [
-          green, green,
-          green, eyes,
-          loincloth, loincloth,
-          green, green,
-        ],
-      };
-    }
-  }
-
-  if (type === "rat") {
-    const fur: RGB = [140, 120, 100];
-    const darkFur: RGB = [100, 85, 70];
-    const nose: RGB = [220, 120, 120];
-
-    if (facing === "east") {
-      return {
-        H: 2, W: 2,
-        pixels: [
-          fur, nose,
-          darkFur, fur,
-        ],
-      };
-    } else if (facing === "west") {
-      return {
-        H: 2, W: 2,
-        pixels: [
-          nose, fur,
-          fur, darkFur,
-        ],
-      };
-    } else if (facing === "north") {
-      return {
-        H: 2, W: 2,
-        pixels: [
-          fur, fur,
-          darkFur, darkFur,
-        ],
-      };
-    } else { // south
-      return {
-        H: 2, W: 2,
-        pixels: [
-          fur, fur,
-          nose, fur,
-        ],
-      };
-    }
-  }
-
-  if (type === "tree") {
-    const lightLeaf: RGB = [40, 160, 40];
-    const leaf: RGB = [40, 120, 40];
-    const trunk: RGB = [110, 70, 40];
-    return {
-      H: 4, W: 2,
-      pixels: [
-        lightLeaf, leaf,
-        leaf, lightLeaf,
-        leaf, leaf,
-        trunk, trunk,
-      ],
-    };
-  }
-
-  if (type === "rock") {
-    const grey1: RGB = [120, 120, 130];
-    const grey2: RGB = [100, 100, 110];
-    const grey3: RGB = [140, 140, 150];
-    const grey4: RGB = [80, 80, 90];
-    return {
-      H: 4, W: 2,
-      pixels: [
-        grey1, grey2,
-        grey2, grey3,
-        grey1, grey1,
-        grey4, grey4,
-      ],
-    };
-  }
-
-  if (type === "fishing_spot") {
-    const blue1: RGB = [60, 120, 200];
-    const blue2: RGB = [100, 160, 255];
-    const blue3: RGB = [40, 80, 160];
-    const step = Math.floor(now / 300) % 2;
-    return {
-      H: 4, W: 2,
-      pixels: step === 0 ? [
-        blue1, blue2,
-        blue2, blue1,
-        blue1, blue1,
-        blue3, blue3,
-      ] : [
-        blue2, blue1,
-        blue1, blue2,
-        blue2, blue2,
-        blue3, blue3,
-      ],
-    };
-  }
-
-  if (type === "fire") {
-    const orange: RGB = [240, 140, 30];
-    const yellow: RGB = [240, 200, 40];
-    const red: RGB = [180, 80, 20];
-    const coal: RGB = [100, 60, 30];
-    const step = Math.floor(now / 150) % 2;
-    return {
-      H: 4, W: 2,
-      pixels: step === 0 ? [
-        orange, yellow,
-        yellow, orange,
-        red, red,
-        coal, coal,
-      ] : [
-        yellow, orange,
-        red, yellow,
-        orange, red,
-        coal, coal,
-      ],
-    };
-  }
-
-  if (type === "bank_booth") {
-    const gold: RGB = [240, 200, 40];
-    const brown: RGB = [110, 70, 40];
-    const darkBrown: RGB = [80, 50, 30];
-    return {
-      H: 4, W: 2,
-      pixels: [
-        gold, gold,
-        brown, brown,
-        brown, brown,
-        darkBrown, darkBrown,
-      ],
-    };
-  }
-
-  if (type === "general_store") {
-    const purple: RGB = [200, 120, 200];
-    const pink: RGB = [220, 150, 220];
-    const brown: RGB = [110, 70, 40];
-    const darkBrown: RGB = [80, 50, 30];
-    return {
-      H: 4, W: 2,
-      pixels: [
-        purple, pink,
-        brown, brown,
-        brown, brown,
-        darkBrown, darkBrown,
-      ],
-    };
-  }
-
-  return {
-    H: 4, W: 2,
-    pixels: new Array(8).fill(baseColor),
-  };
-}
-
 function drawBillboard(
   f: IsoFrame, cx: number, cyFeet: number, depth: number, kind: number, rgb: RGB,
-  type: string, facing: string = "south", isMoving: boolean = false, now: number = 0,
+  type: string, facing: Facing = "south", isMoving: boolean = false, now: number = 0,
 ): { H: number; bobY: number } {
-  const { H, W, pixels } = getSpritePixels(type, facing, now, rgb);
+  const model = MODELS[type];
+  const bb: BillboardModel = model && model.kind === "billboard"
+    ? model
+    : { kind: "billboard", palette: { X: rgb }, facings: { south: ["XX", "XX", "XX", "XX"] } };
+  const { H, W, pixels } = resolveBillboard(bb, facing, now, rgb);
 
   let bobY = 0;
   let swayX = 0;
-  if (type === "player" || type === "goblin" || type === "rat") {
+  if (bb.anim === "bob") {
     if (isMoving) {
       const walkCycle = now * 0.015;
       bobY = -Math.abs(Math.round(Math.sin(walkCycle) * 1.0));
@@ -386,6 +140,7 @@ function drawBillboard(
   for (let dy = 0; dy < H; dy++) {
     for (let dx = 0; dx < W; dx++) {
       const pixelRgb = pixels[dy * W + dx];
+      if (pixelRgb === null) continue; // transparent
       plotEntity(f, Math.round(animCx + dx - W / 2), top + dy, depth, kind, pixelRgb, -1);
     }
   }
