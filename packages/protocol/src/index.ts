@@ -20,7 +20,7 @@ export interface MapData {
   height: number;
   tiles: number[];
   heights: number[];
-  scenery: Scenery[];
+  scenery?: Scenery[];
 }
 
 /** Max walkable height delta between two adjacent tiles. */

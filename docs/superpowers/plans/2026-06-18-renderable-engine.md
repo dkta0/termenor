@@ -43,7 +43,7 @@ Introduces the shared data layer: types, the `MODELS` catalog (migrating every e
   - `function validateModel(key: string, m: Model): string[]`
   - `function validateAllModels(): string[]`
   - `function solidFootprint(m: Model, x: number, y: number): { x: number; y: number }[]`
-  - `MapData` gains `scenery: Scenery[]`
+  - `MapData` gains `scenery?: Scenery[]` (optional: the server always sets it; existing `MapData` literals/fixtures and `map.scenery ?? []` readers tolerate absence — avoids churning ~40 fixtures)
 
 - [ ] **Step 1: Write the failing test** — `packages/protocol/src/models.test.ts`
 
@@ -322,7 +322,7 @@ export interface MapData {
   height: number;
   tiles: number[];
   heights: number[];
-  scenery: Scenery[];
+  scenery?: Scenery[]; // optional: server always sets it; readers use `map.scenery ?? []`
 }
 ```
 
@@ -344,7 +344,7 @@ Run: `bun test packages/protocol/src/models.test.ts`
 Expected: PASS (6 tests).
 
 Run: `bunx tsc --noEmit -p packages/protocol` (or `just check` typecheck portion)
-Expected: type error in `packages/server/src/world.ts` (MapData now requires `scenery`) — this is fixed in Task 5; do NOT fix it here. If `just typecheck` blocks the commit, proceed — the failing reference is server-only and resolved in Task 5. (If your gate forbids committing with a known downstream type error, reorder so Task 5's `world.ts` edit lands in this commit; the plan keeps them separate for review clarity.)
+Expected: clean. `scenery` is optional, so existing `MapData` literals/fixtures are unaffected — no downstream typecheck cascade.
 
 - [ ] **Step 6: Commit**
 
