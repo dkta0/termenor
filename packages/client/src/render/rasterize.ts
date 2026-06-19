@@ -1,7 +1,7 @@
 import { ITEM_KINDS, NPC_KINDS, RESOURCE_KINDS, MODELS } from "@termenor/protocol";
 import type { BillboardModel, Facing, GroundItem, MapData, ResourceState } from "@termenor/protocol";
 import type { NpcRender, RenderPlayer } from "../game-state";
-import { resolveBillboard } from "./model";
+import { resolveBillboard, drawBlockModel } from "./model";
 import { Kind, type PixelBuffer } from "./types";
 import { TILE_W, TILE_H, ELEV_PX, tileToScreen } from "./iso";
 import { shade } from "./shade";
@@ -194,6 +194,16 @@ export function rasterizeIso(
 ): IsoFrame {
   const f = newIsoFrame(pxW, pxH);
 
+  // tiles owned by a block scenery — suppress the generic grey wall block there
+  const sceneryTiles = new Set<number>();
+  for (const sc of map.scenery ?? []) {
+    const model = MODELS[sc.model];
+    if (model?.kind !== "block") continue;
+    for (let r = 0; r < model.footprint.length; r++)
+      for (let c = 0; c < model.footprint[r].length; c++)
+        if (model.footprint[r][c] !== ".") sceneryTiles.add((sc.y + r) * map.width + (sc.x + c));
+  }
+
   // tiles, painter order (ascending x+y)
   const order: number[] = [];
   for (let i = 0; i < map.tiles.length; i++) order.push(i);
@@ -208,8 +218,21 @@ export function rasterizeIso(
     const tint = Math.min(1.4, 1 + h * 0.06);
     const ground: RGB = [Math.round(GROUND_RGB[0] * tint), Math.round(GROUND_RGB[1] * tint), Math.round(GROUND_RGB[2] * tint)];
     fillDiamond(f, cx, cy, depth, Kind.FLOOR, ground, i);
-    if (map.tiles[i] === 1) drawBlock(f, cx, cy, depth + WALL_DEPTH_BIAS, i);
-    else drawSkirt(f, cx, cy, ELEV_PX, shade(ground, "left"), depth, i); // fill elevation steps
+    if (map.tiles[i] === 1 && !sceneryTiles.has(i)) drawBlock(f, cx, cy, depth + WALL_DEPTH_BIAS, i);
+    else if (map.tiles[i] !== 1) drawSkirt(f, cx, cy, ELEV_PX, shade(ground, "left"), depth, i); // fill elevation steps
+  }
+
+  // scenery — static world geometry, drawn after terrain so depth test gives walk-behind
+  for (const sc of map.scenery ?? []) {
+    const model = MODELS[sc.model];
+    if (!model) continue;
+    if (model.kind === "block") {
+      drawBlockModel(f, model, sc.x, sc.y, map, camOx, camOy);
+    } else {
+      const h = map.heights[sc.y * map.width + sc.x] ?? 0;
+      const s = tileToScreen(sc.x, sc.y, h);
+      drawBillboard(f, s.sx - camOx, s.sy - camOy, sc.x + sc.y + ENTITY_DEPTH_BIAS, Kind.NPC, [200, 200, 200], sc.model, sc.facing ?? "south", false, now);
+    }
   }
 
   // entities after tiles → depth test yields walk-behind

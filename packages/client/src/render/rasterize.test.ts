@@ -189,3 +189,20 @@ test("HP bar pixels are written at depth=Infinity so nothing overwrites them (no
   expect(barPixels.length).toBeGreaterThan(0);
   expect(barPixels.every((p) => f.depth[p] === Infinity)).toBe(true);
 });
+
+import { MODELS } from "@termenor/protocol";
+
+test("scenery: a block building renders wall pixels and suppresses the grey wall block under it", () => {
+  // a 1x1 map region with the house placed; tiles under the footprint are marked blocked
+  const W = 8, H = 8;
+  const tiles = new Array(W * H).fill(0);
+  // stamp the small_house solid footprint (3x3, anchor 2,2) as blocked
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+    if (MODELS.small_house.kind === "block" && MODELS.small_house.footprint[r][c] !== ".") tiles[(2 + r) * W + (2 + c)] = 1;
+  }
+  const map = { width: W, height: H, tiles, heights: new Array(W * H).fill(0), scenery: [{ model: "small_house", x: 2, y: 2 }] };
+  const frame = rasterizeIso(map as any, [], 0, 0, 96, 96, null);
+  let wall = 0;
+  for (const k of frame.buf.kinds) if (k === 2 /* Kind.WALL */) wall++;
+  expect(wall).toBeGreaterThan(0); // the house drew
+});
