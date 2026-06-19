@@ -1,4 +1,5 @@
 import type { ItemStack, GroundItem } from "./items";
+import type { Scenery } from "./models";
 import type { Intent } from "./intents";
 export type { ItemStack, GroundItem } from "./items";
 export { ITEM_KINDS, isItem, INV_SIZE } from "./items";
@@ -19,6 +20,7 @@ export interface MapData {
   height: number;
   tiles: number[];
   heights: number[];
+  scenery?: Scenery[];
 }
 
 /** Max walkable height delta between two adjacent tiles. */
@@ -96,3 +98,4 @@ export * from "./resources";
 export * from "./shops";
 export * from "./equipment";
 export * from "./intents";
+export * from "./models";

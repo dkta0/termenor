@@ -1,7 +1,16 @@
-import type { MapData } from "@termenor/protocol";
+import type { MapData, Scenery } from "@termenor/protocol";
+import { MODELS, solidFootprint } from "@termenor/protocol";
 
 const W = 48;
 const H = 48;
+
+/** Static scenery placed in the world (proof set for the renderable engine). */
+export const SCENERY: Scenery[] = [
+  { model: "small_house", x: 6,  y: 14 }, // 3x3 building, walk-behind + collision (NW open ground; clear of the click-smoke SE corridor)
+  { model: "cliff",       x: 18, y: 18 }, // environment feature (raised rock cluster)
+  { model: "crate",       x: 26, y: 23 }, // prop (decorative)
+  { model: "fence",       x: 27, y: 23 }, // prop (decorative)
+];
 
 /** Smooth rolling ground elevation; low frequency keeps adjacent deltas <= 1. */
 function terrainHeight(x: number, y: number): number {
@@ -33,7 +42,12 @@ export function createDefaultMap(): MapData {
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) heights[y * W + x] = terrainHeight(x, y);
 
-  return { width: W, height: H, tiles, heights };
+  // stamp scenery solid footprints into tiles so existing pathfinding blocks them
+  for (const sc of SCENERY)
+    for (const cell of solidFootprint(MODELS[sc.model], sc.x, sc.y))
+      if (cell.x >= 0 && cell.y >= 0 && cell.x < W && cell.y < H) tiles[cell.y * W + cell.x] = 1;
+
+  return { width: W, height: H, tiles, heights, scenery: SCENERY };
 }
 
 /** Default spawn — guaranteed walkable in the map above. */

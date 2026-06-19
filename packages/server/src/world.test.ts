@@ -46,3 +46,16 @@ test("spawn tile is walkable", () => {
   const m = createDefaultMap();
   expect(m.tiles[SPAWN.y * m.width + SPAWN.x]).toBe(0);
 });
+
+import { MODELS, solidFootprint } from "@termenor/protocol";
+
+test("createDefaultMap places scenery and stamps solid footprints as blocked tiles", () => {
+  const map = createDefaultMap();
+  expect(map.scenery!.length).toBeGreaterThan(0);
+  // every solid footprint cell of every block scenery is blocked (tiles === 1)
+  for (const sc of map.scenery!) {
+    for (const cell of solidFootprint(MODELS[sc.model], sc.x, sc.y)) {
+      expect(map.tiles[cell.y * map.width + cell.x]).toBe(1);
+    }
+  }
+});

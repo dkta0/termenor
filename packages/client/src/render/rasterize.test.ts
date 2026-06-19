@@ -5,6 +5,7 @@ import { rasterizeIso, plot, newIsoFrame } from "./rasterize";
 import { isoCamera } from "./camera";
 import { tileToScreen } from "./iso";
 import { Kind } from "./types";
+import { MODELS } from "@termenor/protocol";
 
 const flatMap: MapData = {
   width: 3, height: 3,
@@ -188,4 +189,42 @@ test("HP bar pixels are written at depth=Infinity so nothing overwrites them (no
     if (f.buf.rgb[i] === HP_GREEN[0] && f.buf.rgb[i + 1] === HP_GREEN[1] && f.buf.rgb[i + 2] === HP_GREEN[2]) barPixels.push(p);
   expect(barPixels.length).toBeGreaterThan(0);
   expect(barPixels.every((p) => f.depth[p] === Infinity)).toBe(true);
+});
+
+test("scenery: a block building draws its own pixels and suppresses the grey wall block under its footprint", () => {
+  const W = 8, H = 8;
+  const tiles = new Array(W * H).fill(0);
+  const house = MODELS.small_house;
+  if (house.kind !== "block") throw new Error("small_house must be a block model");
+  for (let r = 0; r < house.footprint.length; r++)
+    for (let c = 0; c < house.footprint[r].length; c++)
+      if (house.footprint[r][c] !== ".") tiles[(2 + r) * W + (2 + c)] = 1;
+  const base = { width: W, height: H, tiles, heights: new Array(W * H).fill(0) };
+
+  const withScenery = rasterizeIso({ ...base, scenery: [{ model: "small_house", x: 2, y: 2 }] } as any, [], 0, 0, 96, 96, null);
+  const noScenery = rasterizeIso({ ...base, scenery: [] } as any, [], 0, 0, 96, 96, null);
+
+  // (1) scenery changes the render vs a terrain-only frame of the same blocked map
+  expect(withScenery.buf.rgb).not.toEqual(noScenery.buf.rgb);
+
+  // (2) the house drew its own plank-colored pixels (small_house wall top = [95,65,38],
+  //     shade(plank,"top") at full brightness); grey terrain walls never produce this color
+  const hasColor = (f: typeof withScenery, r: number, g: number, b: number) => {
+    for (let i = 0; i < f.buf.rgb.length; i += 3)
+      if (f.buf.rgb[i] === r && f.buf.rgb[i + 1] === g && f.buf.rgb[i + 2] === b) return true;
+    return false;
+  };
+  expect(hasColor(withScenery, 95, 65, 38)).toBe(true);
+  expect(hasColor(noScenery, 95, 65, 38)).toBe(false);
+
+  // (3) suppression: the grey WALL top color [122,112,96] appears for the blocked
+  //     footprint in the terrain-only frame, but is suppressed where scenery covers it
+  const countColor = (f: typeof withScenery, r: number, g: number, b: number) => {
+    let n = 0;
+    for (let i = 0; i < f.buf.rgb.length; i += 3)
+      if (f.buf.rgb[i] === r && f.buf.rgb[i + 1] === g && f.buf.rgb[i + 2] === b) n++;
+    return n;
+  };
+  expect(countColor(noScenery, 122, 112, 96)).toBeGreaterThan(0);
+  expect(countColor(withScenery, 122, 112, 96)).toBeLessThan(countColor(noScenery, 122, 112, 96));
 });
