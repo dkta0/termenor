@@ -49,6 +49,19 @@ A temporary, player-made object you cook on. Created by Firemaking, sits at a ti
 expires on its own. You do not Gather a Fire — you cook at it.
 _Avoid_: campfire, resource, station.
 
+### World objects
+
+**Model**:
+A reusable render + collision definition in the shared catalog (`MODELS`), keyed by a
+string. Two kinds: a `billboard` (flat glyph-grid sprite) or a `block` (footprint of
+extruded cells). A Model is a *definition*, never a placed thing.
+_Avoid_: sprite, mesh, asset.
+
+**Scenery**:
+A placed instance of a Model in the world — a building, prop, or environment feature.
+Carried in `MapData` at join (static). A block Scenery's solid cells block movement.
+_Avoid_: object, prop (as a type name), entity (Scenery is not server-ticked).
+
 ### Items
 
 **Item**:
