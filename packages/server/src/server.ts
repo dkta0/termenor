@@ -1,10 +1,17 @@
-import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, emptyEquipment, type InventoryMsg, type SkillsMsg, type BankMsg, type ShopMsg, type EquipmentMsg } from "@termenor/protocol";
+import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, emptyEquipment, validateAllModels, type InventoryMsg, type SkillsMsg, type BankMsg, type ShopMsg, type EquipmentMsg } from "@termenor/protocol";
 import { GameWorld } from "./game";
 import { createDefaultMap, SPAWN, SEED_ITEMS, NPC_SPAWNS, RESOURCE_SPAWNS, STARTER_AXE, STARTER_GEAR } from "./world";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
 import { emptyInventory } from "./inventory";
 import { executeIntent } from "./intent-executor";
 import type { Database } from "bun:sqlite";
+
+// fail fast at startup if the model catalog is invalid
+const _modelErrors = validateAllModels();
+if (_modelErrors.length > 0) {
+  console.error("Invalid models in catalog:\n" + _modelErrors.join("\n"));
+  throw new Error(`Model catalog validation failed (${_modelErrors.length} error(s))`);
+}
 
 /** Trim whitespace then truncate to MAX_CHAT_LEN. Returns "" for blank input. */
 export function sanitizeChat(text: string): string {

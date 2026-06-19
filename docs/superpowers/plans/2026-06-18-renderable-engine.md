@@ -838,7 +838,7 @@ Add the proof-set placements (kept clear of spawn at 24,24 and the seeded entiti
 ```ts
 /** Static scenery placed in the world (proof set for the renderable engine). */
 export const SCENERY: Scenery[] = [
-  { model: "small_house", x: 28, y: 26 }, // 3x3 building, walk-behind + collision
+  { model: "small_house", x: 6,  y: 14 }, // 3x3 building, walk-behind + collision (NW open ground; clear of the click-smoke SE corridor)
   { model: "cliff",       x: 18, y: 18 }, // environment feature (raised rock cluster)
   { model: "crate",       x: 26, y: 23 }, // prop (decorative)
   { model: "fence",       x: 27, y: 23 }, // prop (decorative)
