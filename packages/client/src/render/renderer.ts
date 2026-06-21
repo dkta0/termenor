@@ -13,6 +13,7 @@ import { CommandLine, classifyDirectInput } from "../command-line";
 import { legendLines, type Mode } from "./legend";
 import { LogState, type LogTier } from "../log";
 import { resolveCommand, type ResolveContext, type EntityRef } from "../resolve";
+import { helpPanelLines, resolveHelp } from "../help";
 import type { ChatState } from "../chat";
 import { isoCamera, pickTile } from "./camera";
 import { rasterizeIso, type IsoFrame } from "./rasterize";
@@ -122,6 +123,15 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       equipMode = "equip";
       state.toggleEquip();
       log.push("ambient", "» equip");
+      return;
+    }
+    if (verb === "help") {
+      const action = resolveHelp(input.command);
+      if (action.kind === "open") { state.helpOpen = true; log.push("ambient", "» help"); }
+      else if (action.kind === "verb") { for (const l of action.lines) log.push("ambient", l); }
+      else log.push("notable", action.suggestion
+        ? `no help for "${action.verb}" — did you mean "${action.suggestion}"?`
+        : `no help for "${action.verb}"`);
       return;
     }
     if (input.command.length === 0) { log.push("notable", "type a command, e.g. /mine copper"); return; }
@@ -279,7 +289,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     }
 
     // Expose this frame's HUD layout to the click handler (cell coords).
-    hud.modalOpen = state.bankOpen || state.shopOpen || state.equipOpen;
+    hud.modalOpen = state.bankOpen || state.shopOpen || state.equipOpen || state.helpOpen;
     hud.panelCol = PANEL_COL;
     hud.panelBottomRow = maxSlots + 1; // header at row 1, items at rows 2..(maxSlots+1)
     hud.skillsRows = skillLines.length;
@@ -345,6 +355,20 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       }
     }
 
+    // Help overlay (modal, left side). A static control + command reference.
+    if (state.helpOpen) {
+      const HELP_HEADER = RGBA.fromInts(120, 200, 160, 255);
+      const HELP_BODY = RGBA.fromInts(200, 200, 200, 255);
+      const startRow = skillLines.length + 2;
+      const lines = helpPanelLines();
+      for (let i = 0; i < lines.length; i++) {
+        const color = i === 0 ? HELP_HEADER : HELP_BODY;
+        for (const cell of textCells(lines[i], 2, startRow + i, cols, rows)) {
+          buffer.setCell(cell.col, cell.row, cell.char, color, BLACK);
+        }
+      }
+    }
+
     // --- Control legend: a single bottom strip, generated from live state ---
     const LEGEND_COLOR = RGBA.fromInts(120, 200, 160, 255);
     const mode: Mode = cmd.active ? "direct" : "play";
@@ -395,6 +419,12 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   };
 
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
+    // Help overlay: consume keys while open; ? or Esc closes it.
+    if (state.helpOpen) {
+      if (key.name === "escape" || key.sequence === "?") state.closeHelp();
+      return;
+    }
+
     // --- Modal panels (bank/shop/equip): consume all keys while open ---
     if (state.bankOpen) {
       if (key.name === "escape") { state.closeBank(); return; }
@@ -456,6 +486,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     // Enter opens the typing layer chat-ready; "/" opens it command-ready.
     if (key.name === "return" || key.name === "enter") { cmd.open(); return; }
     if (key.sequence === "/") { cmd.open(); cmd.type("/"); return; }
+    if (key.sequence === "?") { state.toggleHelp(); return; }
 
     // Pick up the item underfoot.
     if (key.name === "g") { hooks.onPickup?.(); return; }
