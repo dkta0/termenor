@@ -244,6 +244,11 @@ function closestVerb(verb: string): string | null {
   return best !== null && bestD <= 2 ? best : null;
 }
 
+/** Public did-you-mean: the closest known verb within edit distance 2, or null. */
+export function suggestVerb(verb: string): string | null {
+  return closestVerb(verb.toLowerCase());
+}
+
 /** Resolve a typed command line into an Intent, or an error message to show. */
 export function resolveCommand(line: string, ctx: ResolveContext): ResolveResult {
   const tokens = line.trim().split(/\s+/).filter(Boolean);
