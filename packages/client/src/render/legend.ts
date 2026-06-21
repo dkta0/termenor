@@ -10,7 +10,7 @@ export interface LegendContext {
   itemUnderfoot: string | null;
 }
 
-const PLAY_HINT = "[move] arrows/click   [/] command   [Enter] chat";
+const PLAY_HINT = "[move] arrows/click   [/] command   [Enter] chat   [?] help";
 const DIRECT_HINT = "[Esc] play   ·   type to chat, /verb for commands";
 
 /**

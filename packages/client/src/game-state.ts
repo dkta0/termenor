@@ -32,6 +32,7 @@ export class GameState {
   shopOpen = false;
   equipment: Equipment = { weapon: null, body: null, shield: null };
   equipOpen = false;
+  helpOpen = false;
   private frames: Frame[] = []; // chronological, oldest → newest
   private splats: Splat[] = [];
 
@@ -49,6 +50,8 @@ export class GameState {
   setEquipment(eq: Equipment): void { this.equipment = eq; }
   toggleEquip(): void { this.equipOpen = !this.equipOpen; }
   closeEquip(): void { this.equipOpen = false; }
+  toggleHelp(): void { this.helpOpen = !this.helpOpen; }
+  closeHelp(): void { this.helpOpen = false; }
 
   /** Id of the nearest visible resource of `type` to the local player, or null. */
   nearestResourceOfType(type: string, now: number): string | null {

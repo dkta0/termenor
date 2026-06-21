@@ -339,3 +339,19 @@ test("toggleEquip flips the panel flag; closeEquip clears it", () => {
   gs.closeEquip();
   expect(gs.equipOpen).toBe(false);
 });
+
+test("toggleHelp flips the help overlay flag", () => {
+  const gs = new GameState();
+  expect(gs.helpOpen).toBe(false);
+  gs.toggleHelp();
+  expect(gs.helpOpen).toBe(true);
+  gs.toggleHelp();
+  expect(gs.helpOpen).toBe(false);
+});
+
+test("closeHelp always clears the help overlay flag", () => {
+  const gs = new GameState();
+  gs.toggleHelp();
+  gs.closeHelp();
+  expect(gs.helpOpen).toBe(false);
+});
