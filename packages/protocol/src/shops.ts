@@ -12,5 +12,14 @@ export const SHOPS: Record<string, { name: string; entries: ShopEntry[] }> = {
     { item: "bronze_sword",     price: 26, stock: 5 },
     { item: "bronze_platebody", price: 40, stock: 5 },
     { item: "bronze_shield",    price: 24, stock: 5 },
+    // Raw materials so every skill is trainable from a fresh account.
+    { item: "tin_ore",       price: 4,  stock: 100 },
+    { item: "cowhide",       price: 6,  stock: 100 },
+    { item: "feather",       price: 1,  stock: 500 },
+    { item: "grimy_guam",    price: 5,  stock: 100 },
+    { item: "vial_of_water", price: 2,  stock: 100 },
+    { item: "rune_essence",  price: 3,  stock: 200 },
+    { item: "bones",         price: 2,  stock: 100 },
+    { item: "potato_seed",   price: 1,  stock: 100 },
   ] },
 };

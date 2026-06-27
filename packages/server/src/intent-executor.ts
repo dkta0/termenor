@@ -63,6 +63,16 @@ const handlers: Handlers = {
     game.use(playerId, intent.action, intent.slot);
     return NOTHING;
   },
+  train: (game, playerId, intent) => {
+    game.train(playerId, intent.recipe);
+    const inv = inventoryMsg(game, playerId);
+    return { self: inv ? [inv] : [], world: [] };
+  },
+  talk: (game, playerId, intent) => {
+    game.talk(playerId, intent.targetId);
+    const inv = inventoryMsg(game, playerId); // quest delivery/reward can change inventory
+    return { self: inv ? [inv] : [], world: [] };
+  },
   openBank: (game, playerId, intent) => {
     if (!game.openBank(playerId, intent.targetId)) return NOTHING;
     return { self: [bankMsg(game, playerId)], world: [] };

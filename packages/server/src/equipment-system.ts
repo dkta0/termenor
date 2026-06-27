@@ -1,5 +1,5 @@
 import { addToInventory } from "./inventory";
-import { EQUIPMENT, EQUIP_SLOTS, PLAYER_MAX_HIT, type Equipment, type EquipSlot } from "@termenor/protocol";
+import { EQUIPMENT, EQUIP_SLOTS, PLAYER_MAX_HIT, levelForXp, type Equipment, type EquipSlot } from "@termenor/protocol";
 import type { PlayerEntity } from "./entities";
 import type { GameWorld } from "./game";
 
@@ -7,20 +7,22 @@ function notice(w: GameWorld, id: string, text: string): void {
   w.events.gatherNotices.push({ id, text });
 }
 
-/** Unarmed base + equipped weapon's maxHit bonus. */
+/** Unarmed base + equipped weapon's maxHit bonus + a strength-level bonus (skill-driven). */
 export function playerMaxHit(p: PlayerEntity): number {
   const w = p.equipment.weapon;
-  return PLAYER_MAX_HIT + (w ? (EQUIPMENT[w]?.maxHit ?? 0) : 0);
+  const weaponBonus = w ? (EQUIPMENT[w]?.maxHit ?? 0) : 0;
+  const strengthBonus = Math.floor(levelForXp(p.skills.strength ?? 0) / 8);
+  return PLAYER_MAX_HIT + weaponBonus + strengthBonus;
 }
 
-/** Sum of defence across equipped armour. */
+/** Sum of equipped-armour defence + a defence-level bonus (skill-driven). */
 export function playerDefence(p: PlayerEntity): number {
   let d = 0;
   for (const slot of EQUIP_SLOTS) {
     const item = p.equipment[slot];
     if (item) d += EQUIPMENT[item]?.defence ?? 0;
   }
-  return d;
+  return d + Math.floor(levelForXp(p.skills.defence ?? 0) / 12);
 }
 
 export function getEquipment(w: GameWorld, playerId: string): Equipment {

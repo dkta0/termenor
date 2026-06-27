@@ -11,22 +11,27 @@ fight goblins, and watch other players move around you, all from a terminal tab.
 
 ---
 
-## Quick start
+## Install & play
 
-Termenor is a server plus a terminal client. Until the public server is live,
-you run both — two terminals, ~10 seconds:
+**Players — one line:**
 
 ```bash
-git clone https://github.com/dkta0/termenor
-cd termenor
-
-just server      # terminal 1 — start a local server (ws://localhost:3000)
-./play           # terminal 2 — launch the game
+curl -fsSL https://raw.githubusercontent.com/dakota/termenor/main/install.sh | bash
+termenor          # connects to the official server by default
 ```
 
-`./play` checks for [Bun](https://bun.sh), installs dependencies on first run, and
-opens a login screen. **Register a name and you're in.** Already running a server
-elsewhere? Point at it: `./play ws://host:3000`.
+This downloads the prebuilt binary for your platform from the latest GitHub release and
+installs `termenor` to `~/.local/bin`. Launch it, register a name, and you're in.
+
+**From source (development, or to run your own server):**
+
+```bash
+git clone https://github.com/dakota/termenor
+cd termenor && bun install
+
+bun run server                                  # terminal 1 — local server (ws://localhost:3000)
+bun run play --server ws://localhost:3000       # terminal 2 — play against it
+```
 
 > Use **ghostty** or **kitty** for crisp truecolor half-block rendering. Anything
 > else still works — Termenor falls back to a plain ASCII view automatically.
@@ -56,9 +61,14 @@ elsewhere? Point at it: `./play ws://host:3000`.
 - **Carry stuff** — a 28-slot inventory with items you can pick up off the ground
   and drop.
 - **Fight** — NPCs wander, aggro, and hit back; combat has HP, death/respawn, and
-  floating damage splats.
-- **Train skills** — earn XP and levels in woodcutting, mining, fishing, firemaking,
-  and cooking.
+  floating damage splats, with melee/ranged/magic styles.
+- **Train every skill** — all 23 RuneScape skills carry XP and levels. Gather
+  (woodcutting/mining/fishing), fight to raise the combat skills (attack, strength,
+  defence, hitpoints, ranged, magic, prayer, slayer), and craft the rest (smithing,
+  crafting, fletching, herblore, runecrafting, construction, cooking, firemaking,
+  agility, thieving, hunter, farming) from the `:` command line — e.g. `:make bronze bar`.
+- **Quest** — accept and complete quests (start with Cook's Assistant: `:talk cook`).
+- **Travel** — cross portals between zones (the overworld and a cave to start).
 
 ## How it works
 
@@ -67,7 +77,8 @@ Three small, independently tested packages talk over one JSON wire protocol:
 - **`packages/protocol`** — the message types and codec; the single source of truth
   both sides share.
 - **`packages/server`** — an authoritative 15 Hz game loop: A\* pathfinding, combat,
-  skills, and SQLite persistence. The client never decides anything that matters.
+  skills, quests, multiple zones, and a swappable store (SQLite by default, Postgres in
+  production). The client never decides anything that matters.
 - **`packages/client`** — netcode → an interpolating game-state model → a tiered
   terminal renderer. Data flows one way: the network layer writes state, the
   renderer only reads it.
@@ -104,10 +115,15 @@ Fidelity is detected from the terminal at startup:
   `▀`, so interpolated movement glides instead of stepping.
 - **ascii**: a glyph fallback that's always playable.
 
-## Deploy
+## Deploy (run your own authoritative server)
 
-The server is the deployable; clients run in players' terminals.
+The server is the deployable; players run the terminal client. One command brings up the
+server backed by Postgres:
 
 ```bash
-docker compose up -d --build   # server on :3000, SQLite on a persistent volume
+docker compose up -d --build   # server on :3000, persistence in Postgres on a volume
 ```
+
+Persistence is a swappable `PlayerStore`: set `DATABASE_URL=postgres://…` for Postgres
+(the compose default) or `DB_PATH=…` for a SQLite file. Bind address/port come from
+`HOST` / `PORT`. Point players at your host with `termenor --server wss://your.host`.

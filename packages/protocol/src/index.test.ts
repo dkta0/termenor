@@ -6,14 +6,14 @@ test("client message round-trips", () => {
   expect(decodeClient(encode(msg))).toEqual(msg);
 });
 
-test("server snapshot round-trips", () => {
+test("server delta round-trips a player spawn", () => {
   const msg: ServerMsg = {
-    t: "snapshot", tick: 5,
-    players: [{ id: "a", x: 1.5, y: 2, facing: "east", hp: 10, maxHp: 10 }],
-    ground: [],
-    npcs: [],
+    t: "delta", tick: 5,
+    players: { spawns: [{ id: "a", x: 1.5, y: 2, facing: "east", hp: 10, maxHp: 10 }], updates: [], despawns: [] },
+    npcs: { spawns: [], updates: [], despawns: [] },
+    ground: { spawns: [], updates: [], despawns: [] },
+    resources: { spawns: [], updates: [], despawns: [] },
     hits: [],
-    resources: [],
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
@@ -92,17 +92,31 @@ test("InventoryMsg round-trips", () => {
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
-test("SnapshotMsg includes ground array", () => {
+test("DeltaMsg with ground spawns round-trips through encode/decodeServer", () => {
   const ground: GroundItem[] = [{ id: 1, item: "coins", qty: 10, x: 3, y: 4 }];
-  const msg: ServerMsg = { t: "snapshot", tick: 1, players: [], ground, npcs: [], hits: [], resources: [] };
+  const msg: ServerMsg = {
+    t: "delta", tick: 1,
+    players: { spawns: [], updates: [], despawns: [] },
+    npcs: { spawns: [], updates: [], despawns: [] },
+    ground: { spawns: ground, updates: [], despawns: [] },
+    resources: { spawns: [], updates: [], despawns: [] },
+    hits: [],
+  };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
 import { NPC_KINDS, type NpcState } from "./index";
 
-test("SnapshotMsg with npcs round-trips through encode/decodeServer", () => {
+test("DeltaMsg with npc spawns/updates/despawns round-trips", () => {
   const npcs: NpcState[] = [{ id: "npc-1", type: "goblin", x: 3.5, y: 7, facing: "south", hp: 5, maxHp: 5 }];
-  const msg: ServerMsg = { t: "snapshot", tick: 42, players: [], ground: [], npcs, hits: [], resources: [] };
+  const msg: ServerMsg = {
+    t: "delta", tick: 42,
+    players: { spawns: [], updates: [], despawns: ["gone"] },
+    npcs: { spawns: npcs, updates: [], despawns: [] },
+    ground: { spawns: [], updates: [], despawns: [99] },
+    resources: { spawns: [], updates: [], despawns: [] },
+    hits: [{ targetId: "npc-1", amount: 2, tick: 42 }],
+  };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
@@ -120,14 +134,14 @@ test("attack message round-trips", () => {
   expect(decodeClient(encode(msg))).toEqual(msg);
 });
 
-test("snapshot with hp + hits round-trips", () => {
+test("delta round-trips player hp update, npc spawn, and hits", () => {
   const msg: ServerMsg = {
-    t: "snapshot", tick: 9,
-    players: [{ id: "a", x: 1, y: 2, facing: "east", hp: 7, maxHp: PLAYER_MAX_HP }],
-    ground: [],
-    npcs: [{ id: "n1", type: "goblin", x: 5, y: 5, facing: "south", hp: 3, maxHp: 5 }],
+    t: "delta", tick: 9,
+    players: { spawns: [], updates: [{ id: "a", x: 1, y: 2, facing: "east", hp: 7, maxHp: PLAYER_MAX_HP }], despawns: [] },
+    npcs: { spawns: [{ id: "n1", type: "goblin", x: 5, y: 5, facing: "south", hp: 3, maxHp: 5 }], updates: [], despawns: [] },
+    ground: { spawns: [], updates: [], despawns: [] },
+    resources: { spawns: [], updates: [], despawns: [] },
     hits: [{ targetId: "n1", amount: 2, tick: 9 }],
-    resources: [],
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
@@ -147,15 +161,15 @@ test("skills ServerMsg round-trips", () => {
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
-test("snapshot with resources round-trips", () => {
+test("delta round-trips resource spawns", () => {
   const resources: ResourceState[] = [{ id: "r1", type: "tree", x: 3, y: 4 }];
   const msg: ServerMsg = {
-    t: "snapshot", tick: 10,
-    players: [],
-    ground: [],
-    npcs: [],
+    t: "delta", tick: 10,
+    players: { spawns: [], updates: [], despawns: [] },
+    npcs: { spawns: [], updates: [], despawns: [] },
+    ground: { spawns: [], updates: [], despawns: [] },
+    resources: { spawns: resources, updates: [], despawns: [] },
     hits: [],
-    resources,
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
@@ -208,18 +222,18 @@ test("ShopMsg round-trips through encode/decodeServer", () => {
   expect(decodeServer(encode(msg))).toEqual(msg);
 });
 
-test("snapshot with rock and fire resources round-trips", () => {
+test("delta round-trips rock and fire resource spawns", () => {
   const resources: ResourceState[] = [
     { id: "r1", type: "rock", x: 2, y: 2 },
     { id: "f1", type: "fire", x: 3, y: 3 },
   ];
   const msg: ServerMsg = {
-    t: "snapshot", tick: 20,
-    players: [],
-    ground: [],
-    npcs: [],
+    t: "delta", tick: 20,
+    players: { spawns: [], updates: [], despawns: [] },
+    npcs: { spawns: [], updates: [], despawns: [] },
+    ground: { spawns: [], updates: [], despawns: [] },
+    resources: { spawns: resources, updates: [], despawns: [] },
     hits: [],
-    resources,
   };
   expect(decodeServer(encode(msg))).toEqual(msg);
 });

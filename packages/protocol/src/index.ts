@@ -60,8 +60,42 @@ export interface WelcomeMsg {
   y: number;
   facing: Facing;
 }
+/** Sent when a player crosses into a new zone: swap the rendered map and reposition. */
+export interface ZoneMsg {
+  t: "zone";
+  zone: string;
+  map: MapData;
+  x: number;
+  y: number;
+  facing: Facing;
+}
 export interface HitEvent { targetId: string; amount: number; tick: number; }
 export interface SnapshotMsg { t: "snapshot"; tick: number; players: PlayerState[]; ground: GroundItem[]; npcs: NpcState[]; hits: HitEvent[]; resources: ResourceState[]; }
+/**
+ * An incremental change set for one entity category, diffed against what the client
+ * was last sent. `spawns` are newly present, `updates` are present-but-changed (full
+ * record), `despawns` are ids no longer present. Absent from all three = unchanged.
+ */
+export interface EntityDelta<S extends { id: string | number }> {
+  spawns: S[];
+  updates: S[];
+  despawns: S["id"][];
+}
+
+/**
+ * The per-tick world update sent in place of a full Snapshot. The wire carries only
+ * what changed since the client's last delta; the client reconstructs a full frame
+ * from its running world model. `hits` are transient per-tick events, always sent.
+ */
+export interface DeltaMsg {
+  t: "delta";
+  tick: number;
+  players: EntityDelta<PlayerState>;
+  npcs: EntityDelta<NpcState>;
+  ground: EntityDelta<GroundItem>;
+  resources: EntityDelta<ResourceState>;
+  hits: HitEvent[];
+}
 export interface LoginErrorMsg { t: "loginError"; reason: string; }
 export interface ChatBroadcastMsg { t: "chatMsg"; from: string; text: string; }
 export interface InventoryMsg { t: "inventory"; slots: (ItemStack | null)[]; }
@@ -69,7 +103,7 @@ export interface SkillsMsg { t: "skills"; skills: Record<string, { xp: number; l
 export interface BankMsg { t: "bank"; items: ItemStack[]; open: boolean; }
 export interface ShopMsg { t: "shop"; shopId: string; name: string; entries: ShopEntry[]; open: boolean; }
 export interface EquipmentMsg { t: "equipment"; weapon: string | null; body: string | null; shield: string | null; }
-export type ServerMsg = WelcomeMsg | SnapshotMsg | LoginErrorMsg | ChatBroadcastMsg | InventoryMsg | SkillsMsg | BankMsg | ShopMsg | EquipmentMsg;
+export type ServerMsg = WelcomeMsg | ZoneMsg | DeltaMsg | LoginErrorMsg | ChatBroadcastMsg | InventoryMsg | SkillsMsg | BankMsg | ShopMsg | EquipmentMsg;
 
 export function encode(msg: ClientMsg | ServerMsg): string {
   return JSON.stringify(msg);
@@ -78,7 +112,7 @@ export function encode(msg: ClientMsg | ServerMsg): string {
 export const MAX_CHAT_LEN = 200;
 
 const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack", "gather", "use", "open", "bankAction", "shopAction", "equipAction", "intent"]);
-const SERVER_TYPES = new Set(["welcome", "snapshot", "loginError", "chatMsg", "inventory", "skills", "bank", "shop", "equipment"]);
+const SERVER_TYPES = new Set(["welcome", "zone", "delta", "loginError", "chatMsg", "inventory", "skills", "bank", "shop", "equipment"]);
 
 export function decodeClient(data: string): ClientMsg {
   const obj = JSON.parse(data);
@@ -91,6 +125,7 @@ export function decodeServer(data: string): ServerMsg {
   if (!obj || !SERVER_TYPES.has(obj.t)) throw new Error(`bad server message: ${data}`);
   return obj as ServerMsg;
 }
+export * from "./quests";
 
 export * from "./combat";
 export * from "./skills";
@@ -99,3 +134,4 @@ export * from "./shops";
 export * from "./equipment";
 export * from "./intents";
 export * from "./models";
+export * from "./recipes";

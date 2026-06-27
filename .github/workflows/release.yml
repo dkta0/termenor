@@ -1,0 +1,38 @@
+name: release
+
+# Tag a version (e.g. `git tag v0.1.0 && git push --tags`) to build the client + server
+# binaries for each platform and attach them to the GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, os: linux,  arch: x64 }
+          - { runner: macos-13,      os: darwin, arch: x64 }
+          - { runner: macos-latest,  os: darwin, arch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Build binaries
+        run: |
+          bun build --compile --minify packages/client/src/index.ts --outfile "termenor-${{ matrix.os }}-${{ matrix.arch }}"
+          bun build --compile --minify packages/server/src/index.ts --outfile "termenor-server-${{ matrix.os }}-${{ matrix.arch }}"
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            termenor-${{ matrix.os }}-${{ matrix.arch }}
+            termenor-server-${{ matrix.os }}-${{ matrix.arch }}

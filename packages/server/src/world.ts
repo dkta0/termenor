@@ -74,6 +74,7 @@ export interface NpcSpawn { type: string; x: number; y: number; radius: number; 
 export const NPC_SPAWNS: NpcSpawn[] = [
   { type: "goblin", x: 28, y: 22, radius: 4 },
   { type: "rat",    x: 21, y: 27, radius: 3 },
+  { type: "chef",   x: 22, y: 22, radius: 0 }, // quest giver (Cook's Assistant)
 ];
 
 export interface ResourceSpawn { type: string; x: number; y: number; }
@@ -96,4 +97,60 @@ export const STARTER_GEAR: SeedItem[] = [
   { item: "bronze_sword",     qty: 1, x: 23, y: 23 },
   { item: "bronze_platebody", qty: 1, x: 23, y: 22 },
   { item: "bronze_shield",    qty: 1, x: 24, y: 22 },
+];
+
+// --- Multi-zone world ------------------------------------------------------
+
+/** A one-way teleport: standing on tile (x,y) in this zone moves you to (toX,toY) in toZone. */
+export interface Portal { x: number; y: number; toZone: string; toX: number; toY: number; }
+
+/** A self-contained zone: its own map, spawn, seeded content, and portals out. */
+export interface ZoneDef {
+  id: string;
+  map: MapData;
+  spawn: { x: number; y: number };
+  seedItems: SeedItem[];
+  npcs: NpcSpawn[];
+  resources: ResourceSpawn[];
+  portals: Portal[];
+}
+
+export const DEFAULT_ZONE = "overworld";
+
+const CW = 24;
+const CH = 24;
+
+/** A small enclosed cave: open floor inside a walled border, reached via the overworld portal. */
+export function createCaveMap(): MapData {
+  const tiles = new Array(CW * CH).fill(0);
+  for (let x = 0; x < CW; x++) { tiles[x] = 1; tiles[(CH - 1) * CW + x] = 1; }
+  for (let y = 0; y < CH; y++) { tiles[y * CW] = 1; tiles[y * CW + (CW - 1)] = 1; }
+  const heights = new Array(CW * CH).fill(0);
+  return { width: CW, height: CH, tiles, heights, scenery: [] };
+}
+
+/**
+ * The world's zones. Overworld is the spawn region; the cave is a second region reached
+ * by stepping onto the overworld portal at (28,24). Each zone is simulated by its own
+ * GameWorld (see zones.ts); players see and interact only within their current zone.
+ */
+export const ZONE_DEFS: ZoneDef[] = [
+  {
+    id: DEFAULT_ZONE,
+    map: createDefaultMap(),
+    spawn: SPAWN,
+    seedItems: [...SEED_ITEMS, STARTER_AXE, ...STARTER_GEAR],
+    npcs: NPC_SPAWNS,
+    resources: RESOURCE_SPAWNS,
+    portals: [{ x: 30, y: 30, toZone: "cave", toX: 12, toY: 12 }],
+  },
+  {
+    id: "cave",
+    map: createCaveMap(),
+    spawn: { x: 12, y: 12 },
+    seedItems: [{ item: "bones", qty: 2, x: 13, y: 12 }],
+    npcs: [{ type: "goblin", x: 8, y: 8, radius: 3 }],
+    resources: [{ type: "rock", x: 10, y: 10 }, { type: "tree", x: 15, y: 15 }],
+    portals: [{ x: 12, y: 18, toZone: DEFAULT_ZONE, toX: 28, toY: 25 }],
+  },
 ];

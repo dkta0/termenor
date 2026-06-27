@@ -20,6 +20,8 @@ export type Intent =
   | { kind: "pickup" }
   | { kind: "drop"; slot: number }
   | { kind: "use"; action: string; slot: number }
+  | { kind: "train"; recipe: string }
+  | { kind: "talk"; targetId: string }
   | { kind: "openBank"; targetId: string }
   | { kind: "openShop"; targetId: string }
   | { kind: "deposit"; slot: number; qty: number }

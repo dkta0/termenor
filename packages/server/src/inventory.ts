@@ -41,3 +41,31 @@ export function removeSlot(
   result[i] = null;
   return { slots: result, removed };
 }
+
+/** Total quantity of `item` across all slots (sums stacks and unit slots). */
+export function countItem(slots: (ItemStack | null)[], item: string): number {
+  let n = 0;
+  for (const s of slots) if (s?.item === item) n += s.qty;
+  return n;
+}
+
+/**
+ * Remove up to `qty` units of `item`, draining slots in order. Works for stackable items
+ * (one slot) and non-stackable items (one unit per slot). Returns a new slots array.
+ */
+export function removeItems(
+  slots: (ItemStack | null)[],
+  item: string,
+  qty: number,
+): (ItemStack | null)[] {
+  const result = slots.slice() as (ItemStack | null)[];
+  let remaining = qty;
+  for (let i = 0; i < result.length && remaining > 0; i++) {
+    const s = result[i];
+    if (s?.item !== item) continue;
+    const take = Math.min(s.qty, remaining);
+    remaining -= take;
+    result[i] = s.qty === take ? null : { item: s.item, qty: s.qty - take };
+  }
+  return result;
+}

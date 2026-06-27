@@ -1,12 +1,21 @@
 {
   "name": "termenor",
+  "version": "0.1.0",
   "private": true,
   "workspaces": ["packages/*"],
+  "bin": {
+    "termenor": "packages/client/src/index.ts",
+    "termenor-server": "packages/server/src/index.ts"
+  },
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "server": "bun run packages/server/src/index.ts",
     "client": "bun run packages/client/src/index.ts",
+    "play": "bun run packages/client/src/index.ts",
+    "build": "bun run build:client && bun run build:server",
+    "build:client": "bun build --compile --minify packages/client/src/index.ts --outfile dist/termenor",
+    "build:server": "bun build --compile --minify packages/server/src/index.ts --outfile dist/termenor-server",
     "verify:render": "python3 scripts/pty-render-check.py",
     "verify:click": "python3 scripts/pty-click-check.py",
     "verify:login": "python3 scripts/pty-login-check.py"

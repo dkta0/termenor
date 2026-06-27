@@ -20,4 +20,5 @@ export interface NpcKind {
 export const NPC_KINDS: Record<string, NpcKind> = {
   goblin: { name: "Goblin", color: [80, 160, 60],   maxHp: 5, maxHit: 1 },
   rat:    { name: "Rat",    color: [160, 130, 100],  maxHp: 3, maxHit: 1 },
+  chef:   { name: "Cook",   color: [230, 220, 200], maxHp: 3, maxHit: 0 },
 };

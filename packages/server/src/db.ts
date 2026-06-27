@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import type { Facing, ItemStack, Equipment } from "@termenor/protocol";
 import { emptyEquipment } from "@termenor/protocol";
 import { emptyInventory } from "./inventory";
+import { DEFAULT_ZONE } from "./world";
 
 export interface PlayerStateRecord {
   x: number;
@@ -13,6 +14,8 @@ export interface PlayerStateRecord {
   skills: Record<string, number>;
   bank: ItemStack[];
   equipment: Equipment;
+  zone: string;
+  quests: Record<string, number>;
 }
 
 export function openDb(path: string): Database {
@@ -30,7 +33,9 @@ export function openDb(path: string): Database {
       inventory     TEXT,
       skills        TEXT,
       bank          TEXT,
-      equipment     TEXT
+      equipment     TEXT,
+      zone          TEXT NOT NULL DEFAULT 'overworld',
+      quests        TEXT
     )
   `);
   // Migration guard: add inventory column to existing databases that predate this column
@@ -57,6 +62,18 @@ export function openDb(path: string): Database {
   } catch {
     // column already exists on an existing db — safe to ignore
   }
+  // Migration guard: add zone column to existing databases that predate this column
+  try {
+    db.run("ALTER TABLE accounts ADD COLUMN zone TEXT NOT NULL DEFAULT 'overworld'");
+  } catch {
+    // column already exists on an existing db — safe to ignore
+  }
+  // Migration guard: add quests column to existing databases that predate this column
+  try {
+    db.run("ALTER TABLE accounts ADD COLUMN quests TEXT");
+  } catch {
+    // column already exists on an existing db — safe to ignore
+  }
   return db;
 }
 
@@ -68,8 +85,8 @@ export async function getOrCreateAccount(
   mode?: "login" | "register",
 ): Promise<{ ok: true; state: PlayerStateRecord } | { ok: false; reason: string }> {
   const row = db
-    .query<{ password_hash: string; x: number; y: number; facing: string; inventory: string | null; skills: string | null; bank: string | null; equipment: string | null }, string>(
-      "SELECT password_hash, x, y, facing, inventory, skills, bank, equipment FROM accounts WHERE username = ?",
+    .query<{ password_hash: string; x: number; y: number; facing: string; inventory: string | null; skills: string | null; bank: string | null; equipment: string | null; zone: string | null; quests: string | null }, string>(
+      "SELECT password_hash, x, y, facing, inventory, skills, bank, equipment, zone, quests FROM accounts WHERE username = ?",
     )
     .get(username);
 
@@ -81,7 +98,7 @@ export async function getOrCreateAccount(
       "INSERT INTO accounts (username, password_hash, x, y, facing, last_seen) VALUES (?, ?, ?, ?, ?, ?)",
       [username, hash, spawn.x, spawn.y, spawn.facing, Date.now()],
     );
-    return { ok: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {}, bank: [], equipment: emptyEquipment() } };
+    return { ok: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {}, bank: [], equipment: emptyEquipment(), zone: DEFAULT_ZONE, quests: {} } };
   }
 
   // Account exists. Reject explicit registers; verify password otherwise.
@@ -117,6 +134,9 @@ export async function getOrCreateAccount(
     }
   }
 
+  let quests: Record<string, number> = {};
+  if (row.quests) { try { quests = JSON.parse(row.quests) as Record<string, number>; } catch { quests = {}; } }
+
   return {
     ok: true,
     state: {
@@ -125,6 +145,8 @@ export async function getOrCreateAccount(
       skills,
       bank,
       equipment,
+      zone: row.zone ?? DEFAULT_ZONE,
+      quests,
     },
   };
 }
@@ -139,9 +161,11 @@ export function savePlayerState(
   skills: Record<string, number>,
   bank: ItemStack[],
   equipment: Equipment,
+  zone: string,
+  quests: Record<string, number>,
 ): void {
   db.run(
-    "UPDATE accounts SET x = ?, y = ?, facing = ?, inventory = ?, skills = ?, bank = ?, equipment = ?, last_seen = ? WHERE username = ?",
-    [x, y, facing, JSON.stringify(inventory), JSON.stringify(skills), JSON.stringify(bank), JSON.stringify(equipment), Date.now(), username],
+    "UPDATE accounts SET x = ?, y = ?, facing = ?, inventory = ?, skills = ?, bank = ?, equipment = ?, zone = ?, quests = ?, last_seen = ? WHERE username = ?",
+    [x, y, facing, JSON.stringify(inventory), JSON.stringify(skills), JSON.stringify(bank), JSON.stringify(equipment), zone, JSON.stringify(quests), Date.now(), username],
   );
 }

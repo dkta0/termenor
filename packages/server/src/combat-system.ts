@@ -4,6 +4,8 @@ import { playerMaxHit, playerDefence } from "./equipment-system";
 import { ATTACK_COOLDOWN_TICKS, RESPAWN_TICKS, type Facing } from "@termenor/protocol";
 import { type Point } from "./pathfinding";
 import type { GameWorld } from "./game";
+import { awardXp } from "./skills-system";
+import type { PlayerEntity } from "./entities";
 
 export function setTarget(w: GameWorld, playerId: string, targetId: string): void {
   const p = w.players.get(playerId);
@@ -19,7 +21,12 @@ export function stepCombat(w: GameWorld): void {
   for (const p of w.players.values()) {
     if (p.attackCd > 0) p.attackCd--;
     // NPC victims have no armour → no defence reduction.
-    combatStepActor(w, p, (id) => w.npcs.find((n) => n.id === id && n.respawnAt < 0) ?? null, playerMaxHit(p), () => 0);
+    combatStepActor(
+      w, p,
+      (id) => w.npcs.find((n) => n.id === id && n.respawnAt < 0) ?? null,
+      playerMaxHit(p), () => 0,
+      (dmg, tgt, killed) => onPlayerHit(w, p, dmg, tgt, killed),
+    );
   }
   for (const npc of w.npcs) {
     if (npc.respawnAt >= 0) continue;
@@ -67,6 +74,7 @@ function combatStepActor(
   findTarget: (id: string) => { id: string; x: number; y: number; hp: number } | null,
   maxHit: number,
   defenceOf: (targetId: string) => number,
+  onHit?: (dmg: number, tgt: { id: string; x: number; y: number; hp: number }, killed: boolean) => void,
 ): void {
   if (!actor.target) return;
   const tgt = findTarget(actor.target);
@@ -75,10 +83,12 @@ function combatStepActor(
   if (isAdjacent(actor, tgt)) {
     actor.path = [];
     if (actor.attackCd === 0) {
+      const before = tgt.hp;
       const dmg = Math.max(0, rollDamage(maxHit, w.rng) - defenceOf(tgt.id));
       tgt.hp = Math.max(0, tgt.hp - dmg);
       actor.attackCd = ATTACK_COOLDOWN_TICKS;
       w.hits.push({ targetId: tgt.id, amount: dmg, tick: w.tick });
+      onHit?.(dmg, tgt, before > 0 && tgt.hp <= 0);
       // If the victim is an NPC, make it retaliate against the player attacker
       const victimNpc = w.npcs.find((n) => n.id === tgt.id);
       if (victimNpc && !victimNpc.target) {
@@ -95,4 +105,47 @@ function combatStepActor(
 function idOf(w: GameWorld, actor: object): string | null {
   for (const [id, p] of w.players) if (p === actor) return id;
   return null;
+}
+
+type CombatStyle = "melee" | "ranged" | "magic";
+
+/** A player's combat style: bow → ranged, unarmed holding runes → magic, else melee. */
+function combatStyle(p: PlayerEntity): CombatStyle {
+  if (p.equipment.weapon === "shortbow") return "ranged";
+  if (p.equipment.weapon === null && p.inventory.some((s) => s?.item === "air_rune")) return "magic";
+  return "melee";
+}
+
+/**
+ * Award combat XP for a player's landed hit (split by style, plus hitpoints), and on a
+ * kill grant slayer XP and drop bones at the victim's tile.
+ */
+function onPlayerHit(
+  w: GameWorld,
+  p: PlayerEntity,
+  dmg: number,
+  tgt: { id: string; x: number; y: number; hp: number },
+  killed: boolean,
+): void {
+  if (dmg > 0) {
+    const style = combatStyle(p);
+    if (style === "ranged") {
+      awardXp(w.events, p, "ranged", 4 * dmg);
+    } else if (style === "magic") {
+      awardXp(w.events, p, "magic", 2 * dmg);
+    } else {
+      const each = Math.max(1, Math.round((4 * dmg) / 3));
+      awardXp(w.events, p, "attack", each);
+      awardXp(w.events, p, "strength", each);
+      awardXp(w.events, p, "defence", each);
+    }
+    awardXp(w.events, p, "hitpoints", Math.max(1, Math.round(1.33 * dmg)));
+  }
+  if (killed) {
+    const npc = w.npcs.find((n) => n.id === tgt.id);
+    if (npc) {
+      awardXp(w.events, p, "slayer", Math.max(1, npc.maxHp * 2));
+      w.addGroundItem("bones", 1, Math.round(tgt.x), Math.round(tgt.y));
+    }
+  }
 }

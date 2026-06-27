@@ -13,6 +13,8 @@ import * as actionSys from "./action-system";
 import * as bankSys from "./bank-system";
 import * as shopSys from "./shop-system";
 import * as equipSys from "./equipment-system";
+import * as trainSys from "./train-system";
+import * as questSys from "./quest-system";
 
 const GATHER_COOLDOWN_TICKS = 30;
 
@@ -24,6 +26,8 @@ export interface RestoredState {
   skills?: Record<string, number>;
   bank?: ItemStack[];
   equipment?: Equipment;
+  zone?: string;
+  quests?: Record<string, number>;
 }
 
 export class GameWorld {
@@ -76,7 +80,7 @@ export class GameWorld {
     }
     const bank = state?.bank ?? [];
     const equipment = state?.equipment ?? emptyEquipment();
-    this.players.set(id, { id, x, y, facing, path: [], inventory, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, target: null, attackCd: 0, skills, gatherTarget: null, gatherCd: 0, bank, equipment, order: null });
+    this.players.set(id, { id, x, y, facing, path: [], inventory, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, target: null, attackCd: 0, skills, gatherTarget: null, gatherCd: 0, bank, equipment, order: null, trainReadyTick: 0, quests: state?.quests ?? {} });
   }
 
   removePlayer(id: string): void {
@@ -111,7 +115,7 @@ export class GameWorld {
   getPlayerState(id: string): RestoredState | null {
     const p = this.players.get(id);
     if (!p) return null;
-    return { x: p.x, y: p.y, facing: p.facing, inventory: p.inventory, skills: p.skills, bank: p.bank, equipment: p.equipment };
+    return { x: p.x, y: p.y, facing: p.facing, inventory: p.inventory, skills: p.skills, bank: p.bank, equipment: p.equipment, quests: p.quests };
   }
 
   queueMove(id: string, x: number, y: number): void {
@@ -162,6 +166,18 @@ export class GameWorld {
 
   use(playerId: string, action: string, slot: number): void {
     actionSys.use(this, playerId, action, slot);
+  }
+
+  train(playerId: string, recipe: string): void {
+    trainSys.train(this, playerId, recipe);
+  }
+
+  talk(playerId: string, npcId: string): void {
+    questSys.talk(this, playerId, npcId);
+  }
+
+  getQuests(id: string): Record<string, number> {
+    return this.players.get(id)?.quests ?? {};
   }
 
   // --- Banking (delegates to bank-system) ---

@@ -19,6 +19,10 @@ export interface PlayerEntity {
   bank: ItemStack[];
   equipment: Equipment;
   order: ActiveOrder | null;
+  /** Earliest tick a `train` recipe may next run for this player (per-player cooldown gate). */
+  trainReadyTick: number;
+  /** Per-quest progress: questId → current step index (steps.length = complete). */
+  quests: Record<string, number>;
 }
 
 export interface NpcEntity {

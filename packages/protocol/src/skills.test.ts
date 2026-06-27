@@ -29,11 +29,14 @@ test("WOODCUTTING_XP_PER_LOG is a positive number", () => {
   expect(WOODCUTTING_XP_PER_LOG).toBeGreaterThan(0);
 });
 
-test("SKILLS contains all five skill names", () => {
-  expect(SKILLS).toContain("woodcutting");
-  expect(SKILLS).toContain("mining");
-  expect(SKILLS).toContain("fishing");
-  expect(SKILLS).toContain("firemaking");
-  expect(SKILLS).toContain("cooking");
-  expect(SKILLS.length).toBe(5);
+test("SKILLS contains every RuneScape skill", () => {
+  const all: readonly string[] = SKILLS;
+  for (const s of ["woodcutting", "mining", "fishing", "firemaking", "cooking",
+    "attack", "strength", "defence", "hitpoints", "ranged", "prayer", "magic",
+    "runecrafting", "construction", "agility", "herblore", "thieving", "crafting",
+    "fletching", "slayer", "hunter", "smithing", "farming"]) {
+    expect(all).toContain(s);
+  }
+  expect(SKILLS.length).toBe(23);
+  expect(new Set(SKILLS).size).toBe(23); // no duplicates
 });

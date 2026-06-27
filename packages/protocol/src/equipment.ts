@@ -14,6 +14,8 @@ export const EQUIPMENT: Record<string, EquipStats> = {
   bronze_sword:     { slot: "weapon", maxHit: 2 },
   bronze_platebody: { slot: "body",   defence: 2 },
   bronze_shield:    { slot: "shield", defence: 1 },
+  bronze_dagger:    { slot: "weapon", maxHit: 1 },
+  shortbow:         { slot: "weapon", maxHit: 2 },
 };
 
 export const isEquippable = (item: string): boolean =>

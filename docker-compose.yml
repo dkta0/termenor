@@ -1,14 +1,32 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=termenor
+      - POSTGRES_PASSWORD=termenor
+      - POSTGRES_DB=termenor
+    volumes:
+      - termenor-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U termenor"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   server:
     build: .
     ports:
       - "3000:3000"
     environment:
       - PORT=3000
-      - DB_PATH=/app/data/termenor.db
-    volumes:
-      - termenor-data:/app/data
+      # Authoritative persistence in Postgres (the swappable PlayerStore picks it up from
+      # DATABASE_URL). Drop this line to fall back to a SQLite file on a volume.
+      - DATABASE_URL=postgres://termenor:termenor@postgres:5432/termenor
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  termenor-data:
+  termenor-pg:

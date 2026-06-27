@@ -5,7 +5,7 @@ import { levelForXp } from "@termenor/protocol";
 
 function player(): PlayerEntity {
   return { id: "p1", x: 0, y: 0, facing: "south", path: [], inventory: [],
-    hp: 10, maxHp: 10, target: null, attackCd: 0, skills: {}, gatherTarget: null, gatherCd: 0, bank: [], equipment: { weapon: null, body: null, shield: null }, order: null };
+    hp: 10, maxHp: 10, target: null, attackCd: 0, skills: {}, gatherTarget: null, gatherCd: 0, bank: [], equipment: { weapon: null, body: null, shield: null }, order: null, trainReadyTick: 0, quests: {} };
 }
 function events(): GameEvents { return { skillChanged: new Set(), levelUps: [], gatherNotices: [], orderNotices: [] }; }
 

@@ -6,15 +6,26 @@ import { startServer } from "./server";
 // Helpers
 // ---------------------------------------------------------------------------
 
+type Ground = { id: number; item: string; x: number; y: number; qty: number };
+type Player = { id: string; x: number; y: number; facing: string; hp: number; maxHp: number };
+
 /** Open a WebSocket and return a simple promise-based wrapper. */
 function wsClient(port: number): {
   send(data: string): void;
   messages: string[];
   waitForOpen(timeoutMs?: number): Promise<void>;
   waitForMessage(t: string, timeoutMs?: number): Promise<Record<string, unknown>>;
+  groundItems(): Ground[];
+  waitForGround(pred: (g: Ground[]) => boolean, timeoutMs?: number): Promise<Ground[]>;
+  waitForPlayers(pred: (p: Player[]) => boolean, timeoutMs?: number): Promise<Player[]>;
   close(): void;
 } {
   const messages: string[] = [];
+  // Reconstruct ground state from the delta stream, exactly as the real client does.
+  const ground = new Map<number, Ground>();
+  const groundWaiters: Array<{ pred: (g: Ground[]) => boolean; resolve: (g: Ground[]) => void; timer: ReturnType<typeof setTimeout> }> = [];
+  const players = new Map<string, Player>();
+  const playerWaiters: Array<{ pred: (p: Player[]) => boolean; resolve: (p: Player[]) => void; timer: ReturnType<typeof setTimeout> }> = [];
   const ws = new WebSocket(`ws://localhost:${port}`);
   const listeners = new Map<string, Array<(msg: Record<string, unknown>) => void>>();
   let openResolve: (() => void) | null = null;
@@ -28,6 +39,32 @@ function wsClient(port: number): {
     messages.push(raw);
     const obj = JSON.parse(raw) as Record<string, unknown>;
     const t = String(obj.t);
+    if (t === "delta") {
+      const g = obj.ground as { spawns?: Ground[]; updates?: Ground[]; despawns?: number[] };
+      for (const id of g.despawns ?? []) ground.delete(id);
+      for (const e of g.spawns ?? []) ground.set(e.id, e);
+      for (const e of g.updates ?? []) ground.set(e.id, e);
+      const arr = [...ground.values()];
+      for (let i = groundWaiters.length - 1; i >= 0; i--) {
+        if (groundWaiters[i].pred(arr)) {
+          clearTimeout(groundWaiters[i].timer);
+          groundWaiters[i].resolve(arr);
+          groundWaiters.splice(i, 1);
+        }
+      }
+      const pd = obj.players as { spawns?: Player[]; updates?: Player[]; despawns?: string[] };
+      for (const id of pd.despawns ?? []) players.delete(id);
+      for (const e of pd.spawns ?? []) players.set(e.id, e);
+      for (const e of pd.updates ?? []) players.set(e.id, e);
+      const parr = [...players.values()];
+      for (let i = playerWaiters.length - 1; i >= 0; i--) {
+        if (playerWaiters[i].pred(parr)) {
+          clearTimeout(playerWaiters[i].timer);
+          playerWaiters[i].resolve(parr);
+          playerWaiters.splice(i, 1);
+        }
+      }
+    }
     const cbs = listeners.get(t);
     if (cbs && cbs.length > 0) {
       const cb = cbs.shift()!;
@@ -39,6 +76,23 @@ function wsClient(port: number): {
   return {
     send: (d) => ws.send(d),
     messages,
+    groundItems: (): Ground[] => [...ground.values()],
+    waitForGround(pred: (g: Ground[]) => boolean, timeoutMs = 3000): Promise<Ground[]> {
+      return new Promise((resolve, reject) => {
+        const current = [...ground.values()];
+        if (pred(current)) { resolve(current); return; }
+        const timer = setTimeout(() => reject(new Error("timeout waiting for ground condition")), timeoutMs);
+        groundWaiters.push({ pred, resolve, timer });
+      });
+    },
+    waitForPlayers(pred: (p: Player[]) => boolean, timeoutMs = 3000): Promise<Player[]> {
+      return new Promise((resolve, reject) => {
+        const current = [...players.values()];
+        if (pred(current)) { resolve(current); return; }
+        const timer = setTimeout(() => reject(new Error("timeout waiting for players condition")), timeoutMs);
+        playerWaiters.push({ pred, resolve, timer });
+      });
+    },
     waitForOpen(timeoutMs = 3000): Promise<void> {
       return new Promise((resolve, reject) => {
         if (ws.readyState === WebSocket.OPEN) { resolve(); return; }
@@ -218,6 +272,64 @@ test("authenticated player's chat is broadcast as chatMsg to all subscribers", a
   bob.close();
 });
 
+test("a joining player sees an existing player and their movement via deltas", async () => {
+  srv = startServer(0, ":memory:");
+
+  const alice = wsClient(srv.port);
+  await alice.waitForOpen();
+  alice.send(JSON.stringify({ t: "login", username: "alice", password: "pw" }));
+  await alice.waitForMessage("welcome");
+
+  // Bob joins after alice — his full baseline delta must already include alice.
+  const bob = wsClient(srv.port);
+  await bob.waitForOpen();
+  bob.send(JSON.stringify({ t: "login", username: "bob", password: "pw" }));
+  await bob.waitForMessage("welcome");
+
+  const seen = await bob.waitForPlayers((p) => p.some((q) => q.id === "alice"));
+  expect(seen.find((q) => q.id === "alice")!.x).toBeCloseTo(24, 5);
+
+  // Alice walks east; a later delta update must move her in bob's reconstructed world.
+  alice.send(JSON.stringify({ t: "moveTo", x: 27, y: 24 }));
+  const moved = await bob.waitForPlayers((p) => {
+    const a = p.find((q) => q.id === "alice");
+    return a !== undefined && a.x > 24;
+  }, 5000);
+  expect(moved.find((q) => q.id === "alice")!.x).toBeGreaterThan(24);
+
+  alice.close();
+  bob.close();
+}, 10_000);
+
+test("a player leaving the AOI radius despawns, and respawns on return", async () => {
+  srv = startServer(0, ":memory:", { aoiRadius: 5 });
+
+  const alice = wsClient(srv.port);
+  await alice.waitForOpen();
+  alice.send(JSON.stringify({ t: "login", username: "alice", password: "pw" }));
+  await alice.waitForMessage("welcome");
+
+  const bob = wsClient(srv.port);
+  await bob.waitForOpen();
+  bob.send(JSON.stringify({ t: "login", username: "bob", password: "pw" }));
+  await bob.waitForMessage("welcome");
+
+  // Both spawn together at (24,24) → within bob's radius, so bob sees alice.
+  await bob.waitForPlayers((p) => p.some((q) => q.id === "alice"));
+
+  // Alice walks north up the clear x=24 column to (24,14) — Chebyshev 10 from bob,
+  // well past the radius-5 AOI → she is despawned from bob's view.
+  alice.send(JSON.stringify({ t: "moveTo", x: 24, y: 14 }));
+  await bob.waitForPlayers((p) => !p.some((q) => q.id === "alice"), 8000);
+
+  // Alice walks back to spawn → she re-enters bob's AOI and respawns.
+  alice.send(JSON.stringify({ t: "moveTo", x: 24, y: 24 }));
+  await bob.waitForPlayers((p) => p.some((q) => q.id === "alice"), 8000);
+
+  alice.close();
+  bob.close();
+}, 20_000);
+
 test("empty chat (whitespace-only) is dropped — no chatMsg broadcast", async () => {
   srv = startServer(0, ":memory:");
   const alice = wsClient(srv.port);
@@ -291,12 +403,9 @@ test("snapshot carries ground: snapshot includes seeded items", async () => {
   client.send(JSON.stringify({ t: "login", username: "snap_ground_user", password: "pw" }));
   await client.waitForMessage("welcome");
 
-  const snap = await client.waitForMessage("snapshot");
-  const ground = snap.ground as Array<{ item: string; x: number; y: number; qty: number }>;
-  expect(Array.isArray(ground)).toBe(true);
-  // At least one seeded item must be present
+  // The first delta is a full baseline (every entity as a spawn) — seeded ground included.
+  const ground = await client.waitForGround((g) => g.some((it) => it.item === "coins" && it.x === 25 && it.y === 24));
   expect(ground.length).toBeGreaterThanOrEqual(1);
-  // coins at (25,24) should be there
   const coins = ground.find((g) => g.item === "coins" && g.x === 25 && g.y === 24);
   expect(coins).toBeDefined();
   expect(coins!.qty).toBe(25);
@@ -326,11 +435,9 @@ test("pickup: moving onto a seeded item and picking it up fills inventory", asyn
   expect(coinSlot).toBeDefined();
   expect(coinSlot!.qty).toBeGreaterThan(0);
 
-  // Verify coins are gone from ground in the next snapshot
-  const snap = await client.waitForMessage("snapshot", 3000);
-  const ground = snap.ground as Array<{ item: string; x: number; y: number }>;
-  const coinsOnGround = ground.find((g) => g.item === "coins" && g.x === 25 && g.y === 24);
-  expect(coinsOnGround).toBeUndefined();
+  // Picked-up coins are despawned in a subsequent delta.
+  const ground = await client.waitForGround((g) => !g.some((it) => it.item === "coins" && it.x === 25 && it.y === 24));
+  expect(ground.find((g) => g.item === "coins" && g.x === 25 && g.y === 24)).toBeUndefined();
 
   client.close();
 }, 10_000);
@@ -364,11 +471,9 @@ test("drop: dropping an item puts it back on ground at player's tile", async () 
   const slotsAfterDrop = invAfterDrop.slots as Array<{ item: string; qty: number } | null>;
   expect(slotsAfterDrop[logSlotIdx]).toBeNull();
 
-  // Dropped item appears in ground in the next snapshot
-  const snap = await client.waitForMessage("snapshot", 3000);
-  const ground = snap.ground as Array<{ item: string; x: number; y: number }>;
-  const logsOnGround = ground.find((g) => g.item === "logs" && g.x === 23 && g.y === 24);
-  expect(logsOnGround).toBeDefined();
+  // Dropped logs appear as a spawn in a subsequent delta.
+  const ground = await client.waitForGround((g) => g.some((it) => it.item === "logs" && it.x === 23 && it.y === 24));
+  expect(ground.find((g) => g.item === "logs" && g.x === 23 && g.y === 24)).toBeDefined();
 
   client.close();
 }, 10_000);
@@ -460,3 +565,17 @@ test("login mode with wrong password returns loginError 'wrong password'", async
   expect(String(err.reason)).toMatch(/wrong password/i);
   c2.close();
 });
+
+test("walking onto a portal sends a zone message carrying the new map", async () => {
+  srv = startServer(0, ":memory:");
+  const c = wsClient(srv.port);
+  await c.waitForOpen();
+  c.send(JSON.stringify({ t: "login", username: "traveler", password: "pw" }));
+  await c.waitForMessage("welcome");
+  // Walk onto the overworld portal at (30,30) → cave.
+  c.send(JSON.stringify({ t: "moveTo", x: 30, y: 30 }));
+  const zone = await c.waitForMessage("zone", 8000);
+  expect(zone.zone).toBe("cave");
+  expect((zone.map as { width: number }).width).toBe(24); // cave map is 24 wide
+  c.close();
+}, 12_000);
