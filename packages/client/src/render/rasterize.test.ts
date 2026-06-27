@@ -104,8 +104,8 @@ test("rasterizeIso with no npcs produces no NPC pixels", () => {
 const localPixels = (f: ReturnType<typeof rasterizeIso>) =>
   f.buf.kinds.reduce((n, k) => n + (k === Kind.LOCAL ? 1 : 0), 0);
 
-// drawBillboard plots W=2 × H=4 = 8 pixels; on flat ground none should be clipped.
-const FULL_BILLBOARD = 8;
+// drawBillboard plots the player south frame = 58 opaque pixels; on flat ground none clipped.
+const FULL_BILLBOARD = 58;
 const big = (n: number): MapData => ({ width: n, height: n, tiles: new Array(n * n).fill(0), heights: new Array(n * n).fill(0) });
 // center a 32×32 viewport on tile (px,py) at h=0 — tileToScreen: sx=(x-y)*4, sy=(x+y)*2
 const centeredOn = (map: MapData, players: RenderPlayer[], px: number, py: number) =>

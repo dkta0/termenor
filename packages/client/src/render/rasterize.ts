@@ -8,11 +8,11 @@ import { shade } from "./shade";
 
 type RGB = [number, number, number];
 
-const GROUND_RGB: RGB = [46, 88, 46];
+const GROUND_RGB: RGB = [70, 112, 50];
 const WALL_RGB: RGB = [122, 112, 96];
 const PLAYER_RGB: RGB = [80, 140, 255]; // exact colors the PTY check asserts
 const LOCAL_RGB: RGB = [255, 210, 60];
-const SHADOW_RGB: RGB = [14, 28, 14];
+const SHADOW_RGB: RGB = [18, 34, 18];
 const WALL_RISE = 3; // height units a blocked tile extrudes upward
 
 // Depth = x + y; higher wins the depth test. Floor tiles use x+y exactly, so an
@@ -118,7 +118,7 @@ function drawBillboard(
   const bb: BillboardModel = model && model.kind === "billboard"
     ? model
     : { kind: "billboard", palette: { X: rgb }, facings: { south: ["XX", "XX", "XX", "XX"] } };
-  const { H, W, pixels } = resolveBillboard(bb, facing, now, rgb);
+  const { H, W, pixels } = resolveBillboard(bb, facing, now, rgb, isMoving);
 
   let bobY = 0;
   let swayX = 0;
@@ -180,6 +180,39 @@ function drawHpBar(f: IsoFrame, cx: number, cyFeet: number, depth: number, hp: n
 }
 
 /**
+ * Per-map render constants that never change after join: the painter draw order
+ * (tile indices sorted back-to-front by x+y) and the set of tiles owned by a block
+ * scenery (where the generic grey wall block is suppressed). Both depend only on the
+ * map, so we compute them once and cache by map identity instead of rebuilding +
+ * re-sorting all tiles every frame. The WeakMap evicts automatically if the map
+ * object is replaced (e.g. a future streamed/large world), so nothing leaks.
+ */
+interface MapPrecomp { order: number[]; sceneryTiles: Set<number>; }
+const mapPrecompCache = new WeakMap<MapData, MapPrecomp>();
+
+function mapPrecomp(map: MapData): MapPrecomp {
+  const cached = mapPrecompCache.get(map);
+  if (cached) return cached;
+
+  const sceneryTiles = new Set<number>();
+  for (const sc of map.scenery ?? []) {
+    const model = MODELS[sc.model];
+    if (model?.kind !== "block") continue;
+    for (let r = 0; r < model.footprint.length; r++)
+      for (let c = 0; c < model.footprint[r].length; c++)
+        if (model.footprint[r][c] !== ".") sceneryTiles.add((sc.y + r) * map.width + (sc.x + c));
+  }
+
+  const order: number[] = [];
+  for (let i = 0; i < map.tiles.length; i++) order.push(i);
+  order.sort((a, b) => (Math.floor(a / map.width) + (a % map.width)) - (Math.floor(b / map.width) + (b % map.width)));
+
+  const precomp: MapPrecomp = { order, sceneryTiles };
+  mapPrecompCache.set(map, precomp);
+  return precomp;
+}
+
+/**
  * Rasterize the world isometrically. `camOx/camOy` is the screen-pixel offset of the
  * viewport top-left (can be negative). Tiles draw back-to-front; entities draw after,
  * depth-tested → walk-behind occlusion.
@@ -194,20 +227,8 @@ export function rasterizeIso(
 ): IsoFrame {
   const f = newIsoFrame(pxW, pxH);
 
-  // tiles owned by a block scenery — suppress the generic grey wall block there
-  const sceneryTiles = new Set<number>();
-  for (const sc of map.scenery ?? []) {
-    const model = MODELS[sc.model];
-    if (model?.kind !== "block") continue;
-    for (let r = 0; r < model.footprint.length; r++)
-      for (let c = 0; c < model.footprint[r].length; c++)
-        if (model.footprint[r][c] !== ".") sceneryTiles.add((sc.y + r) * map.width + (sc.x + c));
-  }
-
-  // tiles, painter order (ascending x+y)
-  const order: number[] = [];
-  for (let i = 0; i < map.tiles.length; i++) order.push(i);
-  order.sort((a, b) => (Math.floor(a / map.width) + (a % map.width)) - (Math.floor(b / map.width) + (b % map.width)));
+  // Painter order + block-scenery tiles are static per map — computed once, cached.
+  const { order, sceneryTiles } = mapPrecomp(map);
 
   for (const i of order) {
     const x = i % map.width, y = Math.floor(i / map.width);
@@ -215,8 +236,13 @@ export function rasterizeIso(
     const s = tileToScreen(x, y, h);
     const cx = s.sx - camOx, cy = s.sy - camOy;
     const depth = x + y; // higher x+y = lower on screen = nearer viewer (front) wins depth test
-    const tint = Math.min(1.4, 1 + h * 0.06);
-    const ground: RGB = [Math.round(GROUND_RGB[0] * tint), Math.round(GROUND_RGB[1] * tint), Math.round(GROUND_RGB[2] * tint)];
+    const heightTint = Math.min(1.4, 1 + h * 0.06);
+    const grassTile = map.tiles[i] !== 1;
+    // subtle per-tile variation so grass reads as textured turf, not a flat slab
+    const checker = grassTile && (((x + y) & 1) === 0) ? 1.08 : 1;
+    const jitter = grassTile ? 1 + (((x * 7 + y * 13) % 5) - 2) * 0.02 : 1;
+    const m = heightTint * checker * jitter;
+    const ground: RGB = [Math.min(255, Math.round(GROUND_RGB[0] * m)), Math.min(255, Math.round(GROUND_RGB[1] * m)), Math.min(255, Math.round(GROUND_RGB[2] * m))];
     fillDiamond(f, cx, cy, depth, Kind.FLOOR, ground, i);
     if (map.tiles[i] === 1 && !sceneryTiles.has(i)) drawBlock(f, cx, cy, depth + WALL_DEPTH_BIAS, i);
     else if (map.tiles[i] !== 1) drawSkirt(f, cx, cy, ELEV_PX, shade(ground, "left"), depth, i); // fill elevation steps

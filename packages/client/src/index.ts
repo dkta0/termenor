@@ -1,10 +1,16 @@
+#!/usr/bin/env bun
 import { GameState } from "./game-state";
 import { ChatState } from "./chat";
 import { Connection } from "./connection";
 import { startRenderer } from "./render/renderer";
 import { runLogin } from "./render/login";
+import { resolveServerUrl, HELP_TEXT, VERSION } from "./config";
 
-const url = process.env.SERVER_URL ?? process.argv[2] ?? "ws://localhost:3000";
+const args = process.argv.slice(2);
+if (args.includes("--help") || args.includes("-h")) { console.log(HELP_TEXT); process.exit(0); }
+if (args.includes("--version") || args.includes("-v")) { console.log(VERSION); process.exit(0); }
+
+const url = resolveServerUrl(args);
 
 const state = new GameState();
 const chatState = new ChatState();

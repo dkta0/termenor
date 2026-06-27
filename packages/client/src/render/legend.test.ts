@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
 import { legendLines } from "./legend";
 
-const PLAY_HINT = "[move] arrows/click   [/] command   [Enter] chat";
-const DIRECT_HINT = "[Esc] play   ·   type to chat, /verb for commands";
+const PLAY_HINT = "[click] move · act    [/] command    [?] help";
+const DIRECT_HINT = "[Esc] back  ·  type to chat, /verb for commands";
 
 test("direct mode shows only the exit/usage hint", () => {
   expect(
@@ -10,20 +10,23 @@ test("direct mode shows only the exit/usage hint", () => {
   ).toEqual([DIRECT_HINT]);
 });
 
-test("play mode with nothing actionable shows just the persistent hint", () => {
+test("play mode with nothing nearby shows just the standing hint", () => {
   expect(
     legendLines({ mode: "play", nearestEnemy: null, nearestResource: null, itemUnderfoot: null }),
   ).toEqual([PLAY_HINT]);
 });
 
-test("play mode lists only the contextual actions that are available", () => {
-  expect(
-    legendLines({ mode: "play", nearestEnemy: "Goblin", nearestResource: null, itemUnderfoot: null }),
-  ).toEqual(["[a] attack Goblin", PLAY_HINT]);
-});
-
-test("play mode orders actions attack, gather, pickup, then the hint", () => {
+test("play mode shows a single context cue, enemy taking priority", () => {
   expect(
     legendLines({ mode: "play", nearestEnemy: "Goblin", nearestResource: "Tree", itemUnderfoot: "Logs" }),
-  ).toEqual(["[a] attack Goblin", "[c] gather Tree", "[g] pick up Logs", PLAY_HINT]);
+  ).toEqual(["click Goblin to fight", PLAY_HINT]);
+});
+
+test("play mode falls back to resource, then item, for the cue", () => {
+  expect(
+    legendLines({ mode: "play", nearestEnemy: null, nearestResource: "Tree", itemUnderfoot: "Logs" }),
+  ).toEqual(["click Tree to gather", PLAY_HINT]);
+  expect(
+    legendLines({ mode: "play", nearestEnemy: null, nearestResource: null, itemUnderfoot: "Logs" }),
+  ).toEqual(["click Logs to grab", PLAY_HINT]);
 });

@@ -79,6 +79,13 @@ def main():
         clicks += sgr_click(cx + dx, cy + dy)
     moved = drain([fdA, fdB], 4.0, feed=(fdB, clicks))
 
+    # --- Side panel: click the Skills tab; confirm it renders skill rows ---
+    PANEL_COLS = min(28, max(0, COLS - 20))    # mirrors the renderer
+    panel_col = COLS - PANEL_COLS               # 0-based left edge of the panel
+    skills_col0 = panel_col + 1 + len("Inv") + 2  # 0-based start of the "Skills" label
+    click_col = skills_col0 + 2                 # 0-based, mid-label
+    tabbed = drain([fdA, fdB], 1.5, feed=(fdB, sgr_click(click_col + 1, 1)))  # SGR is 1-based
+
     for pid in (pidB, pidA):
         try: os.kill(pid, signal.SIGTERM)
         except OSError: pass
@@ -89,6 +96,8 @@ def main():
 
     a_base, a_moved = bytes(base[fdA]), bytes(moved[fdA])
     b_base, b_moved = bytes(base[fdB]), bytes(moved[fdB])
+    b_tab = bytes(tabbed[fdB])
+    skills_panel = b"Strength" in b_tab  # the Skills tab lists skill rows
 
     # Mover moving pans its camera → whole-screen repaints → output volume
     # balloons well past an idle baseline (clicks that never fire stay flat).
@@ -99,6 +108,7 @@ def main():
     checks = {
         "mover output balloons after clicks (camera panned → player moved)": mover_jumped,
         "observer frames change after mover relocates": observer_changed,
+        "skills tab renders skill rows when clicked": skills_panel,
     }
     print(f"mover bytes: base={len(b_base)} moved={len(b_moved)}  "
           f"observer bytes: base={len(a_base)} moved={len(a_moved)}")

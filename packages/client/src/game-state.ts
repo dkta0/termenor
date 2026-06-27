@@ -1,5 +1,5 @@
-import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, NpcState, ResourceState, ShopEntry, Equipment } from "@termenor/protocol";
-import { SPLAT_MS, SKILLS, type HitEvent } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, DeltaMsg, EntityDelta, GroundItem, ItemStack, NpcState, ResourceState, ShopEntry, Equipment } from "@termenor/protocol";
+import { SPLAT_MS, type HitEvent } from "@termenor/protocol";
 
 /**
  * How far behind real time we render. ~1.5 server ticks at 15 Hz (~66.7 ms/tick),
@@ -31,11 +31,33 @@ export class GameState {
   shop: { shopId: string; name: string; entries: ShopEntry[] } | null = null;
   shopOpen = false;
   equipment: Equipment = { weapon: null, body: null, shield: null };
-  equipOpen = false;
   private frames: Frame[] = []; // chronological, oldest → newest
   private splats: Splat[] = [];
+  // Running authoritative world, rebuilt incrementally from each delta. Frames for
+  // interpolation are materialized as copies of players/npcs so past frames stay immutable.
+  private world = {
+    players: new Map<string, PlayerState>(),
+    npcs: new Map<string, NpcState>(),
+    ground: new Map<number, GroundItem>(),
+    resources: new Map<string, ResourceState>(),
+  };
 
   setMap(map: MapData): void { this.map = map; }
+  /**
+   * Switch to a new zone: swap the rendered map and drop all old-zone entity/interpolation
+   * state so the next (baseline) delta repopulates cleanly with the new zone's entities.
+   */
+  enterZone(map: MapData): void {
+    this.map = map;
+    this.world.players.clear();
+    this.world.npcs.clear();
+    this.world.ground.clear();
+    this.world.resources.clear();
+    this.frames = [];
+    this.splats = [];
+    this.ground = [];
+    this.resources = [];
+  }
   setLocalId(id: string): void { this.localId = id; }
   setInventory(slots: (ItemStack | null)[]): void { this.inventory = slots; }
   setSkills(s: Record<string, { xp: number; level: number }>): void { this.skills = s; }
@@ -47,8 +69,6 @@ export class GameState {
   }
   closeShop(): void { this.shopOpen = false; }
   setEquipment(eq: Equipment): void { this.equipment = eq; }
-  toggleEquip(): void { this.equipOpen = !this.equipOpen; }
-  closeEquip(): void { this.equipOpen = false; }
 
   /** Id of the nearest visible resource of `type` to the local player, or null. */
   nearestResourceOfType(type: string, now: number): string | null {
@@ -65,36 +85,24 @@ export class GameState {
     return bestId;
   }
 
-  applySnapshot(snap: SnapshotMsg, now: number): void {
-    const players = new Map(snap.players.map((p) => [p.id, p]));
-    const npcs = new Map(snap.npcs.map((n) => [n.id, n]));
-    this.frames.push({ time: now, players, npcs });
+  applyDelta(delta: DeltaMsg, now: number): void {
+    applyEntityDelta(this.world.players, delta.players);
+    applyEntityDelta(this.world.npcs, delta.npcs);
+    applyEntityDelta(this.world.ground, delta.ground);
+    applyEntityDelta(this.world.resources, delta.resources);
+    // Materialize a complete frame for the interpolation buffer (copy: later deltas
+    // replace entries with new objects, so copied maps keep earlier frames intact).
+    this.frames.push({ time: now, players: new Map(this.world.players), npcs: new Map(this.world.npcs) });
     if (this.frames.length > MAX_FRAMES) this.frames.shift();
-    this.ground = snap.ground;
-    this.resources = snap.resources;
-    for (const h of snap.hits) this.splats.push({ targetId: h.targetId, amount: h.amount, expires: now + SPLAT_MS });
+    this.ground = [...this.world.ground.values()];
+    this.resources = [...this.world.resources.values()];
+    for (const h of delta.hits) this.splats.push({ targetId: h.targetId, amount: h.amount, expires: now + SPLAT_MS });
   }
 
   /** Return resources with elevation attached (same pattern as sampleNpcs). */
   sampleResources(): (ResourceState & { h: number })[] {
     const map = this.map;
     return this.resources.map((r) => ({ ...r, h: map ? sampleElevation(map, r.x, r.y) : 0 }));
-  }
-
-  /** Skills HUD line for the woodcutting skill (kept for back-compat). */
-  skillsLine(): string {
-    return `Woodcutting: ${this.skills.woodcutting?.level ?? 1} (${this.skills.woodcutting?.xp ?? 0} xp)`;
-  }
-
-  /** One line per skill in SKILLS order, e.g. "Mining: 1 (50 xp)". */
-  skillsLines(): string[] {
-    return SKILLS.map((name) => {
-      const capitalized = name.charAt(0).toUpperCase() + name.slice(1);
-      const entry = this.skills[name];
-      const level = entry?.level ?? 1;
-      const xp = entry?.xp ?? 0;
-      return `${capitalized}: ${level} (${xp} xp)`;
-    });
   }
 
   /** Index of the first inventory slot whose item matches `item`, or -1. */
@@ -240,4 +248,11 @@ export function sampleElevation(map: MapData, x: number, y: number): number {
   const top = at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx;
   const bot = at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx;
   return top * (1 - fy) + bot * fy;
+}
+
+/** Apply one category's delta to a running world map: despawn, then spawn/update (full records). */
+function applyEntityDelta<S extends { id: string | number }>(world: Map<S["id"], S>, d: EntityDelta<S>): void {
+  for (const id of d.despawns) world.delete(id);
+  for (const e of d.spawns) world.set(e.id, e);
+  for (const e of d.updates) world.set(e.id, e);
 }

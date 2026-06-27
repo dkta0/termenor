@@ -203,15 +203,33 @@ export class Connection {
       pending?.({ ok: true });
       this.state.setLocalId(msg.playerId);
       this.state.setMap(msg.map);
-      // seed initial position so renderer has a starting frame before first snapshot
-      this.state.applySnapshot(
-        { t: "snapshot", tick: 0,
-          players: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP }],
-          ground: [], npcs: [], hits: [], resources: [] },
+      // Seed the local player so the renderer has a frame before the first delta.
+      this.state.applyDelta(
+        { t: "delta", tick: 0,
+          players: { spawns: [{ id: msg.playerId, x: msg.x, y: msg.y, facing: msg.facing, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP }], updates: [], despawns: [] },
+          npcs: { spawns: [], updates: [], despawns: [] },
+          ground: { spawns: [], updates: [], despawns: [] },
+          resources: { spawns: [], updates: [], despawns: [] },
+          hits: [] },
         this.now(),
       );
-    } else if (msg.t === "snapshot") {
-      this.state.applySnapshot(msg, this.now());
+    } else if (msg.t === "zone") {
+      this.state.enterZone(msg.map);
+      // Re-seed the local player so the renderer has a frame before the first delta in the new zone.
+      const id = this.state.localId;
+      if (id) {
+        this.state.applyDelta(
+          { t: "delta", tick: 0,
+            players: { spawns: [{ id, x: msg.x, y: msg.y, facing: msg.facing, hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP }], updates: [], despawns: [] },
+            npcs: { spawns: [], updates: [], despawns: [] },
+            ground: { spawns: [], updates: [], despawns: [] },
+            resources: { spawns: [], updates: [], despawns: [] },
+            hits: [] },
+          this.now(),
+        );
+      }
+    } else if (msg.t === "delta") {
+      this.state.applyDelta(msg, this.now());
     } else if (msg.t === "chatMsg") {
       this.onChatMsg(msg.from, msg.text);
     } else if (msg.t === "inventory") {

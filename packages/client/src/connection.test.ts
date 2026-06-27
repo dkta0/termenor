@@ -56,10 +56,17 @@ test("welcome populates map and local id", () => {
   expect(gs.map?.width).toBe(3);
 });
 
-test("snapshot is applied to game-state", () => {
+test("delta is applied to game-state", () => {
   const { sock, gs, advance } = setup();
   sock.fireOpen();
-  sock.fireMessage(encode({ t: "snapshot", tick: 1, players: [{ id: "me", x: 1, y: 0, facing: "east", hp: 10, maxHp: 10 }], ground: [], npcs: [], hits: [], resources: [] }));
+  sock.fireMessage(encode({
+    t: "delta", tick: 1,
+    players: { spawns: [{ id: "me", x: 1, y: 0, facing: "east", hp: 10, maxHp: 10 }], updates: [], despawns: [] },
+    npcs: { spawns: [], updates: [], despawns: [] },
+    ground: { spawns: [], updates: [], despawns: [] },
+    resources: { spawns: [], updates: [], despawns: [] },
+    hits: [],
+  }));
   advance(200);
   const players = gs.samplePositions(1200);
   expect(players[0].id).toBe("me");

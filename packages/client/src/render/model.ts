@@ -7,10 +7,11 @@ import { plot, type IsoFrame } from "./rasterize";
 /** Resolve a billboard model's glyph grid to a flat pixel array (row-major, top row
  *  first). null = transparent (skipped by the plotter). `tint` fills any "tint" glyph. */
 export function resolveBillboard(
-  m: BillboardModel, facing: Facing, now: number, tint: RGB,
+  m: BillboardModel, facing: Facing, now: number, tint: RGB, moving = false,
 ): { H: number; W: number; pixels: (RGB | null)[] } {
   let rows = m.facings[facing] ?? m.facings.south;
   if (m.anim === "flicker" && m.flickerAlt && Math.floor(now / (m.flickerMs ?? 150)) % 2 === 1) rows = m.flickerAlt;
+  else if (moving && m.walk && Math.floor(now / 160) % 2 === 1) rows = m.walk[facing] ?? m.walk.south;
   const tint2: RGB = [Math.round(tint[0] * 0.8), Math.round(tint[1] * 0.8), Math.round(tint[2] * 0.8)];
   const H = rows.length, W = rows[0].length;
   const pixels: (RGB | null)[] = [];

@@ -1,5 +1,6 @@
 import type { Intent, StopCondition } from "@termenor/protocol";
 import type { ItemStack, Equipment } from "@termenor/protocol";
+import { RECIPES, isRecipe } from "@termenor/protocol";
 
 export interface EntityRef { id: string; type: string; name: string; x: number; y: number; }
 
@@ -136,6 +137,28 @@ export const COMMANDS: CommandSpec[] = [
       const action = args[0];
       const slot = matchInventorySlot(args.slice(1).join(" "), ctx.inventory, ctx.itemName);
       return slot >= 0 ? ok({ kind: "use", action, slot }) : err(`no "${args.slice(1).join(" ")}" in your inventory`);
+    },
+  },
+  {
+    verbs: ["train", "make", "craft"],
+    help: "train <recipe|skill> — e.g. `train agility`, `make bronze bar`, `train bury bones`",
+    parse: (args) => {
+      if (args.length === 0) return err("train what? e.g. `train agility` or `make bronze bar`");
+      const q = args.join(" ").toLowerCase().trim();
+      const key = q.replace(/\s+/g, "_");
+      if (isRecipe(key)) return ok({ kind: "train", recipe: key });
+      const ids = Object.keys(RECIPES);
+      const hit = ids.find((id) => id.includes(key)) ?? ids.find((id) => RECIPES[id].skill === q);
+      return hit ? ok({ kind: "train", recipe: hit }) : err(`don't know how to make "${q}" — try "smith bronze bar" or a skill like "agility"`);
+    },
+  },
+  {
+    verbs: ["talk", "speak"],
+    help: "talk <npc> — talk to the named NPC (quests)",
+    parse: (args, ctx) => {
+      if (args.length === 0) return err("talk to whom? e.g. `talk cook`");
+      const target = matchEntity(args.join(" "), ctx.npcs, ctx.player);
+      return target ? ok({ kind: "talk", targetId: target.id }) : err(`no one matching "${args.join(" ")}" nearby`);
     },
   },
   {
