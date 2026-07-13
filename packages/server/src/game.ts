@@ -2,7 +2,7 @@ import type { Facing, MapData, PlayerState, SnapshotMsg, GroundItem, ItemStack, 
 import { NPC_KINDS, PLAYER_MAX_HP, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURCE_RESPAWN_TICKS, levelForXp, RESOURCE_KINDS, SKILLS, SHOPS, emptyEquipment } from "@termenor/protocol";
 import { type Point } from "./pathfinding";
 import { emptyInventory, addToInventory } from "./inventory";
-import type { PlayerEntity, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
+import type { PlayerEntity, PlayerTransferState, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
 import type { FactDraft, GameplayFact } from "./gameplay-facts";
 import * as invSys from "./inventory-system";
 import * as moveSys from "./movement-system";
@@ -93,6 +93,26 @@ export class GameWorld {
 
   removePlayer(id: string): void {
     this.players.delete(id);
+  }
+
+  removePlayerForTransfer(id: string): PlayerTransferState | null {
+    const player = this.players.get(id);
+    if (!player) return null;
+    this.players.delete(id);
+    const { id: _id, ...state } = player;
+    return structuredClone(state);
+  }
+
+  addTransferredPlayer(id: string, state: PlayerTransferState, x: number, y: number): void {
+    this.players.set(id, {
+      ...state,
+      id,
+      x,
+      y,
+      path: [],
+      target: null,
+      gatherTarget: null,
+    });
   }
 
   spawnNpc(type: string, x: number, y: number, radius: number): void {

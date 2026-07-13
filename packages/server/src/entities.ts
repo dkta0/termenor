@@ -26,6 +26,9 @@ export interface PlayerEntity {
   quests: Record<string, number>;
 }
 
+/** Complete mutable Player state carried between Zone-local GameWorld instances. */
+export interface PlayerTransferState extends Omit<PlayerEntity, "id"> {}
+
 export interface NpcEntity {
   id: string; type: string; x: number; y: number; facing: Facing; path: Point[];
   home: Point; radius: number; nextWanderTick: number;
