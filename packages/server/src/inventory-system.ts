@@ -1,4 +1,5 @@
 import { addToInventory, removeSlot } from "./inventory";
+import { emitFact } from "./gameplay-facts";
 import type { GameWorld } from "./game";
 
 export function addGroundItem(w: GameWorld, item: string, qty: number, x: number, y: number): void {
@@ -52,6 +53,12 @@ export function drop(w: GameWorld, id: string, slot: number): boolean {
     qty: removed.qty,
     x: Math.round(p.x),
     y: Math.round(p.y),
+  });
+  emitFact(w, {
+    kind: "inventoryActionPerformed",
+    playerId: id,
+    action: "drop",
+    item: removed.item,
   });
   return true;
 }

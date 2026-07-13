@@ -3,6 +3,7 @@ import { addToInventory } from "./inventory";
 import { isAdjacent } from "./combat";
 import { stepToward } from "./movement-system";
 import { awardXp } from "./skills-system";
+import { emitFact } from "./gameplay-facts";
 import type { GameWorld } from "./game";
 import type { PlayerEntity } from "./entities";
 
@@ -38,7 +39,7 @@ export function stepGather(w: GameWorld): void {
           continue;
         }
         p.inventory = slots;
-        awardXp(w.events, p, cfg.skill, cfg.xp);
+        awardXp(w, p, cfg.skill, cfg.xp);
         p.gatherCd = cfg.cooldownTicks;
         if (!cfg.infinite) {
           res.charges--;
@@ -50,6 +51,13 @@ export function stepGather(w: GameWorld): void {
             }
           }
         }
+        emitFact(w, {
+          kind: "resourceGathered",
+          playerId: p.id,
+          resourceType: res.type,
+          item: cfg.yield,
+          qty: 1,
+        });
       }
     } else {
       stepToward(w, p, res.x, res.y);

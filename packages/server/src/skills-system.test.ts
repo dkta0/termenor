@@ -1,26 +1,36 @@
 import { test, expect } from "bun:test";
 import { awardXp } from "./skills-system";
-import type { PlayerEntity, GameEvents } from "./entities";
-import { levelForXp } from "@termenor/protocol";
+import { GameWorld } from "./game";
+import { levelForXp, type MapData } from "@termenor/protocol";
 
-function player(): PlayerEntity {
-  return { id: "p1", x: 0, y: 0, facing: "south", path: [], inventory: [],
-    hp: 10, maxHp: 10, target: null, attackCd: 0, skills: {}, gatherTarget: null, gatherCd: 0, bank: [], equipment: { weapon: null, body: null, shield: null }, order: null, trainReadyTick: 0, quests: {} };
-}
-function events(): GameEvents { return { skillChanged: new Set(), levelUps: [], gatherNotices: [], orderNotices: [] }; }
+const MAP: MapData = { width: 1, height: 1, tiles: [0], heights: [0] };
 
-test("awardXp adds xp and marks the player changed", () => {
-  const p = player(); const ev = events();
-  awardXp(ev, p, "mining", 50);
-  expect(p.skills.mining).toBe(50);
-  expect(ev.skillChanged.has("p1")).toBe(true);
+test("awardXp adds xp, marks the player changed, and emits an XP fact", () => {
+  const world = new GameWorld(MAP, { x: 0, y: 0 });
+  world.addPlayer("p1", { x: 0, y: 0, facing: "south" });
+  const player = world.players.get("p1")!;
+
+  awardXp(world, player, "mining", 50);
+
+  expect(player.skills.mining).toBe(50);
+  expect(world.events.skillChanged.has("p1")).toBe(true);
+  expect(world.consumeFacts()).toEqual([
+    { kind: "skillXpGained", playerId: "p1", skill: "mining", amount: 50, tick: 0, sequence: 0 },
+  ]);
 });
 
-test("awardXp records a level-up when the level increases", () => {
-  const p = player(); const ev = events();
-  const enough = 200; // enough to cross level 1->2 per xp table
-  awardXp(ev, p, "mining", enough);
-  if (levelForXp(enough) > levelForXp(0)) {
-    expect(ev.levelUps.some((l) => l.id === "p1" && l.skill === "mining")).toBe(true);
-  }
+test("awardXp records and emits a level-up when the level increases", () => {
+  const world = new GameWorld(MAP, { x: 0, y: 0 });
+  world.addPlayer("p1", { x: 0, y: 0, facing: "south" });
+  const player = world.players.get("p1")!;
+  const enough = 200;
+  const level = levelForXp(enough);
+
+  awardXp(world, player, "mining", enough);
+
+  expect(world.events.levelUps).toContainEqual({ id: "p1", skill: "mining", level });
+  expect(world.consumeFacts()).toEqual([
+    { kind: "skillXpGained", playerId: "p1", skill: "mining", amount: enough, tick: 0, sequence: 0 },
+    { kind: "skillLevelGained", playerId: "p1", skill: "mining", level, tick: 0, sequence: 1 },
+  ]);
 });

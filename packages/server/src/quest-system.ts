@@ -1,6 +1,7 @@
 import { QUESTS, questGivenBy, type QuestDef } from "@termenor/protocol";
 import { countItem, removeItems, addToInventory } from "./inventory";
 import { awardXp } from "./skills-system";
+import { emitFact } from "./gameplay-facts";
 import type { GameWorld } from "./game";
 import type { PlayerEntity } from "./entities";
 
@@ -15,7 +16,10 @@ export function talk(w: GameWorld, playerId: string, npcId: string): void {
   const npc = w.npcs.find((n) => n.id === npcId && n.respawnAt < 0);
   if (!npc) return;
 
-  if (advanceInProgress(w, p, npc.type)) return;
+  if (advanceInProgress(w, p, npc.type)) {
+    emitFact(w, { kind: "playerTalked", playerId: p.id, npcType: npc.type });
+    return;
+  }
 
   // Otherwise, this NPC may start a quest the player hasn't begun.
   const giver = questGivenBy(npc.type);
@@ -27,6 +31,7 @@ export function talk(w: GameWorld, playerId: string, npcId: string): void {
       notify(w, p.id, `Quest started — ${giver.name}: ${giver.steps[1].text}`);
     }
   }
+  emitFact(w, { kind: "playerTalked", playerId: p.id, npcType: npc.type });
 }
 
 function advanceInProgress(w: GameWorld, p: PlayerEntity, npcType: string): boolean {
@@ -56,7 +61,7 @@ function advanceInProgress(w: GameWorld, p: PlayerEntity, npcType: string): bool
 }
 
 function completeQuest(w: GameWorld, p: PlayerEntity, q: QuestDef): void {
-  for (const r of q.reward.xp ?? []) awardXp(w.events, p, r.skill, r.amount);
+  for (const r of q.reward.xp ?? []) awardXp(w, p, r.skill, r.amount);
   for (const item of q.reward.items ?? []) {
     const { slots, leftover } = addToInventory(p.inventory, item);
     if (leftover === null) p.inventory = slots;

@@ -3,6 +3,7 @@ import { NPC_KINDS, PLAYER_MAX_HP, WOODCUTTING_XP_PER_LOG, TREE_CHARGES, RESOURC
 import { type Point } from "./pathfinding";
 import { emptyInventory, addToInventory } from "./inventory";
 import type { PlayerEntity, NpcEntity, ResourceEntity, FireEntity, GameEvents } from "./entities";
+import type { FactDraft, GameplayFact } from "./gameplay-facts";
 import * as invSys from "./inventory-system";
 import * as moveSys from "./movement-system";
 import * as combatSys from "./combat-system";
@@ -50,7 +51,14 @@ export class GameWorld {
   resources: ResourceEntity[] = [];
   fires: FireEntity[] = [];
   nextResourceId = 1;
-  events: GameEvents = { skillChanged: new Set(), levelUps: [], gatherNotices: [], orderNotices: [] };
+  events: GameEvents = {
+    skillChanged: new Set(),
+    levelUps: [],
+    gatherNotices: [],
+    orderNotices: [],
+    facts: [],
+    factSequence: 0,
+  };
   /** @internal — in-memory shop stock; a deep copy of the SHOPS catalog so stock mutates without touching the imported constant. Read/written by shop-system. */
   shops: Record<string, { name: string; entries: ShopEntry[] }>;
 
@@ -213,7 +221,12 @@ export class GameWorld {
     return equipSys.getEquipment(this, id);
   }
   equip(id: string, invSlot: number): boolean {
-    return equipSys.equip(this, id, invSlot);
+    const item = this.players.get(id)?.inventory[invSlot]?.item;
+    const changed = equipSys.equip(this, id, invSlot);
+    if (changed && item) {
+      this.emitFact({ kind: "inventoryActionPerformed", playerId: id, action: "equip", item });
+    }
+    return changed;
   }
   unequip(id: string, equipIndex: number): boolean {
     return equipSys.unequip(this, id, equipIndex);
@@ -228,6 +241,17 @@ export class GameWorld {
       result[skill] = { xp, level: levelForXp(xp) };
     }
     return result;
+  }
+
+  emitFact(draft: FactDraft): void {
+    this.events.facts.push({ ...draft, tick: this.tick, sequence: this.events.factSequence++ });
+  }
+
+  consumeFacts(): GameplayFact[] {
+    const facts = this.events.facts;
+    this.events.facts = [];
+    this.events.factSequence = 0;
+    return facts;
   }
 
   consumeSkillChanges(): string[] {

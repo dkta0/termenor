@@ -1,5 +1,6 @@
 import type { Facing, ItemStack, Equipment, StopCondition } from "@termenor/protocol";
 import type { Point } from "./pathfinding";
+import type { GameplayFact } from "./gameplay-facts";
 
 /** A standing order: an autonomous activity + stop-condition the server runs across ticks (Slice B). */
 export interface ActiveOrder {
@@ -46,4 +47,6 @@ export interface GameEvents {
   levelUps: { id: string; skill: string; level: number }[];
   gatherNotices: { id: string; text: string }[];
   orderNotices: { id: string; text: string }[];
+  facts: GameplayFact[];
+  factSequence: number;
 }

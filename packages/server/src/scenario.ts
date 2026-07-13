@@ -1,5 +1,6 @@
 import { ITEM_KINDS, NPC_KINDS, RECIPES, RESOURCE_KINDS, SKILLS } from "@termenor/protocol";
 import type { ZoneDef } from "./world";
+import type { GameplayFact } from "./gameplay-facts";
 
 export type ObjectiveWhen =
   | { kind: "talkedTo"; npcType: string }
@@ -34,6 +35,69 @@ export function initialScenarioProgress(def: ScenarioDef): ScenarioProgress {
 export function currentObjective(def: ScenarioDef, progress: ScenarioProgress): ObjectiveDef | null {
   return def.objectives.find((objective) => !progress.completed.includes(objective.id)) ?? null;
 }
+function factMatches(when: ObjectiveWhen, fact: GameplayFact): boolean {
+  switch (when.kind) {
+    case "talkedTo":
+      return fact.kind === "playerTalked" && fact.npcType === when.npcType;
+    case "gathered":
+      return fact.kind === "resourceGathered"
+        && fact.resourceType === when.resourceType
+        && fact.item === when.item;
+    case "produced":
+      return fact.kind === "itemProduced"
+        && fact.source === when.source
+        && fact.operation === when.operation
+        && fact.item === when.item;
+    case "inventoryAction":
+      return fact.kind === "inventoryActionPerformed"
+        && fact.action === when.action
+        && fact.item === when.item;
+    case "gainedSkillXp":
+      return fact.kind === "skillXpGained"
+        && fact.skill === when.skill
+        && fact.amount >= when.atLeast;
+    case "enteredZone":
+      return fact.kind === "playerEnteredZone" && fact.zone === when.zone;
+  }
+}
+
+export function advanceScenario(
+  def: ScenarioDef,
+  progress: ScenarioProgress,
+  facts: readonly GameplayFact[],
+  playerId: string,
+): ScenarioProgress {
+  const evidenced = new Set(progress.evidence.map((evidence) => evidence.objectiveId));
+  const evidence = [...progress.evidence];
+
+  for (const objective of def.objectives) {
+    if (evidenced.has(objective.id)) continue;
+    const matchingFact = facts.find(
+      (fact) => fact.playerId === playerId && factMatches(objective.when, fact),
+    );
+    if (!matchingFact) continue;
+    evidence.push({ objectiveId: objective.id, tick: matchingFact.tick });
+    evidenced.add(objective.id);
+  }
+
+  const completed = [...progress.completed];
+  for (const objective of def.objectives) {
+    if (completed.includes(objective.id)) continue;
+    if (!evidenced.has(objective.id)) break;
+    completed.push(objective.id);
+  }
+
+  const done = completed.length === def.objectives.length;
+  if (
+    evidence.length === progress.evidence.length
+    && completed.length === progress.completed.length
+    && done === progress.done
+  ) {
+    return progress;
+  }
+  return { ...progress, evidence, completed, done };
+}
+
 
 export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
   const errors: string[] = [];

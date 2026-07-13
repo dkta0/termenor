@@ -23,15 +23,30 @@ test("a recipe consumes inputs, yields outputs, and awards xp", () => {
   expect(count(inv, "copper_ore")).toBe(0);
   expect(count(inv, "tin_ore")).toBe(0);
   expect(w.getPlayerSkills("p1").smithing.xp).toBe(12);
+  expect(w.consumeFacts()).toEqual([
+    { kind: "skillXpGained", playerId: "p1", skill: "smithing", amount: 12, tick: 0, sequence: 0 },
+    {
+      kind: "itemProduced",
+      playerId: "p1",
+      source: "recipe",
+      operation: "smith_bronze_bar",
+      item: "bronze_bar",
+      qty: 1,
+      tick: 0,
+      sequence: 1,
+    },
+  ]);
 });
 
 test("training is gated by a per-player cooldown", () => {
   const w = new GameWorld(MAP, { x: 1, y: 1 });
   w.addPlayer("p1", { x: 1, y: 1, facing: "south", inventory: withInventory({ 0: { item: "copper_ore", qty: 2 }, 1: { item: "tin_ore", qty: 2 } }) });
   w.train("p1", "smith_bronze_bar");           // succeeds, sets cooldown
+  w.consumeFacts();
   w.train("p1", "smith_bronze_bar");           // same tick → still on cooldown, ignored
   expect(count(w.getInventory("p1"), "bronze_bar")).toBe(1);
   expect(w.getPlayerSkills("p1").smithing.xp).toBe(12);
+  expect(w.consumeFacts()).toEqual([]);
 });
 
 test("missing inputs award no xp and produce nothing", () => {
@@ -40,6 +55,7 @@ test("missing inputs award no xp and produce nothing", () => {
   w.train("p1", "smith_bronze_bar");
   expect(count(w.getInventory("p1"), "bronze_bar")).toBe(0);
   expect(w.getPlayerSkills("p1").smithing.xp).toBe(0);
+  expect(w.consumeFacts()).toEqual([]);
 });
 
 test("an activity recipe with no inputs still trains (e.g. agility)", () => {
@@ -62,6 +78,7 @@ test("a full inventory rejects the recipe without consuming inputs", () => {
   expect(count(after, "copper_ore")).toBe(1);
   expect(count(after, "tin_ore")).toBe(1);
   expect(w.getPlayerSkills("p1").smithing.xp).toBe(0);
+  expect(w.consumeFacts()).toEqual([]);
 });
 
 test("unknown recipe is a no-op", () => {

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { MapData } from "@termenor/protocol";
-import { currentObjective, initialScenarioProgress, validateScenario, type ScenarioDef } from "./scenario";
+import { advanceScenario, currentObjective, initialScenarioProgress, validateScenario, type ObjectiveWhen, type ScenarioDef } from "./scenario";
 import type { ZoneDef } from "./world";
+import type { GameplayFact } from "./gameplay-facts";
 
 const map: MapData = { width: 5, height: 5, tiles: Array(25).fill(0), heights: Array(25).fill(0), scenery: [] };
 const zones: ZoneDef[] = [
@@ -76,3 +77,113 @@ test("new progress presents the first objective", () => {
   expect(progress).toEqual({ scenarioId: "first_steps", version: 1, completed: [], evidence: [], done: false });
   expect(currentObjective(valid, progress)?.id).toBe("meet_guide");
 });
+
+test("early facts are retained and objectives advance once in authored order", () => {
+  const def: ScenarioDef = {
+    id: "ordered",
+    version: 1,
+    startZone: "tutorial",
+    initialItems: [],
+    objectives: [
+      { id: "talk", text: "Talk.", when: { kind: "talkedTo", npcType: "chef" } },
+      { id: "gather", text: "Gather.", when: { kind: "gathered", resourceType: "tree", item: "logs" } },
+    ],
+    exit: { fromZone: "tutorial", toZone: "overworld" },
+  };
+  const progress = initialScenarioProgress(def);
+  const gather = [
+    { kind: "resourceGathered", tick: 4, sequence: 0, playerId: "p", resourceType: "tree", item: "logs", qty: 1 },
+  ] as const;
+
+  const waiting = advanceScenario(def, progress, gather, "p");
+  expect(waiting.completed).toEqual([]);
+  expect(waiting.evidence).toEqual([{ objectiveId: "gather", tick: 4 }]);
+
+  const next = advanceScenario(def, waiting, [
+    { kind: "playerTalked", tick: 5, sequence: 0, playerId: "p", npcType: "chef" },
+  ], "p");
+  expect(next.completed).toEqual(["talk", "gather"]);
+  expect(next.done).toBe(true);
+  expect(advanceScenario(def, next, [...gather], "p")).toBe(next);
+});
+
+test("facts from another player do not provide objective evidence", () => {
+  const progress = initialScenarioProgress(valid);
+  const facts = [
+    { kind: "playerTalked", tick: 1, sequence: 0, playerId: "other", npcType: "chef" },
+  ] as const;
+
+  expect(advanceScenario(valid, progress, facts, "p")).toBe(progress);
+});
+
+const matcherCases: {
+  name: string;
+  when: ObjectiveWhen;
+  fact: GameplayFact;
+  nearMiss: GameplayFact;
+}[] = [
+  {
+    name: "talked-to NPC",
+    when: { kind: "talkedTo", npcType: "chef" },
+    fact: { kind: "playerTalked", playerId: "p", npcType: "chef", tick: 1, sequence: 0 },
+    nearMiss: { kind: "playerTalked", playerId: "p", npcType: "goblin", tick: 1, sequence: 0 },
+  },
+  {
+    name: "gathered resource type",
+    when: { kind: "gathered", resourceType: "tree", item: "logs" },
+    fact: { kind: "resourceGathered", playerId: "p", resourceType: "tree", item: "logs", qty: 1, tick: 1, sequence: 0 },
+    nearMiss: { kind: "resourceGathered", playerId: "p", resourceType: "copper_rock", item: "logs", qty: 1, tick: 1, sequence: 0 },
+  },
+  {
+    name: "gathered item",
+    when: { kind: "gathered", resourceType: "tree", item: "logs" },
+    fact: { kind: "resourceGathered", playerId: "p", resourceType: "tree", item: "logs", qty: 1, tick: 1, sequence: 0 },
+    nearMiss: { kind: "resourceGathered", playerId: "p", resourceType: "tree", item: "copper_ore", qty: 1, tick: 1, sequence: 0 },
+  },
+  {
+    name: "produced item",
+    when: { kind: "produced", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts" },
+    fact: { kind: "itemProduced", playerId: "p", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts", qty: 15, tick: 1, sequence: 0 },
+    nearMiss: { kind: "itemProduced", playerId: "p", source: "action", operation: "fletch_arrow_shafts", item: "arrow_shafts", qty: 15, tick: 1, sequence: 0 },
+  },
+  {
+    name: "inventory action",
+    when: { kind: "inventoryAction", action: "examine", item: "arrow_shafts" },
+    fact: { kind: "inventoryActionPerformed", playerId: "p", action: "examine", item: "arrow_shafts", tick: 2, sequence: 0 },
+    nearMiss: { kind: "inventoryActionPerformed", playerId: "p", action: "drop", item: "arrow_shafts", tick: 2, sequence: 0 },
+  },
+  {
+    name: "skill XP at the threshold",
+    when: { kind: "gainedSkillXp", skill: "fletching", atLeast: 5 },
+    fact: { kind: "skillXpGained", playerId: "p", skill: "fletching", amount: 5, tick: 3, sequence: 0 },
+    nearMiss: { kind: "skillXpGained", playerId: "p", skill: "fletching", amount: 4, tick: 3, sequence: 0 },
+  },
+  {
+    name: "entered Zone",
+    when: { kind: "enteredZone", zone: "overworld" },
+    fact: { kind: "playerEnteredZone", playerId: "p", zone: "overworld", tick: 4, sequence: 0 },
+    nearMiss: { kind: "playerEnteredZone", playerId: "p", zone: "tutorial", tick: 4, sequence: 0 },
+  },
+];
+
+for (const { name, when, fact, nearMiss } of matcherCases) {
+  test(`scenario evaluation matches ${name} and rejects its near miss`, () => {
+    const def: ScenarioDef = {
+      id: "matcher",
+      version: 1,
+      startZone: "tutorial",
+      initialItems: [],
+      objectives: [{ id: "objective", text: "Do it.", when }],
+      exit: { fromZone: "tutorial", toZone: "overworld" },
+    };
+    const progress = initialScenarioProgress(def);
+
+    expect(advanceScenario(def, progress, [nearMiss], "p")).toBe(progress);
+    expect(advanceScenario(def, progress, [fact], "p")).toEqual({
+      ...progress,
+      completed: ["objective"],
+      evidence: [{ objectiveId: "objective", tick: fact.tick }],
+      done: true,
+    });
+  });
+}

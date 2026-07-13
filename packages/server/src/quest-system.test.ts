@@ -15,6 +15,9 @@ test("talking to the cook starts Cook's Assistant", () => {
   const { w, chefId } = setup();
   w.talk("p1", chefId);
   expect(w.getQuests("p1").cooks_assistant).toBe(1); // step 0 done → on step 1
+  expect(w.consumeFacts()).toEqual([
+    { kind: "playerTalked", playerId: "p1", npcType: "chef", tick: 0, sequence: 0 },
+  ]);
 });
 
 test("the delivery step does not advance without the item", () => {
@@ -41,4 +44,10 @@ test("talking to a non-quest npc starts nothing", () => {
   w.spawnNpc("goblin", 3, 3, 0);
   w.talk("p1", w.npcs[1].id);
   expect(w.getQuests("p1")).toEqual({});
+});
+
+test("talking to a nonexistent NPC emits no fact", () => {
+  const { w } = setup();
+  w.talk("p1", "missing");
+  expect(w.consumeFacts()).toEqual([]);
 });
