@@ -41,6 +41,10 @@ click:
 login:
     bun run verify:login
 
+# deterministic headless tutorial Scenario
+tutorial-headless:
+    bun run verify:tutorial-headless
+
 # full pre-commit gate: tests + typecheck + render + click + login
 check: test typecheck render click login
 
