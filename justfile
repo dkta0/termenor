@@ -29,6 +29,14 @@ test:
 typecheck:
     bun run typecheck
 
+# install the pinned Python dependency for normalized terminal playtests
+playtest-deps:
+    PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --user -r scripts/requirements-playtest.txt
+
+# focused unit tests for PTY perception, waits, lifecycle, and artifacts
+pty-harness-test:
+    python3 -m unittest scripts/pty_harness_test.py
+
 # real-terminal render smoke test (hermetic, own temp DB)
 render:
     bun run verify:render
@@ -45,8 +53,8 @@ login:
 tutorial-headless:
     bun run verify:tutorial-headless
 
-# full pre-commit gate: tests + typecheck + render + click + login
-check: test typecheck render click login
+# full pre-commit gate: tests + typecheck + PTY harness + real-terminal checks
+check: test typecheck pty-harness-test render click login
 
 # free port 3000 by stopping the rivalmark web container that squats on it
 free-port:
