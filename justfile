@@ -34,7 +34,7 @@ playtest-deps:
     PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --user -r scripts/requirements-playtest.txt
 
 # focused unit tests for PTY perception, waits, lifecycle, and artifacts
-pty-harness-test:
+pty-harness-test: playtest-deps
     python3 -m unittest scripts/pty_harness_test.py
 
 # real-terminal render smoke test (hermetic, own temp DB)
