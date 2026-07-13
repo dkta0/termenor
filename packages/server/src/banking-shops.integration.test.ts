@@ -46,7 +46,7 @@ test("end-to-end: open booth, deposit + withdraw, survive a relogin", async () =
 
   // persist, then reload as a fresh world (relogin-equivalent)
   const saved = w.getPlayerState("hero")!;
-  savePlayerState(db, "hero", saved.x, saved.y, saved.facing, saved.inventory!, saved.skills!, saved.bank ?? [], emptyEquipment(), "overworld", {});
+  savePlayerState(db, "hero", saved.x, saved.y, saved.facing, saved.inventory!, saved.skills!, saved.bank ?? [], emptyEquipment(), "overworld", {}, null);
   const reloaded = await getOrCreateAccount(db, "hero", "pw", SPAWN);
   if (!reloaded.ok) throw new Error("reload failed");
 

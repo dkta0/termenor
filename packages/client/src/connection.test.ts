@@ -351,3 +351,26 @@ test("equipment message updates game-state and fires onEquipment", () => {
   expect(gs.equipment).toEqual({ weapon: "bronze_sword", body: null, shield: null });
   expect(fired).toBe(true);
 });
+
+test("scenario message updates authoritative GameState progress", () => {
+  const { sock, gs } = setup();
+  sock.fireOpen();
+  sock.fireMessage(encode({
+    t: "scenario",
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "gather_logs",
+    objectiveText: "Find a tree and gather logs.",
+    completed: ["meet_guide"],
+    done: false,
+  }));
+
+  expect(gs.scenario).toEqual({
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "gather_logs",
+    objectiveText: "Find a tree and gather logs.",
+    completed: ["meet_guide"],
+    done: false,
+  });
+});

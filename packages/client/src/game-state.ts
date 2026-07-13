@@ -1,4 +1,4 @@
-import type { Facing, MapData, PlayerState, DeltaMsg, EntityDelta, GroundItem, ItemStack, NpcState, ResourceState, ShopEntry, Equipment } from "@termenor/protocol";
+import type { Facing, MapData, PlayerState, DeltaMsg, EntityDelta, GroundItem, ItemStack, NpcState, ResourceState, ShopEntry, Equipment, ScenarioState } from "@termenor/protocol";
 import { SPLAT_MS, type HitEvent } from "@termenor/protocol";
 
 /**
@@ -31,6 +31,7 @@ export class GameState {
   shop: { shopId: string; name: string; entries: ShopEntry[] } | null = null;
   shopOpen = false;
   equipment: Equipment = { weapon: null, body: null, shield: null };
+  scenario: ScenarioState | null = null;
   private frames: Frame[] = []; // chronological, oldest → newest
   private splats: Splat[] = [];
   // Running authoritative world, rebuilt incrementally from each delta. Frames for
@@ -69,6 +70,7 @@ export class GameState {
   }
   closeShop(): void { this.shopOpen = false; }
   setEquipment(eq: Equipment): void { this.equipment = eq; }
+  setScenario(state: ScenarioState): void { this.scenario = state; }
 
   /** Id of the nearest visible resource of `type` to the local player, or null. */
   nearestResourceOfType(type: string, now: number): string | null {

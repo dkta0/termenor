@@ -1,4 +1,4 @@
-import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type SkillsMsg, type OpenMsg, type BankActionMsg, type ShopActionMsg, type EquipActionMsg, type Intent, type IntentMsg } from "@termenor/protocol";
+import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type OpenMsg, type BankActionMsg, type ShopActionMsg, type EquipActionMsg, type Intent, type IntentMsg } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
@@ -228,6 +228,9 @@ export class Connection {
           this.now(),
         );
       }
+    } else if (msg.t === "scenario") {
+      const { t: _type, ...state } = msg;
+      this.state.setScenario(state);
     } else if (msg.t === "delta") {
       this.state.applyDelta(msg, this.now());
     } else if (msg.t === "chatMsg") {
@@ -236,7 +239,7 @@ export class Connection {
       this.state.setInventory(msg.slots);
       this.onInventory?.(msg.slots);
     } else if (msg.t === "skills") {
-      this.state.setSkills((msg as SkillsMsg).skills);
+      this.state.setSkills(msg.skills);
       this.onSkills?.();
     } else if (msg.t === "bank") {
       this.state.setBank(msg.items, msg.open);

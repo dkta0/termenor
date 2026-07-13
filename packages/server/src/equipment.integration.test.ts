@@ -24,7 +24,7 @@ test("end-to-end: equip gear from inventory, then persist it across a relogin", 
 
   // persist + relogin
   const saved = w.getPlayerState("knight")!;
-  savePlayerState(db, "knight", saved.x, saved.y, saved.facing, saved.inventory!, saved.skills!, saved.bank ?? [], saved.equipment!, "overworld", {});
+  savePlayerState(db, "knight", saved.x, saved.y, saved.facing, saved.inventory!, saved.skills!, saved.bank ?? [], saved.equipment!, "overworld", {}, null);
   const reloaded = await getOrCreateAccount(db, "knight", "pw", SPAWN);
   if (!reloaded.ok) throw new Error("reload failed");
 

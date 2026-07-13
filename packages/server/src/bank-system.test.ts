@@ -132,7 +132,7 @@ test("a deposited bank survives a db save/reload round-trip", async () => {
   w1.getInventory("banker")![0] = { item: "logs", qty: 40 };
   w1.deposit("banker", 0, -1);
   const saved = w1.getPlayerState("banker")!;
-  savePlayerState(db, "banker", saved.x, saved.y, saved.facing, saved.inventory!, saved.skills!, saved.bank ?? [], emptyEquipment(), "overworld", {});
+  savePlayerState(db, "banker", saved.x, saved.y, saved.facing, saved.inventory!, saved.skills!, saved.bank ?? [], emptyEquipment(), "overworld", {}, null);
 
   const reloaded = await getOrCreateAccount(db, "banker", "pw", SPAWN);
   expect(reloaded.ok).toBe(true);

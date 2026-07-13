@@ -293,3 +293,267 @@ test("Zone RNG factories and World iteration preserve definition order", () => {
   expect(requested).toEqual(["overworld", "tutorial"]);
   expect(zones.world("tutorial").rng()).not.toBe(zones.world("overworld").rng());
 });
+
+const deferredScenario: ScenarioDef = {
+  id: "first_steps",
+  version: 1,
+  startZone: "tutorial",
+  initialItems: [],
+  objectives: [
+    { id: "enter_world", text: "Enter the world.", when: { kind: "enteredZone", zone: "overworld" } },
+  ],
+  exit: { fromZone: "tutorial", toZone: "overworld" },
+};
+
+test("deferred portal transition stays hidden until explicit commit", () => {
+  const zones = new Zones(transferZones, {
+    scenario: deferredScenario,
+    deferTransitions: true,
+  });
+  zones.addPlayer("p", { x: 3, y: 2, facing: "east", zone: "tutorial" });
+
+  zones.step(1 / 15);
+  const [transition] = zones.consumeTransitions();
+
+  expect(transition).toMatchObject({
+    pending: true,
+    id: "p",
+    zone: "overworld",
+    x: 6,
+    y: 2,
+    facing: "east",
+  });
+  if (!transition || transition.pending !== true) {
+    throw new Error("expected a pending transition");
+  }
+  expect(transition.token).toBeNumber();
+  expect(zones.zoneOf("p")).toBe("tutorial");
+  expect(zones.world("tutorial").players.has("p")).toBe(false);
+  expect(zones.world("overworld").players.has("p")).toBe(false);
+  expect(zones.pendingStateOf(transition)).toMatchObject({
+    x: 6,
+    y: 2,
+    facing: "east",
+    zone: "overworld",
+  });
+
+  expect(zones.commitTransition(transition)).toBe(true);
+  expect(zones.zoneOf("p")).toBe("overworld");
+  expect(zones.world("overworld").players.get("p")).toMatchObject({ x: 6, y: 2 });
+});
+
+test("rejected deferred transition rolls back beside the source portal without retriggering", () => {
+  const zones = new Zones(transferZones, {
+    scenario: deferredScenario,
+    deferTransitions: true,
+  });
+  zones.addPlayer("p", { x: 3, y: 2, facing: "east", zone: "tutorial" });
+
+  zones.step(1 / 15);
+  const [transition] = zones.consumeTransitions();
+  if (!transition || transition.pending !== true) {
+    throw new Error("expected a pending transition");
+  }
+  expect(zones.progressOf("p")?.done).toBe(true);
+
+  expect(zones.rollbackTransition(transition)).toBe(true);
+  expect(zones.zoneOf("p")).toBe("tutorial");
+  expect(zones.world("tutorial").players.get("p")).toMatchObject({ x: 2, y: 2 });
+  expect(zones.progressOf("p")).toMatchObject({
+    completed: [],
+    evidence: [],
+    done: false,
+  });
+  expect(zones.consumeScenarioChanges()).toEqual([]);
+
+  zones.worldOf("p").queueMove("p", 1, 2);
+  for (let tick = 0; tick < 10; tick++) zones.step(1 / 15);
+
+  expect(zones.consumeTransitions()).toEqual([]);
+  expect(zones.worldOf("p").players.get("p")!.x).toBeLessThan(2);
+});
+
+test("an old pending handle cannot finalize a newer transition for the same Player", () => {
+  const zones = new Zones(transferZones, {
+    scenario: deferredScenario,
+    deferTransitions: true,
+  });
+  zones.addPlayer("p", { x: 3, y: 2, facing: "east", zone: "tutorial" });
+  zones.step(1 / 15);
+  const [oldTransition] = zones.consumeTransitions();
+  if (!oldTransition || oldTransition.pending !== true) {
+    throw new Error("expected the first pending transition");
+  }
+
+  zones.removePlayer("p");
+  zones.addPlayer("p", { x: 3, y: 2, facing: "east", zone: "tutorial" });
+  zones.step(1 / 15);
+  const [newTransition] = zones.consumeTransitions();
+  if (!newTransition || newTransition.pending !== true) {
+    throw new Error("expected the replacement pending transition");
+  }
+
+  expect(zones.commitTransition(oldTransition)).toBe(false);
+  expect(zones.pendingStateOf(newTransition)).not.toBeNull();
+  expect(zones.rollbackTransition(newTransition)).toBe(true);
+  expect(zones.zoneOf("p")).toBe("tutorial");
+});
+
+test("same-version impossible persisted progress resets without touching Player state", () => {
+  const zones = new Zones(transferZones, { scenario: deferredScenario });
+  const inventory = [{ item: "logs", qty: 3 }, null];
+  zones.addPlayer("p", {
+    x: 2,
+    y: 3,
+    facing: "west",
+    zone: "tutorial",
+    inventory,
+    skills: { woodcutting: 42 },
+    scenario: {
+      scenarioId: deferredScenario.id,
+      version: deferredScenario.version,
+      completed: ["bogus"],
+      evidence: [],
+      done: true,
+    },
+  });
+
+  expect(zones.progressOf("p")).toEqual({
+    scenarioId: "first_steps",
+    version: 1,
+    completed: [],
+    evidence: [],
+    done: false,
+  });
+  expect(zones.stateOf("p")).toMatchObject({
+    x: 2,
+    y: 3,
+    facing: "west",
+    inventory,
+    skills: { woodcutting: 42 },
+    zone: "tutorial",
+  });
+});
+
+test("rollback keeps non-transition evidence produced in the exit Tick", () => {
+  const evidenceScenario: ScenarioDef = {
+    ...deferredScenario,
+    objectives: [
+      {
+        id: "gain_xp",
+        text: "Gain Woodcutting experience.",
+        when: { kind: "gainedSkillXp", skill: "woodcutting", atLeast: 5 },
+      },
+      deferredScenario.objectives[0],
+    ],
+  };
+  const zones = new Zones(transferZones, {
+    scenario: evidenceScenario,
+    deferTransitions: true,
+  });
+  zones.addPlayer("p", { x: 3, y: 2, facing: "east", zone: "tutorial" });
+  zones.worldOf("p").emitFact({
+    kind: "skillXpGained",
+    playerId: "p",
+    skill: "woodcutting",
+    amount: 5,
+  });
+
+  zones.step(1 / 15);
+  const [transition] = zones.consumeTransitions();
+  if (!transition || transition.pending !== true) {
+    throw new Error("expected a pending transition");
+  }
+  expect(zones.progressOf("p")?.done).toBe(true);
+
+  zones.rollbackTransition(transition);
+
+  expect(zones.progressOf("p")).toMatchObject({
+    completed: ["gain_xp"],
+    evidence: [{ objectiveId: "gain_xp", tick: 1 }],
+    done: false,
+  });
+});
+
+test("rollback without an adjacent safe tile suppresses automatic portal retry", () => {
+  const trappedZones: ZoneDef[] = [
+    {
+      id: "tutorial",
+      map: {
+        width: 3,
+        height: 3,
+        tiles: [1, 1, 1, 1, 0, 1, 1, 1, 1],
+        heights: Array(9).fill(0),
+        scenery: [],
+      },
+      spawn: { x: 1, y: 1 },
+      seedItems: [],
+      npcs: [],
+      resources: [],
+      portals: [{ x: 1, y: 1, toZone: "overworld", toX: 1, toY: 1 }],
+    },
+    {
+      id: "overworld",
+      map: openMap(3, 3),
+      spawn: { x: 1, y: 1 },
+      seedItems: [],
+      npcs: [],
+      resources: [],
+      portals: [],
+    },
+  ];
+  const zones = new Zones(trappedZones, {
+    scenario: deferredScenario,
+    deferTransitions: true,
+  });
+  zones.addPlayer("p", { x: 1, y: 1, facing: "east", zone: "tutorial" });
+  zones.step(1 / 15);
+  const [transition] = zones.consumeTransitions();
+  if (!transition || transition.pending !== true) {
+    throw new Error("expected a pending transition");
+  }
+
+  zones.rollbackTransition(transition);
+  for (let tick = 0; tick < 5; tick++) zones.step(1 / 15);
+
+  expect(zones.zoneOf("p")).toBe("tutorial");
+  expect(zones.worldOf("p").players.get("p")).toMatchObject({ x: 1, y: 1 });
+  expect(zones.consumeTransitions()).toEqual([]);
+});
+
+test("only the authored Scenario exit is deferred", () => {
+  const zonesWithTravel: ZoneDef[] = [
+    transferZones[0],
+    {
+      ...transferZones[1],
+      portals: [{ x: 6, y: 2, toZone: "cave", toX: 2, toY: 2 }],
+    },
+    {
+      id: "cave",
+      map: openMap(),
+      spawn: { x: 2, y: 2 },
+      seedItems: [],
+      npcs: [],
+      resources: [],
+      portals: [],
+    },
+  ];
+  const zones = new Zones(zonesWithTravel, {
+    scenario: deferredScenario,
+    deferTransitions: true,
+  });
+  zones.addPlayer("p", { x: 6, y: 2, facing: "east", zone: "overworld" });
+
+  zones.step(1 / 15);
+  const [transition] = zones.consumeTransitions();
+
+  expect(transition).toEqual({
+    id: "p",
+    zone: "cave",
+    x: 2,
+    y: 2,
+    facing: "east",
+  });
+  expect(zones.zoneOf("p")).toBe("cave");
+  expect(zones.world("cave").players.has("p")).toBe(true);
+});
