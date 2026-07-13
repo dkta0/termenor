@@ -152,6 +152,32 @@ test("replay rejects a matching digest prefix instead of verifying a partial run
   );
 });
 
+test("replay rejects an extended digest stream", () => {
+  const extendedPath = join(root, "extended-digests.json");
+  const extended = readTrace(tracePath);
+  extended.digests.push({ tick: 101, digest: extended.digests.at(-1)!.digest });
+  writeFileSync(extendedPath, `${JSON.stringify(extended, null, 2)}\n`);
+
+  const replay = capture(["replay", extendedPath]);
+  expect(replay.exitCode).toBe(2);
+  expect(replay.stdout).toBe("");
+  expect(replay.stderr).toBe(
+    "Scenario trace Tick count mismatch for first_steps: trace 101, expected 100",
+  );
+});
+
+test("replay rejects a reordered digest stream", () => {
+  const reorderedPath = join(root, "reordered-digests.json");
+  const reordered = readTrace(tracePath);
+  [reordered.digests[0], reordered.digests[1]] = [reordered.digests[1]!, reordered.digests[0]!];
+  writeFileSync(reorderedPath, `${JSON.stringify(reordered, null, 2)}\n`);
+
+  const replay = capture(["replay", reorderedPath]);
+  expect(replay.exitCode).toBe(2);
+  expect(replay.stdout).toBe("");
+  expect(replay.stderr).toBe(`Invalid Scenario trace digest at index 0: ${reorderedPath}`);
+});
+
 test("replay rejects a structurally invalid Scenario input", () => {
   const invalidPath = join(root, "invalid-input.json");
   const invalid = readTrace(tracePath) as ScenarioTraceArtifact & { inputs: unknown[] };
