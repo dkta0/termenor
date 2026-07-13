@@ -83,7 +83,7 @@ import type { ZoneDef } from "./world";
 
 const map: MapData = { width: 5, height: 5, tiles: Array(25).fill(0), heights: Array(25).fill(0), scenery: [] };
 const zones: ZoneDef[] = [
-  { id: "tutorial", map, spawn: { x: 1, y: 1 }, seedItems: [], npcs: [{ type: "cook", x: 1, y: 2, radius: 0 }], resources: [{ type: "tree", x: 2, y: 2 }], portals: [{ x: 3, y: 3, toZone: "overworld", toX: 1, toY: 1 }] },
+  { id: "tutorial", map, spawn: { x: 1, y: 1 }, seedItems: [], npcs: [{ type: "chef", x: 1, y: 2, radius: 0 }], resources: [{ type: "tree", x: 2, y: 2 }], portals: [{ x: 3, y: 3, toZone: "overworld", toX: 1, toY: 1 }] },
   { id: "overworld", map, spawn: { x: 1, y: 1 }, seedItems: [], npcs: [], resources: [], portals: [] },
 ];
 
@@ -93,7 +93,7 @@ const valid: ScenarioDef = {
   startZone: "tutorial",
   initialItems: [],
   objectives: [
-    { id: "meet_guide", text: "Talk to the guide.", when: { kind: "talkedTo", npcType: "cook" } },
+    { id: "meet_guide", text: "Talk to the guide.", when: { kind: "talkedTo", npcType: "chef" } },
     { id: "gather_logs", text: "Gather logs from a tree.", when: { kind: "gathered", resourceType: "tree", item: "logs" } },
     { id: "leave", text: "Cross into Termenor.", when: { kind: "enteredZone", zone: "overworld" } },
   ],
@@ -286,7 +286,7 @@ import { advanceScenario, initialScenarioProgress, type ScenarioDef } from "./sc
 const def: ScenarioDef = {
   id: "first_steps", version: 1, startZone: "tutorial",
   objectives: [
-    { id: "talk", text: "Talk.", when: { kind: "talkedTo", npcType: "cook" } },
+    { id: "talk", text: "Talk.", when: { kind: "talkedTo", npcType: "chef" } },
     { id: "gather", text: "Gather.", when: { kind: "gathered", resourceType: "tree", item: "logs" } },
   ],
   exit: { fromZone: "tutorial", toZone: "overworld" },
@@ -306,7 +306,7 @@ test("early facts are retained and objectives advance once in authored order", (
   const progress = initialScenarioProgress(def);
   const facts = [
     { kind: "resourceGathered", tick: 4, sequence: 0, playerId: "p", resourceType: "tree", item: "logs", qty: 1 },
-    { kind: "playerTalked", tick: 5, sequence: 0, playerId: "p", npcType: "cook" },
+    { kind: "playerTalked", tick: 5, sequence: 0, playerId: "p", npcType: "chef" },
   ] as const;
   const next = advanceScenario(def, progress, facts, "p");
   expect(next.completed).toEqual(["talk", "gather"]);
@@ -645,7 +645,7 @@ export const TUTORIAL_ZONE: ZoneDef = {
   map: createTutorialMap(),
   spawn: { x: 2, y: 2 },
   seedItems: [],
-  npcs: [{ type: "cook", x: 3, y: 3, radius: 0 }],
+  npcs: [{ type: "chef", x: 3, y: 3, radius: 0 }],
   resources: [
     { type: "tree", x: 8, y: 4 },
     { type: "tree", x: 9, y: 5 },
@@ -659,7 +659,7 @@ export const TUTORIAL_SCENARIO: ScenarioDef = {
   startZone: "tutorial",
   initialItems: [{ item: "bronze_axe", qty: 1 }],
   objectives: [
-    { id: "meet_guide", text: "Talk to the guide.", when: { kind: "talkedTo", npcType: "cook" } },
+    { id: "meet_guide", text: "Talk to the guide.", when: { kind: "talkedTo", npcType: "chef" } },
     { id: "gather_logs", text: "Find a tree and gather logs.", when: { kind: "gathered", resourceType: "tree", item: "logs" } },
     { id: "fletch_logs", text: "Select the logs and make arrow shafts.", when: { kind: "produced", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts" } },
     { id: "use_inventory", text: "Examine the arrow shafts in your Inventory.", when: { kind: "inventoryAction", action: "examine", item: "arrow_shafts" } },
