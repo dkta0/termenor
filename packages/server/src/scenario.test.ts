@@ -36,9 +36,28 @@ describe("validateScenario", () => {
     expect(validateScenario(broken, zones)).toContain("scenario first_steps: duplicate objective meet_guide");
   });
 
-  test("rejects an exit that is not backed by a matching portal", () => {
+  test("rejects exit referencing unknown destination Zone", () => {
     const broken = { ...valid, exit: { fromZone: "tutorial", toZone: "missing" } };
     expect(validateScenario(broken, zones)).toContain("scenario first_steps exit: unknown destination Zone missing");
+  });
+
+  test("rejects exit not backed by a matching portal", () => {
+    const noPortalZones = structuredClone(zones);
+    noPortalZones[0].portals = [];
+    expect(validateScenario(valid, noPortalZones)).toEqual(["scenario first_steps exit: no portal from tutorial to overworld"]);
+  });
+
+  test("rejects a blocked Zone spawn tile", () => {
+    const blockedSpawnZones = structuredClone(zones);
+    blockedSpawnZones[0].map = structuredClone(map);
+    blockedSpawnZones[0].map.tiles[blockedSpawnZones[0].spawn.y * blockedSpawnZones[0].map.width + blockedSpawnZones[0].spawn.x] = 1;
+    expect(validateScenario(valid, blockedSpawnZones)).toEqual(["Zone tutorial spawn: tile is blocked or out of bounds"]);
+  });
+
+  test("rejects a portal referencing an unknown destination Zone", () => {
+    const unknownPortalZones = structuredClone(zones);
+    unknownPortalZones[0].portals.push({ x: 4, y: 4, toZone: "missing", toX: 1, toY: 1 });
+    expect(validateScenario(valid, unknownPortalZones)).toEqual(["Zone tutorial portal 1: unknown destination Zone missing"]);
   });
 
   test("validates initial Item ids", () => {

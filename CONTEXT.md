@@ -37,6 +37,7 @@ _Avoid_: quest, level, mode, script, fixture, tutorial engine.
 An immutable record of a successful authoritative transition at one Tick, emitted in
 deterministic order for objective evaluation and diagnostics. It is not World state and
 cannot mutate the World.
+_Avoid_: event, log entry, audit record, history entry, game event.
 
 ### Entities
 
