@@ -134,7 +134,7 @@ export function skillLines(skills: Record<string, { xp: number; level: number }>
   const rows = SKILLS.map((name) => {
     const cap = name.charAt(0).toUpperCase() + name.slice(1);
     const entry = skills[name];
-    return `${cap.padEnd(12)} ${String(entry?.level ?? 1).padStart(2)}`;
+    return `${cap.padEnd(12)} ${String(entry?.level ?? 1).padStart(2)}  ${entry?.xp ?? 0}xp`;
   });
   return [header, ...rows];
 }

@@ -50,7 +50,7 @@ const tutorialInputs = [
   { tick: 2, playerId: "learner", intent: { kind: "gather", targetId: "res-1" } },
   { tick: 30, playerId: "learner", intent: { kind: "train", recipe: "fletch_arrow_shafts" } },
   { tick: 31, playerId: "learner", inventoryAction: { action: "examine", slot: 2 } },
-  { tick: 32, playerId: "learner", intent: { kind: "move", x: 14, y: 9 } },
+  { tick: 32, playerId: "learner", intent: { kind: "move", x: 12, y: 5 } },
 ] satisfies ScenarioInput[];
 
 function registerScenarios(entries: RegisteredScenario[]): ReadonlyMap<string, RegisteredScenario> {

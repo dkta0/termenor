@@ -45,7 +45,7 @@ export const TUTORIAL_ZONE: ZoneDef = {
     { type: "tree", x: 8, y: 4 },
     { type: "tree", x: 9, y: 5 },
   ],
-  portals: [{ x: 14, y: 9, toZone: "overworld", toX: SPAWN.x, toY: SPAWN.y }],
+  portals: [{ x: 12, y: 5, toZone: "overworld", toX: SPAWN.x, toY: SPAWN.y }],
 };
 
 export const TUTORIAL_SCENARIO: ScenarioDef = {

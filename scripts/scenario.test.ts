@@ -180,7 +180,7 @@ test("replay rejects a reordered digest stream", () => {
 
 test("replay rejects a structurally invalid Scenario input", () => {
   const invalidPath = join(root, "invalid-input.json");
-  const invalid = readTrace(tracePath) as ScenarioTraceArtifact & { inputs: unknown[] };
+  const invalid = readTrace(tracePath) as Omit<ScenarioTraceArtifact, "inputs"> & { inputs: unknown[] };
   invalid.inputs = [{ tick: 1, playerId: "learner" }];
   writeFileSync(invalidPath, `${JSON.stringify(invalid, null, 2)}\n`);
 

@@ -242,6 +242,7 @@ class PtyClient:
     command: tuple[str, ...]
     returncode: int | None = None
     closed: bool = False
+    retired: bool = False
     _capture_token: object = field(default_factory=object, compare=False, repr=False)
 
     @property
@@ -713,6 +714,17 @@ class PtyHarness:
         phases.append(f"repaints={metrics['repaints']}")
         return "timings: " + " ".join(phases)
 
+    def close_client(self, client: PtyClient) -> None:
+        """Intentionally retire one client while keeping the server and DB alive."""
+        self._require_client(client)
+        if client.retired:
+            return
+        self._terminate_client(client)
+        client.retired = True
+        self._record_event(
+            "client-retired", client=client.name, returncode=client.returncode
+        )
+
     def close(self) -> None:
         """Tear down a successful harness early; context management is preferred."""
         self._finish(None)
@@ -829,7 +841,9 @@ class PtyHarness:
 
     def _teardown_processes(self) -> None:
         errors: list[BaseException] = []
-        for client in reversed(self.clients):
+        for client in reversed(
+            [client for client in self.clients if not getattr(client, "retired", False)]
+        ):
             try:
                 self._terminate_client(client)
             except BaseException as error:
@@ -1052,7 +1066,8 @@ class PtyHarness:
                     f"log tail:\n{self._server_log_tail()}"
                 )
         for client in self.clients:
-            self._raise_if_client_exited(client, "the awaited condition")
+            if not client.retired:
+                self._raise_if_client_exited(client, "the awaited condition")
 
     def _close_client_fd(self, client: PtyClient) -> None:
         if client.closed:

@@ -53,6 +53,10 @@ login: playtest-deps
 tutorial-headless:
     bun run verify:tutorial-headless
 
+# full production-client tutorial Scenario (hermetic, fresh DB + reconnect)
+tutorial: playtest-deps
+    bun run verify:tutorial
+
 # full pre-commit gate: tests + typecheck + PTY harness + real-terminal checks
 check: test typecheck pty-harness-test render click login
 

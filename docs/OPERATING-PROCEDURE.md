@@ -29,6 +29,51 @@ driven by `/goal`, one slice at a time.
 - Context discipline: `/compact` at 50%, `/clear` between slices, offload to subagents.
 - Keep specs lean. Don't overthink.
 
+## Tutorial Scenario verification
+
+Install the pinned normalized-terminal dependency once:
+
+```bash
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --user -r scripts/requirements-playtest.txt
+# equivalent project recipe
+just playtest-deps
+```
+
+Run the deterministic simulation and the production terminal journey separately:
+
+```bash
+bun run verify:tutorial-headless
+bun run verify:tutorial
+
+# equivalent recipes
+just tutorial-headless
+just tutorial
+```
+
+`verify:tutorial-headless` replays the authored `first_steps` inputs with seed `1`.
+`verify:tutorial` creates a fresh temporary SQLite database, registers through the
+production login screen, clicks through the production client, crosses the real
+tutorial portal, then closes that client and explicitly logs in again against the
+same database to verify that overworld arrival and `First Steps` completion persist.
+Successful runs remove the temporary database.
+
+For a live agent or human session, stop after the fresh initial world with:
+
+```bash
+python3 scripts/pty-tutorial-check.py --attach
+```
+
+Attach mode prints its live `/tmp/termenor-playtest-db-<suffix>/` session and
+database paths plus the available `screen`, `click COL ROW`, `press KEY`,
+`type TEXT`, and `quit` actions. `quit`, end-of-input, and Ctrl-C all tear down
+the client and server and remove the temporary database.
+
+Any failed PTY check retains diagnostics under
+`/tmp/termenor-playtest-<UTC timestamp>-<suffix>/`: server log, raw client
+bytes, normalized final and named milestone screens, action timeline, timings,
+and the failure traceback. Use those artifacts to fix the production source or
+the real interaction; do not weaken a visible assertion.
+
 ## State
 
 - Slice 1: ✅ smooth multiplayer movement (merged to main).

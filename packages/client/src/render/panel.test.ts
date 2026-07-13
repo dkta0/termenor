@@ -46,11 +46,15 @@ test("examineText distinguishes wearable, stackable, and plain items", () => {
   expect(examineText("bronze_axe")).toBe("Bronze axe."); // non-stackable, non-wearable tool
 });
 
-test("skillLines has a combat header plus one row per skill, showing levels", () => {
-  const lines = skillLines({ attack: { xp: 1000, level: 8 } });
+test("skillLines has a combat header plus one row per skill, showing levels and XP", () => {
+  const lines = skillLines({
+    attack: { xp: 1000, level: 8 },
+    fletching: { xp: 5, level: 1 },
+  });
   expect(lines[0]).toMatch(/^Combat /);
   expect(lines.length).toBe(1 + 23); // header + every skill
-  expect(lines.some((l) => l.startsWith("Attack") && l.includes("8"))).toBe(true);
+  expect(lines.find((line) => line.startsWith("Attack"))).toBe("Attack        8  1000xp");
+  expect(lines.find((line) => line.startsWith("Fletching"))).toBe("Fletching     1  5xp");
 });
 
 test("gearRows lists the three slots with filled flags and unequip index", () => {

@@ -20,7 +20,8 @@
     "verify:click": "python3 scripts/pty-click-check.py",
     "verify:login": "python3 scripts/pty-login-check.py",
     "scenario": "bun run scripts/scenario.ts",
-    "verify:tutorial-headless": "bun run scripts/scenario.ts run first_steps --seed 1"
+    "verify:tutorial-headless": "bun run scripts/scenario.ts run first_steps --seed 1",
+    "verify:tutorial": "python3 scripts/pty-tutorial-check.py"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

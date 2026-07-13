@@ -170,6 +170,36 @@ signal.pause()
             with self.assertRaisesRegex(ValueError, "capture"):
                 wait_for_change(second, capture(first), timeout=0.1)
 
+    def test_expected_client_retirement_allows_reconnect_in_same_harness(self) -> None:
+        client_code = """
+import os
+import signal
+
+os.write(1, (os.environ["LABEL"] + "\\r\\n").encode())
+signal.pause()
+"""
+        with tempfile.TemporaryDirectory() as artifact_base:
+            harness = PtyHarness(
+                rows=4,
+                cols=30,
+                client_command=[sys.executable, "-u", "-c", client_code],
+                artifact_base=Path(artifact_base),
+            )
+            with harness:
+                first = harness.spawn_client("first", env={"LABEL": "FIRST"})
+                wait_for_text(first, "FIRST", timeout=1.0)
+
+                harness.close_client(first)
+
+                self.assertTrue(first.closed)
+                self.assertIsNotNone(first.returncode)
+                second = harness.spawn_client("second", env={"LABEL": "SECOND"})
+                wait_for_text(second, "SECOND", timeout=1.0)
+
+            self.assertIsNotNone(second.returncode)
+            self.assertIn("first", harness.metrics()["clients"])
+            self.assertIsNone(harness.failure_artifacts)
+
     def test_an_unexpected_client_exit_cannot_pass_from_cached_screen_text(self) -> None:
         client_code = """
 import os

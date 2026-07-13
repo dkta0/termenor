@@ -146,7 +146,7 @@ test("an existing account without Scenario progress stays unenrolled", () => {
 test("the Scenario exit rejects a premature crossing with the current objective", () => {
   const zones = new Zones(tutorialZones, { scenario: TUTORIAL_SCENARIO });
   zones.addPlayer("learner", restoredEmptyAccount(), { newScenarioPlayer: true });
-  zones.worldOf("learner").queueMove("learner", 14, 9);
+  zones.worldOf("learner").queueMove("learner", 12, 5);
   for (let tick = 0; tick < 100; tick++) zones.step(1 / 15);
 
   expect(zones.zoneOf("learner")).toBe("tutorial");
@@ -179,12 +179,12 @@ test("finishing the last prerequisite on a suppressed exit crosses without stepp
     "fletch_logs",
   ]);
 
-  world.queueMove("learner", 14, 9);
+  world.queueMove("learner", 12, 5);
   let reachedExit = false;
   for (let tick = 0; tick < 100; tick++) {
     zones.step(1 / 15);
     const player = world.players.get("learner");
-    if (player && Math.round(player.x) === 14 && Math.round(player.y) === 9) {
+    if (player && Math.round(player.x) === 12 && Math.round(player.y) === 5) {
       reachedExit = true;
       break;
     }
@@ -275,7 +275,7 @@ test("a deterministic headless trace completes through normal gameplay rules", (
       { tick: 2, playerId: "learner", intent: { kind: "gather", targetId: "res-1" } },
       { tick: 30, playerId: "learner", intent: { kind: "train", recipe: "fletch_arrow_shafts" } },
       { tick: 31, playerId: "learner", inventoryAction: { action: "examine", slot: 2 } },
-      { tick: 32, playerId: "learner", intent: { kind: "move", x: 14, y: 9 } },
+      { tick: 32, playerId: "learner", intent: { kind: "move", x: 12, y: 5 } },
     ],
     ticks: 100,
   });
