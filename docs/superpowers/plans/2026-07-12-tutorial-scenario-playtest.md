@@ -91,6 +91,7 @@ const valid: ScenarioDef = {
   id: "first_steps",
   version: 1,
   startZone: "tutorial",
+  initialItems: [],
   objectives: [
     { id: "meet_guide", text: "Talk to the guide.", when: { kind: "talkedTo", npcType: "cook" } },
     { id: "gather_logs", text: "Gather logs from a tree.", when: { kind: "gathered", resourceType: "tree", item: "logs" } },
@@ -150,6 +151,7 @@ export interface ScenarioDef {
   id: string;
   version: number;
   startZone: string;
+  initialItems: { item: string; qty: number }[];
   objectives: ObjectiveDef[];
   exit: { fromZone: string; toZone: string };
 }
@@ -173,6 +175,10 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
   const byId = new Map(zones.map((zone) => [zone.id, zone]));
   const seen = new Set<string>();
   const start = byId.get(def.startZone);
+  for (const [index, stack] of def.initialItems.entries()) {
+    if (!ITEM_KINDS[stack.item]) errors.push(`scenario ${def.id} initialItems ${index}: unknown Item ${stack.item}`);
+    if (!Number.isInteger(stack.qty) || stack.qty < 1) errors.push(`scenario ${def.id} initialItems ${index}: qty must be a positive integer`);
+  }
   if (!Number.isInteger(def.version) || def.version < 1) errors.push(`scenario ${def.id}: version must be a positive integer`);
   if (!start) errors.push(`scenario ${def.id}: unknown start Zone ${def.startZone}`);
   for (const objective of def.objectives) {
@@ -651,6 +657,7 @@ export const TUTORIAL_SCENARIO: ScenarioDef = {
   id: "first_steps",
   version: 1,
   startZone: "tutorial",
+  initialItems: [{ item: "bronze_axe", qty: 1 }],
   objectives: [
     { id: "meet_guide", text: "Talk to the guide.", when: { kind: "talkedTo", npcType: "cook" } },
     { id: "gather_logs", text: "Find a tree and gather logs.", when: { kind: "gathered", resourceType: "tree", item: "logs" } },
@@ -665,7 +672,7 @@ export const TUTORIAL_SCENARIO: ScenarioDef = {
 
 Add a normal Inventory `Make` action for Items that are the sole input of an available Recipe; for `logs`, it dispatches the existing `train` Intent with `fletch_arrow_shafts`. Keep `Examine` client-visible and also send a narrow authenticated `inventoryAction` message so the authoritative Scenario evaluator can observe it; the server validates the referenced slot still contains the Item before emitting the fact. Do not grant Item, XP, or objective state from the client.
 
-New accounts start in the tutorial. Existing accounts retain their saved Zone. Required Resource respawn/availability must allow at least two Players to progress without permanent interference.
+New accounts start in the tutorial with `TUTORIAL_SCENARIO.initialItems` applied to their per-Player Inventory; existing accounts retain their saved Zone and Inventory. Initial Items are never shared Ground Items, so concurrent Players cannot consume another Player's required axe. Required Resource respawn/availability must allow at least two Players to progress without permanent interference.
 
 - [ ] **Step 4: Render current progress without a text wall**
 
