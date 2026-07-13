@@ -509,7 +509,7 @@ git commit -m "feat(server): run scenarios deterministically across zones"
 
 **Interfaces:**
 - Consumes: server `ScenarioProgress` and `Zones.progressOf`.
-- Produces: wire `ScenarioState`, `ScenarioMsg`, persisted `scenario: ScenarioState | null`, and `GameState.setScenario`.
+- Produces: wire `ScenarioState`, `ScenarioMsg`, persisted `scenario: ScenarioProgress | null` (including retained evidence), and `GameState.setScenario`.
 
 - [ ] **Step 1: Write failing protocol, persistence, and client-state tests**
 
@@ -555,9 +555,9 @@ Add `ScenarioMsg = { t: "scenario" } & ScenarioState`, export it, and include it
 
 - [ ] **Step 4: Persist compact Scenario progress in both stores**
 
-Add `scenario TEXT` to SQLite and Postgres schemas, with an idempotent SQLite migration. Extend `PlayerStateRecord` with `scenario: ScenarioState | null`. Parse invalid/null data to `null`; do not silently coerce incompatible versions into active progress. Update every save/load callsite and tests.
+Add `scenario TEXT` to SQLite and Postgres schemas, with an idempotent SQLite migration. Extend `PlayerStateRecord` with the server-owned `scenario: ScenarioProgress | null`, preserving `completed`, retained `evidence`, and `done`; do not import the wire `ScenarioState` into persistence. Parse malformed/null data to `null`. At login, the server compares persisted Scenario ID/version with the active `ScenarioDef`; an incompatible value resets only Scenario progress and applies the active initial state policy, never unrelated Player state. Update every save/load callsite and add a round-trip test whose evidence survives reconnect.
 
-Keep atomic tutorial completion observable at the store interface: one `savePlayerState` call contains destination `zone`, destination coordinates, and completed Scenario state. The server must await this save before sending the final `ZoneMsg`/completed `ScenarioMsg`; on failure it leaves the Player in the tutorial and sends an actionable system message.
+Keep atomic tutorial completion observable at the server interface: one `savePlayerState` call contains destination `zone`, destination coordinates, and completed internal Scenario progress. The server must await that save before sending the final `ZoneMsg`/completed `ScenarioMsg` or any destination-Zone delta to that socket. On save failure, revert the in-memory transition to the source Zone/state and send actionable system feedback; add an integration test with a rejecting `PlayerStore` proving the Player remains in the tutorial and receives neither destination map nor completion.
 
 - [ ] **Step 5: Send and receive Scenario state**
 
