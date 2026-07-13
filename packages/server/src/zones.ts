@@ -4,10 +4,12 @@ import type { PlayerTransferState } from "./entities";
 import type { FactDraft, GameplayFact } from "./gameplay-facts";
 import {
   advanceScenario,
+  currentObjective,
   initialScenarioProgress,
   type ScenarioDef,
   type ScenarioProgress,
 } from "./scenario";
+import { addToInventory, countItem, emptyInventory } from "./inventory";
 import { ZONE_DEFS, DEFAULT_ZONE, type ZoneDef, type Portal } from "./world";
 export type ZoneRestoredState = RestoredState & {
   scenario?: ScenarioProgress | null;
@@ -80,6 +82,9 @@ export interface ZonesOptions {
   scenario?: ScenarioDef;
   deferTransitions?: boolean;
 }
+export interface AddPlayerOptions {
+  newScenarioPlayer?: boolean;
+}
 
 /**
  * The multi-zone world. Each zone is an independent `GameWorld` (its own map, entities, and
@@ -136,20 +141,61 @@ export class Zones {
   zoneOf(playerId: string): string { return this.location.get(playerId) ?? DEFAULT_ZONE; }
   zoneIds(): string[] { return [...this.worlds.keys()]; }
   mapOf(zone: string): MapData { return this.world(zone).map; }
-  addPlayer(id: string, state?: ZoneRestoredState): void {
-    const requestedZone = state === undefined ? this.scenario?.startZone : state.zone;
-    const zone = this.resolve(requestedZone);
-    this.location.set(id, zone);
-    this.world(zone).addPlayer(id, state);
-    if (this.scenario) {
-      const restored = state?.scenario;
-      this.progress.set(
-        id,
-        isRestorableProgress(this.scenario, restored)
-          ? structuredClone(restored)
-          : initialScenarioProgress(this.scenario),
-      );
+  addPlayer(id: string, state?: ZoneRestoredState, options: AddPlayerOptions = {}): void {
+    const scenario = this.scenario;
+    const newPlayerScenario = (options.newScenarioPlayer ?? state === undefined)
+      ? scenario
+      : undefined;
+    const restoredProgress = scenario && state?.scenario != null
+      ? isRestorableProgress(scenario, state.scenario)
+        ? structuredClone(state.scenario)
+        : initialScenarioProgress(scenario)
+      : null;
+    const zone = this.resolve(newPlayerScenario ? newPlayerScenario.startZone : state?.zone);
+    const zoneDef = this.defs.get(zone);
+    if (!zoneDef) throw new Error(`unknown zone: ${zone}`);
+
+    let playerState = state;
+    const shouldRestoreInitialItems = newPlayerScenario !== undefined
+      || (restoredProgress !== null && !restoredProgress.done);
+    if (scenario && shouldRestoreInitialItems) {
+      let inventory = state?.inventory ?? emptyInventory();
+      const required = new Map<string, number>();
+      for (const initial of scenario.initialItems) {
+        const requiredQty = (required.get(initial.item) ?? 0) + initial.qty;
+        required.set(initial.item, requiredQty);
+        const missingQty = requiredQty - countItem(inventory, initial.item);
+        if (missingQty <= 0) continue;
+        const added = addToInventory(inventory, {
+          item: initial.item,
+          qty: missingQty,
+        });
+        if (added.leftover) {
+          throw new Error(`Scenario ${scenario.id} initial loadout exceeds Inventory capacity`);
+        }
+        inventory = added.slots;
+      }
+      if (newPlayerScenario) {
+        const spawn = zoneDef.spawn;
+        playerState = {
+          ...state,
+          x: spawn.x,
+          y: spawn.y,
+          facing: state?.facing ?? "south",
+          inventory,
+        };
+      } else if (state) {
+        playerState = { ...state, inventory };
+      }
     }
+
+    this.world(zone).addPlayer(id, playerState);
+    this.location.set(id, zone);
+    if (!scenario) return;
+    const progress = newPlayerScenario
+      ? initialScenarioProgress(scenario)
+      : restoredProgress;
+    if (progress) this.progress.set(id, progress);
   }
 
   removePlayer(id: string): void {
@@ -191,6 +237,31 @@ export class Zones {
     return facts;
   }
 
+  private scenarioExitBlocker(
+    id: string,
+    fromZone: string,
+    toZone: string,
+  ): string | null {
+    const scenario = this.scenario;
+    if (
+      !scenario
+      || scenario.exit.fromZone !== fromZone
+      || scenario.exit.toZone !== toZone
+    ) {
+      return null;
+    }
+    const progress = this.progress.get(id);
+    if (!progress || progress.done) return null;
+    const objective = currentObjective(scenario, progress);
+    if (
+      objective?.when.kind === "enteredZone"
+      && objective.when.zone === toZone
+    ) {
+      return null;
+    }
+    return objective?.text ?? "Complete the tutorial.";
+  }
+
   private applyTransitions(firstSequence: number): GameplayFact[] {
     const moves: { id: string; fromZone: string; world: GameWorld; portal: Portal }[] = [];
     for (const [zoneId, world] of this.worlds) {
@@ -211,6 +282,15 @@ export class Zones {
         const portal = portals.find(
           (candidate) => x === candidate.x && y === candidate.y,
         );
+        const blocker = this.scenarioExitBlocker(player.id, zoneId, portal?.toZone ?? "");
+        if (portal && blocker) {
+          world.events.gatherNotices.push({
+            id: player.id,
+            text: `Finish your current objective: ${blocker}`,
+          });
+          this.suppressedPortals.set(player.id, { zone: zoneId, x, y });
+          continue;
+        }
         if (portal) {
           moves.push({ id: player.id, fromZone: zoneId, world, portal });
         }
@@ -288,6 +368,7 @@ export class Zones {
       const next = advanceScenario(this.scenario, progress, facts, id);
       if (next === progress) continue;
       this.progress.set(id, next);
+      this.suppressedPortals.delete(id);
       this.scenarioChanges.add(id);
     }
   }

@@ -9,7 +9,7 @@ import { openDb, getOrCreateAccount, parseScenarioProgress, savePlayerState, typ
 export type { PlayerStateRecord } from "./db";
 
 export type Spawn = { x: number; y: number; facing: Facing };
-export type AccountResult = { ok: true; state: PlayerStateRecord } | { ok: false; reason: string };
+export type AccountResult = { ok: true; created: boolean; state: PlayerStateRecord } | { ok: false; reason: string };
 
 /**
  * The swappable persistence boundary. The game never touches a driver directly — it talks
@@ -91,7 +91,7 @@ export class PostgresStore implements PlayerStore {
         INSERT INTO accounts (username, password_hash, x, y, facing, last_seen)
         VALUES (${username}, ${hash}, ${spawn.x}, ${spawn.y}, ${spawn.facing}, ${Date.now()})
       `;
-      return { ok: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {}, bank: [], equipment: emptyEquipment(), zone: DEFAULT_ZONE, quests: {}, scenario: null } };
+      return { ok: true, created: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {}, bank: [], equipment: emptyEquipment(), zone: DEFAULT_ZONE, quests: {}, scenario: null } };
     }
 
     if (mode === "register") return { ok: false, reason: "that name is taken" };
@@ -100,6 +100,7 @@ export class PostgresStore implements PlayerStore {
     if (!valid) return { ok: false, reason: mode === "login" ? "wrong password" : "bad password" };
 
     return {
+      created: false,
       ok: true,
       state: {
         x: row.x, y: row.y, facing: row.facing as Facing,

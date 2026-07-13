@@ -195,6 +195,13 @@ test("sendDrop sends drop message with slot", () => {
   expect(JSON.parse(sock.sent[0])).toEqual({ t: "drop", slot: 3 });
 });
 
+test("sendInventoryAction serializes an authenticated Examine request", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  conn.sendInventoryAction("examine", 7);
+  expect(sock.lastDecoded()).toEqual({ t: "inventoryAction", action: "examine", slot: 7 });
+});
+
 test("sendAttack sends attack message with targetId", () => {
   const { sock, conn } = setup();
   sock.fireOpen();

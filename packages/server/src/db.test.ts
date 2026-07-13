@@ -17,6 +17,7 @@ test("new account is created at spawn, hash is not plaintext", async () => {
   const result = await getOrCreateAccount(db, "alice", "s3cr3t", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
+  expect(result.created).toBe(true);
   expect(result.state.x).toBe(SPAWN.x);
   expect(result.state.y).toBe(SPAWN.y);
   expect(result.state.facing).toBe(SPAWN.facing);
@@ -30,6 +31,7 @@ test("correct password is accepted and returns saved state", async () => {
   await getOrCreateAccount(db, "bob", "correct", SPAWN);
   const result = await getOrCreateAccount(db, "bob", "correct", SPAWN);
   expect(result.ok).toBe(true);
+  if (result.ok) expect(result.created).toBe(false);
 });
 
 test("wrong password is rejected", async () => {
@@ -140,9 +142,11 @@ test("register mode fails when the name is already taken", async () => {
   expect(result.reason).toMatch(/taken/i);
 });
 
-test("register mode creates a fresh account", async () => {
+test("register mode marks a genuinely fresh account as created", async () => {
   const result = await getOrCreateAccount(db, "fresh", "pw", SPAWN, "register");
   expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.created).toBe(true);
 });
 
 test("login mode fails when the account does not exist", async () => {

@@ -180,6 +180,19 @@ export class GameWorld {
     return invSys.drop(this, id, slot);
   }
 
+  inventoryAction(id: string, action: "examine", slot: number): boolean {
+    if (!Number.isInteger(slot)) return false;
+    const stack = this.players.get(id)?.inventory[slot];
+    if (!stack) return false;
+    this.emitFact({
+      kind: "inventoryActionPerformed",
+      playerId: id,
+      action,
+      item: stack.item,
+    });
+    return true;
+  }
+
   spawnResource(type: string, x: number, y: number): string {
     const id = `res-${this.nextResourceId++}`;
     const cfg = RESOURCE_KINDS[type];

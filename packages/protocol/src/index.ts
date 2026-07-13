@@ -49,8 +49,9 @@ export interface OpenMsg { t: "open"; what: "bank" | "shop"; targetId: string; }
 export interface BankActionMsg { t: "bankAction"; action: "deposit" | "withdraw"; slot: number; qty: number; }
 export interface ShopActionMsg { t: "shopAction"; action: "buy" | "sell"; item: string; qty: number; }
 export interface EquipActionMsg { t: "equipAction"; action: "equip" | "unequip"; slot: number; }
+export interface InventoryActionMsg { t: "inventoryAction"; action: "examine"; slot: number; }
 export interface IntentMsg { t: "intent"; intent: Intent; }
-export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg | UseMsg | OpenMsg | BankActionMsg | ShopActionMsg | EquipActionMsg | IntentMsg;
+export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg | UseMsg | OpenMsg | BankActionMsg | ShopActionMsg | EquipActionMsg | InventoryActionMsg | IntentMsg;
 
 export interface WelcomeMsg {
   t: "welcome";
@@ -125,6 +126,7 @@ const CLIENT_TYPES: Record<ClientMsg["t"], true> = {
   bankAction: true,
   shopAction: true,
   equipAction: true,
+  inventoryAction: true,
   intent: true,
 };
 const SERVER_TYPES: Record<ServerMsg["t"], true> = {

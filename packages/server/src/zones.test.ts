@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { MapData } from "@termenor/protocol";
 import { emptyEquipment } from "@termenor/protocol";
 import type { PlayerTransferState } from "./entities";
-import type { ScenarioDef } from "./scenario";
+import { initialScenarioProgress, type ScenarioDef } from "./scenario";
 import type { ZoneDef } from "./world";
 import { Zones } from "./zones";
 
@@ -191,7 +191,7 @@ test("portal transfer keeps transient state and Scenario progress while clearing
     rngForZone: (zone) => seededRng(zone === "tutorial" ? 1 : 2),
     scenario: transferScenario,
   });
-  zones.addPlayer("p", { x: 1, y: 2, facing: "east", zone: "tutorial" });
+  zones.addPlayer("p", { x: 1, y: 2, facing: "east", zone: "tutorial" }, { newScenarioPlayer: true });
   const source = zones.worldOf("p");
   const player = source.players.get("p")!;
   player.hp = 3;
@@ -347,7 +347,13 @@ test("rejected deferred transition rolls back beside the source portal without r
     scenario: deferredScenario,
     deferTransitions: true,
   });
-  zones.addPlayer("p", { x: 3, y: 2, facing: "east", zone: "tutorial" });
+  zones.addPlayer("p", {
+    x: 3,
+    y: 2,
+    facing: "east",
+    zone: "tutorial",
+    scenario: initialScenarioProgress(deferredScenario),
+  });
 
   zones.step(1 / 15);
   const [transition] = zones.consumeTransitions();
@@ -451,7 +457,13 @@ test("rollback keeps non-transition evidence produced in the exit Tick", () => {
     scenario: evidenceScenario,
     deferTransitions: true,
   });
-  zones.addPlayer("p", { x: 3, y: 2, facing: "east", zone: "tutorial" });
+  zones.addPlayer("p", {
+    x: 3,
+    y: 2,
+    facing: "east",
+    zone: "tutorial",
+    scenario: initialScenarioProgress(evidenceScenario),
+  });
   zones.worldOf("p").emitFact({
     kind: "skillXpGained",
     playerId: "p",

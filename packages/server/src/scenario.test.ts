@@ -70,6 +70,16 @@ describe("validateScenario", () => {
     const broken = { ...valid, initialItems: [{ item: "logs", qty }] };
     expect(validateScenario(broken, zones)).toContain("scenario first_steps initialItems 0: qty must be a positive integer");
   });
+
+  test("rejects an initial loadout that exceeds Inventory capacity", () => {
+    const broken = {
+      ...valid,
+      initialItems: Array.from({ length: 29 }, () => ({ item: "bronze_axe", qty: 1 })),
+    };
+    expect(validateScenario(broken, zones)).toContain(
+      "scenario first_steps: initialItems exceed Inventory capacity",
+    );
+  });
 });
 
 test("new progress presents the first objective", () => {

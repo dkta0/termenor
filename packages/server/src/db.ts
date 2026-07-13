@@ -126,7 +126,7 @@ export async function getOrCreateAccount(
   password: string,
   spawn: { x: number; y: number; facing: Facing },
   mode?: "login" | "register",
-): Promise<{ ok: true; state: PlayerStateRecord } | { ok: false; reason: string }> {
+): Promise<{ ok: true; created: boolean; state: PlayerStateRecord } | { ok: false; reason: string }> {
   const row = db
     .query<{ password_hash: string; x: number; y: number; facing: string; inventory: string | null; skills: string | null; bank: string | null; equipment: string | null; zone: string | null; quests: string | null; scenario: string | null }, string>(
       "SELECT password_hash, x, y, facing, inventory, skills, bank, equipment, zone, quests, scenario FROM accounts WHERE username = ?",
@@ -141,7 +141,7 @@ export async function getOrCreateAccount(
       "INSERT INTO accounts (username, password_hash, x, y, facing, last_seen) VALUES (?, ?, ?, ?, ?, ?)",
       [username, hash, spawn.x, spawn.y, spawn.facing, Date.now()],
     );
-    return { ok: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {}, bank: [], equipment: emptyEquipment(), zone: DEFAULT_ZONE, quests: {}, scenario: null } };
+    return { ok: true, created: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {}, bank: [], equipment: emptyEquipment(), zone: DEFAULT_ZONE, quests: {}, scenario: null } };
   }
 
   // Account exists. Reject explicit registers; verify password otherwise.
@@ -181,6 +181,7 @@ export async function getOrCreateAccount(
   if (row.quests) { try { quests = JSON.parse(row.quests) as Record<string, number>; } catch { quests = {}; } }
 
   return {
+    created: false,
     ok: true,
     state: {
       x: row.x, y: row.y, facing: row.facing as Facing,

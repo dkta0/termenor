@@ -1,18 +1,25 @@
 import type { Intent } from "@termenor/protocol";
-import type { RestoredState } from "./game";
 import type { GameplayFact } from "./gameplay-facts";
 import { executeIntent, type IntentSession } from "./intent-executor";
-import type { ScenarioDef } from "./scenario";
+import type { ScenarioDef, ScenarioProgress } from "./scenario";
 import type { ZoneDef } from "./world";
-import { Zones, type ZoneTransition } from "./zones";
+import { Zones, type ZoneRestoredState, type ZoneTransition } from "./zones";
 
 const TICK_SECONDS = 1 / 15;
 
-export interface ScenarioInput {
-  tick: number;
-  playerId: string;
-  intent: Intent;
-}
+export type ScenarioInput =
+  | {
+      tick: number;
+      playerId: string;
+      intent: Intent;
+      inventoryAction?: never;
+    }
+  | {
+      tick: number;
+      playerId: string;
+      intent?: never;
+      inventoryAction: { action: "examine"; slot: number };
+    };
 
 export interface ScenarioTrace {
   scenarioId: string;
@@ -21,13 +28,14 @@ export interface ScenarioTrace {
   facts: GameplayFact[];
   transitions: ZoneTransition[];
   digests: { tick: number; digest: string }[];
+  progress: Partial<Record<string, ScenarioProgress>>;
 }
 
 interface RunScenarioArgs {
   scenario: ScenarioDef;
   zones: ZoneDef[];
   seed: number;
-  players: { id: string; state?: RestoredState }[];
+  players: { id: string; state?: ZoneRestoredState; newScenarioPlayer?: boolean }[];
   inputs: ScenarioInput[];
   ticks: number;
 }
@@ -127,7 +135,9 @@ export function runScenario(args: RunScenarioArgs): ScenarioTrace {
   });
   const sessions = new Map<string, IntentSession>();
   for (const player of args.players) {
-    zones.addPlayer(player.id, player.state);
+    zones.addPlayer(player.id, player.state, {
+      newScenarioPlayer: player.newScenarioPlayer ?? player.state?.scenario == null,
+    });
     sessions.set(player.id, {});
   }
 
@@ -144,12 +154,17 @@ export function runScenario(args: RunScenarioArgs): ScenarioTrace {
   const playerIds = args.players.map((player) => player.id);
   for (let tick = 1; tick <= args.ticks; tick++) {
     for (const input of inputsByTick.get(tick) ?? []) {
-      executeIntent(
-        zones.worldOf(input.playerId),
-        input.playerId,
-        input.intent,
-        sessions.get(input.playerId) ?? {},
-      );
+      if (input.intent !== undefined) {
+        executeIntent(
+          zones.worldOf(input.playerId),
+          input.playerId,
+          input.intent,
+          sessions.get(input.playerId) ?? {},
+        );
+      } else {
+        const { action, slot } = input.inventoryAction;
+        zones.worldOf(input.playerId).inventoryAction(input.playerId, action, slot);
+      }
     }
     facts.push(...zones.step(TICK_SECONDS));
     transitions.push(...zones.consumeTransitions());
@@ -159,12 +174,19 @@ export function runScenario(args: RunScenarioArgs): ScenarioTrace {
     });
   }
 
+  const progress: Partial<Record<string, ScenarioProgress>> = {};
+  for (const id of playerIds) {
+    const playerProgress = zones.progressOf(id);
+    if (playerProgress) progress[id] = playerProgress;
+  }
+
   return {
     scenarioId: args.scenario.id,
     version: args.scenario.version,
     seed: args.seed,
     facts,
     transitions,
+    progress,
     digests,
   };
 }

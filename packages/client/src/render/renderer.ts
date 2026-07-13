@@ -19,13 +19,14 @@ import { rasterizeIso, type IsoFrame } from "./rasterize";
 import { cellGridFor, selectTier, type CapsLike } from "./tiers";
 import { arrowDelta } from "./input";
 import { tileToScreen } from "./iso";
-import { textCells, centerCol } from "./overlay";
+import { objectiveCells, panelColumns, textCells, centerCol } from "./overlay";
 import { type CellGrid, type Tier } from "./types";
 import { isWorldClick, type HudRegions } from "./click-gate";
 import { pageCount, clampPage, indexForDigit, pageSlice } from "./paging";
 import {
   TABS, TAB_LABELS, layoutTabs, inventoryView, actionsForItem, ACTION_LABELS,
-  examineText, skillLines, gearRows, questLines, type Tab, type ItemAction,
+  examineText, skillLines, gearRows, makeIntentForItem, questLines, scenarioLines,
+  type Tab, type ItemAction,
 } from "./panel";
 import { pickEntity, regionAt, type HitEntity, type Region } from "./hit";
 import { FIRST_RUN_HINT, FIRST_RUN_HINT_MS, HELP_TITLE, HELP_LINES } from "./help";
@@ -58,8 +59,10 @@ export interface RendererHooks {
   onShopAction?(action: "buy" | "sell", item: string, qty: number): void;
   /** Called for an equip (by inventory slot) / unequip (by equipment-slot index). */
   onEquipAction?(action: "equip" | "unequip", slot: number): void;
+  /** Observe a client-visible Inventory action through the authenticated connection. */
+  onInventoryAction(action: "examine", slot: number): void;
   /** Called when the command line resolves a valid intent. */
-  onIntent?(intent: Intent): void;
+  onIntent(intent: Intent): void;
 }
 
 const BLACK = RGBA.fromInts(0, 0, 0, 255);
@@ -147,9 +150,25 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   const fireItemAction = (action: ItemAction, slot: number): void => {
     const stack = state.inventory[slot];
     if (!stack) { selectedSlot = null; return; }
-    if (action === "equip") hooks.onEquipAction?.("equip", slot);
-    else if (action === "drop") hooks.onDrop?.(slot);
-    else if (action === "examine") log.push("notable", examineText(stack.item));
+    switch (action) {
+      case "equip":
+        hooks.onEquipAction?.("equip", slot);
+        break;
+      case "make": {
+        const intent = makeIntentForItem(stack.item);
+        if (intent) hooks.onIntent(intent);
+        break;
+      }
+      case "drop":
+        hooks.onDrop?.(slot);
+        break;
+      case "examine":
+        log.push("notable", examineText(stack.item));
+        hooks.onInventoryAction("examine", slot);
+        break;
+      default:
+        return action satisfies never;
+    }
     if (action !== "examine") selectedSlot = null;
   };
 
@@ -200,7 +219,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     const pxW = cols;
     const pxH = tier === "halfblock" ? rows * 2 : rows;
 
-    const PANEL_COLS = Math.min(28, Math.max(0, cols - 20));
+    const PANEL_COLS = panelColumns(cols);
     const panelCol = cols - PANEL_COLS;
 
     const now = performance.now();
@@ -265,6 +284,11 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
       notable: RGBA.fromInts(230, 210, 140, 255),
       critical: RGBA.fromInts(230, 110, 110, 255),
     };
+    if (state.scenario?.objectiveText && !state.scenario.done) {
+      for (const cell of objectiveCells(state.scenario.objectiveText, cols, rows)) {
+        buffer.setCell(cell.col, cell.row, cell.char, TIER_COLORS.notable, BLACK);
+      }
+    }
     const logLines = log.recent(5);
     const logTop = rows - 7 - logLines.length - (cmd.active ? 1 : 0);
     for (let i = 0; i < logLines.length; i++) {
@@ -331,13 +355,16 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         }
         if (rowsV.length === 0) writeP("  (empty)", bodyTop, DIM);
         const sel = selectedSlot;
-        if (sel != null && state.inventory[sel]) {
-          let c = bodyCol;
-          for (const a of actionsForItem(state.inventory[sel]!.item)) {
-            const seg = `[${ACTION_LABELS[a]}]`;
-            for (const cell of textCells(seg, c, bodyBottom, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, TAB_ON, PANEL_BG);
-            actionRegions.push({ row: bodyBottom, col0: c, col1: c + seg.length - 1, value: { action: a, slot: sel } });
-            c += seg.length + 1;
+        if (sel != null) {
+          const stack = state.inventory[sel];
+          if (stack) {
+            let c = bodyCol;
+            for (const a of actionsForItem(stack.item)) {
+              const seg = `[${ACTION_LABELS[a]}]`;
+              for (const cell of textCells(seg, c, bodyBottom, cols, rows)) buffer.setCell(cell.col, cell.row, cell.char, TAB_ON, PANEL_BG);
+              actionRegions.push({ row: bodyBottom, col0: c, col1: c + seg.length - 1, value: { action: a, slot: sel } });
+              c += seg.length + 1;
+            }
           }
         }
       } else if (activeTab === "skills") {
@@ -357,11 +384,17 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
         }
         writeP("click a slot to remove it", bodyTop + rowsG.length + 1, DIM);
       } else {
+        const scenario = state.scenario;
         const lines = questLines();
+        if (scenario) lines.unshift(...scenarioLines(scenario), "");
         for (let i = 0; i < lines.length; i++) {
           const row = bodyTop + i;
           if (row > bodyBottom) break;
-          writeP(lines[i], row, lines[i].startsWith("  ") ? DIM : BODY);
+          const line = lines[i];
+          const color = i === 0 && scenario
+            ? TAB_ON
+            : line.startsWith("  ") ? DIM : BODY;
+          writeP(line, row, color);
         }
       }
 

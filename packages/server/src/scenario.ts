@@ -1,6 +1,7 @@
 import { ITEM_KINDS, NPC_KINDS, RECIPES, RESOURCE_KINDS, SKILLS } from "@termenor/protocol";
 import type { ZoneDef } from "./world";
 import type { GameplayFact } from "./gameplay-facts";
+import { addToInventory, emptyInventory } from "./inventory";
 
 export type ObjectiveWhen =
   | { kind: "talkedTo"; npcType: string }
@@ -105,9 +106,21 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
   const seen = new Set<string>();
   const start = byId.get(def.startZone);
 
+  let initialInventory = emptyInventory();
+  let loadoutOverflow = false;
   for (const [index, stack] of def.initialItems.entries()) {
-    if (!ITEM_KINDS[stack.item]) errors.push(`scenario ${def.id} initialItems ${index}: unknown Item ${stack.item}`);
-    if (!Number.isInteger(stack.qty) || stack.qty < 1) errors.push(`scenario ${def.id} initialItems ${index}: qty must be a positive integer`);
+    const knownItem = ITEM_KINDS[stack.item] !== undefined;
+    const validQty = Number.isInteger(stack.qty) && stack.qty >= 1;
+    if (!knownItem) errors.push(`scenario ${def.id} initialItems ${index}: unknown Item ${stack.item}`);
+    if (!validQty) errors.push(`scenario ${def.id} initialItems ${index}: qty must be a positive integer`);
+    if (knownItem && validQty && !loadoutOverflow) {
+      const added = addToInventory(initialInventory, stack);
+      loadoutOverflow = added.leftover !== null;
+      initialInventory = added.slots;
+    }
+  }
+  if (loadoutOverflow) {
+    errors.push(`scenario ${def.id}: initialItems exceed Inventory capacity`);
   }
 
   if (!Number.isInteger(def.version) || def.version < 1) errors.push(`scenario ${def.id}: version must be a positive integer`);

@@ -2,11 +2,11 @@ import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, emptyEquipment, validateA
 import { diffSnapshot } from "./delta";
 import { WorldIndex } from "./aoi";
 import { Zones, type PersistablePlayerState, type ZoneTransition } from "./zones";
-import { SPAWN, type ZoneDef } from "./world";
+import { SPAWN, ZONE_DEFS, type ZoneDef } from "./world";
 import { SqliteStore, type PlayerStateRecord, type PlayerStore } from "./store";
 import { emptyInventory } from "./inventory";
 import { executeIntent } from "./intent-executor";
-import { currentObjective, type ScenarioDef, type ScenarioProgress } from "./scenario";
+import { currentObjective, validateScenario, type ScenarioDef, type ScenarioProgress } from "./scenario";
 
 // fail fast at startup if the model catalog is invalid
 const modelErrors = validateAllModels();
@@ -95,7 +95,14 @@ export function startServer(
   opts: StartServerOptions = {},
 ): RunningServer {
   const AOI_RADIUS = opts.aoiRadius ?? 48;
-  const zones = new Zones(opts.zoneDefs, {
+  const zoneDefs = opts.zoneDefs ?? ZONE_DEFS;
+  if (opts.scenario) {
+    const errors = validateScenario(opts.scenario, zoneDefs);
+    if (errors.length > 0) {
+      throw new Error(`invalid Scenario:\n${errors.join("\n")}`);
+    }
+  }
+  const zones = new Zones(zoneDefs, {
     scenario: opts.scenario,
     deferTransitions: opts.scenario !== undefined,
   });
@@ -232,19 +239,26 @@ export function startServer(
 
           ws.data.username = username;
           sockets.set(username, ws);
-          zones.addPlayer(username, result.state);
+          zones.addPlayer(username, result.state, {
+            newScenarioPlayer: result.created,
+          });
+          const playerState = zones.stateOf(username);
+          if (!playerState) throw new Error(`failed to add Player ${username}`);
           ws.subscribe("world");
           ws.send(encode({
             t: "welcome",
             playerId: username,
             map: zones.mapOf(zones.zoneOf(username)),
             tickRate: TICK_RATE,
-            x: result.state.x,
-            y: result.state.y,
-            facing: result.state.facing,
+            x: playerState.x,
+            y: playerState.y,
+            facing: playerState.facing,
           }));
           sendScenario(ws, username);
-          const invMsg: InventoryMsg = { t: "inventory", slots: result.state.inventory };
+          const invMsg: InventoryMsg = {
+            t: "inventory",
+            slots: playerState.inventory ?? emptyInventory(),
+          };
           ws.send(encode(invMsg));
           const skillsMsg: SkillsMsg = { t: "skills", skills: zones.worldOf(username).getPlayerSkills(username) };
           ws.send(encode(skillsMsg));
@@ -287,6 +301,17 @@ export function startServer(
           w.gather(u, msg.targetId);
         } else if (msg.t === "use") {
           w.use(u, msg.action, msg.slot);
+        } else if (msg.t === "inventoryAction") {
+          if (
+            msg.action === "examine"
+            && !w.inventoryAction(u, msg.action, msg.slot)
+          ) {
+            ws.send(encode({
+              t: "chatMsg",
+              from: "",
+              text: "That Inventory slot changed. Select the item and try Examine again.",
+            }));
+          }
         } else if (msg.t === "open") {
           if (msg.what === "bank") {
             if (w.openBank(u, msg.targetId)) {
@@ -415,7 +440,15 @@ export function startServer(
   };
 
   const interval = setInterval(() => {
-    zones.step(dt);
+    const facts = zones.step(dt);
+    for (const fact of facts) {
+      if (fact.kind !== "resourceGathered") continue;
+      const socket = sockets.get(fact.playerId);
+      const inventory = zones.worldOf(fact.playerId).getInventory(fact.playerId);
+      if (socket && inventory) {
+        socket.send(encode({ t: "inventory", slots: inventory } satisfies InventoryMsg));
+      }
+    }
 
     for (const transition of zones.consumeTransitions()) {
       void processTransition(transition);

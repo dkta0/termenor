@@ -5,7 +5,8 @@ import { emptyEquipment } from "@termenor/protocol";
 import { emptyInventory } from "./inventory";
 import type { AccountResult, PlayerStateRecord, PlayerStore } from "./store";
 import type { ScenarioDef } from "./scenario";
-import type { ZoneDef } from "./world";
+import { TUTORIAL_SCENARIO, TUTORIAL_ZONE } from "./tutorial";
+import { ZONE_DEFS, type ZoneDef } from "./world";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -669,7 +670,7 @@ class TestPlayerStore implements PlayerStore {
   ) {}
 
   async getOrCreateAccount(): Promise<AccountResult> {
-    return { ok: true, state: structuredClone(this.loaded) };
+    return { ok: true, created: false, state: structuredClone(this.loaded) };
   }
 
   async savePlayerState(username: string, state: PlayerStateRecord): Promise<void> {
@@ -1241,3 +1242,152 @@ test("rollback contains an asynchronously rejecting persistence reporter", async
   expect(decodedMessages(client.messages).some((message) => message.t === "zone")).toBe(false);
   client.close();
 }, 8_000);
+
+test("a genuinely new registered account starts in the tutorial with its own Scenario loadout", async () => {
+  srv = startServer(0, ":memory:", {
+    scenario: TUTORIAL_SCENARIO,
+    zoneDefs: [TUTORIAL_ZONE, ...ZONE_DEFS],
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const scenarioP = client.waitForMessage("scenario");
+  const inventoryP = client.waitForMessage("inventory");
+  client.send(JSON.stringify({
+    t: "login",
+    mode: "register",
+    username: "fresh-learner",
+    password: "pw",
+  }));
+
+  const [welcome, scenario, inventory] = await Promise.all([welcomeP, scenarioP, inventoryP]);
+  expect(welcome).toMatchObject({
+    x: TUTORIAL_ZONE.spawn.x,
+    y: TUTORIAL_ZONE.spawn.y,
+  });
+  expect(isRecord(welcome.map) && welcome.map.width).toBe(TUTORIAL_ZONE.map.width);
+  expect(scenario).toMatchObject({
+    scenarioId: "first_steps",
+    objectiveId: "meet_guide",
+    done: false,
+  });
+  expect(Array.isArray(inventory.slots)).toBe(true);
+  if (!Array.isArray(inventory.slots)) throw new Error("inventory slots missing");
+  expect(inventory.slots).toContainEqual({ item: "bronze_axe", qty: 1 });
+  client.close();
+});
+
+test("a successful tutorial Gather pushes the changed Inventory to the client", async () => {
+  srv = startServer(0, ":memory:", {
+    scenario: TUTORIAL_SCENARIO,
+    zoneDefs: [TUTORIAL_ZONE, ...ZONE_DEFS],
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const initialInventoryP = client.waitForMessage("inventory");
+  client.send(JSON.stringify({
+    t: "login",
+    mode: "register",
+    username: "gathering-learner",
+    password: "pw",
+  }));
+  await Promise.all([welcomeP, initialInventoryP]);
+
+  const changedInventoryP = client.waitForMessage("inventory");
+  client.send(JSON.stringify({ t: "gather", targetId: "res-1" }));
+  const changedInventory = await changedInventoryP;
+  expect(Array.isArray(changedInventory.slots)).toBe(true);
+  if (!Array.isArray(changedInventory.slots)) throw new Error("inventory slots missing");
+  expect(changedInventory.slots).toContainEqual({ item: "logs", qty: 1 });
+  client.close();
+});
+
+test("an existing account retains its saved Zone and Inventory when a Scenario is active", async () => {
+  const inventory = emptyInventory();
+  inventory[4] = { item: "logs", qty: 3 };
+  const store = new TestPlayerStore(scenarioPlayerState({
+    x: 25,
+    y: 24,
+    zone: "overworld",
+    inventory,
+    scenario: null,
+  }));
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: TUTORIAL_SCENARIO,
+    zoneDefs: [TUTORIAL_ZONE, ...ZONE_DEFS],
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const inventoryP = client.waitForMessage("inventory");
+  client.send(JSON.stringify({ t: "login", mode: "login", username: "returner", password: "pw" }));
+
+  const [welcome, inventoryMessage] = await Promise.all([welcomeP, inventoryP]);
+  expect(welcome).toMatchObject({ x: 25, y: 24 });
+  expect(isRecord(welcome.map) && welcome.map.width).toBe(ZONE_DEFS[0].map.width);
+  expect(Array.isArray(inventoryMessage.slots)).toBe(true);
+  if (!Array.isArray(inventoryMessage.slots)) throw new Error("inventory slots missing");
+  expect(inventoryMessage.slots[4]).toEqual({ item: "logs", qty: 3 });
+  expect(inventoryMessage.slots).not.toContainEqual({ item: "bronze_axe", qty: 1 });
+  expect(decodedMessages(client.messages).some((message) => message.t === "scenario")).toBe(false);
+  client.close();
+});
+
+test("authenticated Inventory Examine advances from the server-observed slot Item", async () => {
+  const inventory = emptyInventory();
+  inventory[2] = { item: "arrow_shafts", qty: 1 };
+  const completed = TUTORIAL_SCENARIO.objectives.slice(0, 3).map((objective) => objective.id);
+  const evidence = completed.map((objectiveId, index) => ({ objectiveId, tick: index + 1 }));
+  evidence.push({ objectiveId: "gain_fletching_xp", tick: 3 });
+  const store = new TestPlayerStore(scenarioPlayerState({
+    x: TUTORIAL_ZONE.spawn.x,
+    y: TUTORIAL_ZONE.spawn.y,
+    zone: "tutorial",
+    inventory,
+    scenario: {
+      scenarioId: TUTORIAL_SCENARIO.id,
+      version: TUTORIAL_SCENARIO.version,
+      completed,
+      evidence,
+      done: false,
+    },
+  }));
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: TUTORIAL_SCENARIO,
+    zoneDefs: [TUTORIAL_ZONE, ...ZONE_DEFS],
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const initialScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "login", username: "examiner", password: "pw" }));
+  await welcomeP;
+  const initialScenario = await initialScenarioP;
+  expect(initialScenario.objectiveId).toBe("use_inventory");
+
+  const staleFeedbackP = client.waitForMessage("chatMsg");
+  client.send(JSON.stringify({ t: "inventoryAction", action: "examine", slot: 3 }));
+  expect(await staleFeedbackP).toMatchObject({
+    from: "",
+    text: "That Inventory slot changed. Select the item and try Examine again.",
+  });
+
+  const advancedScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "inventoryAction", action: "examine", slot: 2 }));
+  const advancedScenario = await advancedScenarioP;
+  expect(advancedScenario).toMatchObject({
+    objectiveId: "enter_world",
+    completed: [
+      "meet_guide",
+      "gather_logs",
+      "fletch_logs",
+      "use_inventory",
+      "gain_fletching_xp",
+    ],
+    done: false,
+  });
+  client.close();
+});
