@@ -529,6 +529,7 @@ class PtyHarness:
                 self._drain_client(client)
         for client in self.clients:
             self._reap_client(client)
+        self._raise_if_process_exited()
 
     def wait_for(
         self,

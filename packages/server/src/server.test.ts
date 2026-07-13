@@ -797,6 +797,140 @@ test("incompatible persisted Scenario resets progress without discarding Player 
   client.close();
 });
 
+test("disconnect during a rejected final transition save persists the tutorial rollback snapshot", async () => {
+  const transitionSaveStarted = deferredSignal();
+  const releaseTransitionSave = deferredSignal();
+  const disconnectSaveStarted = deferredSignal();
+  let rejectTransitionSave = false;
+  let saveCount = 0;
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 3, y: 2 }),
+    async () => {
+      saveCount++;
+      if (saveCount === 1) {
+        transitionSaveStarted.resolve();
+        await releaseTransitionSave.promise;
+        if (rejectTransitionSave) throw new Error("destination save rejected");
+      } else if (saveCount === 2) {
+        disconnectSaveStarted.resolve();
+      }
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+    onPersistenceError: () => {},
+  });
+  const first = wsClient(srv.port);
+  await first.waitForOpen();
+  const welcomeP = first.waitForMessage("welcome");
+  const initialScenarioP = first.waitForMessage("scenario");
+  first.send(JSON.stringify({ t: "login", username: "reject-close", password: "pw" }));
+  await welcomeP;
+  await initialScenarioP;
+  await transitionSaveStarted.promise;
+
+  first.close();
+  await sleep(50);
+  rejectTransitionSave = true;
+  releaseTransitionSave.resolve();
+  await disconnectSaveStarted.promise;
+  await sleep(50);
+
+  const restored = wsClient(srv.port);
+  await restored.waitForOpen();
+  const restoredWelcomeP = restored.waitForMessage("welcome");
+  const restoredScenarioP = restored.waitForMessage("scenario");
+  restored.send(JSON.stringify({ t: "login", username: "reject-close", password: "pw" }));
+  const restoredWelcome = await restoredWelcomeP;
+  const restoredScenario = await restoredScenarioP;
+
+  expect(restoredWelcome).toMatchObject({ x: 2, y: 2 });
+  expect(restoredScenario).toMatchObject({
+    scenarioId: "first_steps",
+    completed: [],
+    done: false,
+  });
+  expect(store.saves).toHaveLength(2);
+  expect(store.saves[0]).toMatchObject({
+    zone: "overworld",
+    scenario: { completed: ["enter_world"], done: true },
+  });
+  expect(store.saves[1]).toMatchObject({
+    zone: "tutorial",
+    x: 2,
+    y: 2,
+    scenario: { completed: [], done: false },
+  });
+  restored.close();
+}, 8_000);
+
+test("disconnect during a successful final transition save persists the tutorial rollback snapshot", async () => {
+  const transitionSaveStarted = deferredSignal();
+  const releaseTransitionSave = deferredSignal();
+  const disconnectSaveStarted = deferredSignal();
+  let saveCount = 0;
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 3, y: 2 }),
+    async () => {
+      saveCount++;
+      if (saveCount === 1) {
+        transitionSaveStarted.resolve();
+        await releaseTransitionSave.promise;
+      } else if (saveCount === 2) {
+        disconnectSaveStarted.resolve();
+      }
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const first = wsClient(srv.port);
+  await first.waitForOpen();
+  const welcomeP = first.waitForMessage("welcome");
+  const initialScenarioP = first.waitForMessage("scenario");
+  first.send(JSON.stringify({ t: "login", username: "success-close", password: "pw" }));
+  await welcomeP;
+  await initialScenarioP;
+  await transitionSaveStarted.promise;
+
+  first.close();
+  await sleep(50);
+  releaseTransitionSave.resolve();
+  await disconnectSaveStarted.promise;
+  await sleep(50);
+
+  const restored = wsClient(srv.port);
+  await restored.waitForOpen();
+  const restoredWelcomeP = restored.waitForMessage("welcome");
+  const restoredScenarioP = restored.waitForMessage("scenario");
+  restored.send(JSON.stringify({ t: "login", username: "success-close", password: "pw" }));
+  const restoredWelcome = await restoredWelcomeP;
+  const restoredScenario = await restoredScenarioP;
+
+  expect(restoredWelcome).toMatchObject({ x: 2, y: 2 });
+  expect(restoredScenario).toMatchObject({
+    scenarioId: "first_steps",
+    completed: [],
+    done: false,
+  });
+  expect(store.saves).toHaveLength(2);
+  expect(store.saves[0]).toMatchObject({
+    zone: "overworld",
+    scenario: { completed: ["enter_world"], done: true },
+  });
+  expect(store.saves[1]).toMatchObject({
+    zone: "tutorial",
+    x: 2,
+    y: 2,
+    scenario: { completed: [], done: false },
+  });
+  restored.close();
+}, 8_000);
+
 test("successful final transition is persisted before destination visibility", async () => {
   const saveStarted = deferredSignal();
   const releaseSave = deferredSignal();

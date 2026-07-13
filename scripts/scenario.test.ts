@@ -104,6 +104,25 @@ test("replay accepts matching digests", () => {
   expect(replay.stdout).toContain("Ticks: 100");
   expect(replay.stdout).toContain(`Final digest: ${trace.digests.at(-1)?.digest}`);
 });
+test("replay rejects a syntactically valid input for an unregistered Player", () => {
+  const unknownPlayerPath = join(root, "unknown-player-input.json");
+  const unknownPlayer = readTrace(tracePath);
+  unknownPlayer.inputs.push({
+    tick: 100,
+    playerId: "ghost",
+    intent: { kind: "pickup" },
+  });
+  writeFileSync(unknownPlayerPath, `${JSON.stringify(unknownPlayer, null, 2)}\n`);
+
+  const replay = capture(["replay", unknownPlayerPath]);
+
+  expect(replay.exitCode).toBe(2);
+  expect(replay.stdout).toBe("");
+  expect(replay.stderr).toContain(
+    'Scenario input at index 5 names unregistered Player "ghost"',
+  );
+});
+
 
 test("replay reports expected and actual digests at the first divergent outer Tick", () => {
   const changedPath = join(root, "changed-input.json");

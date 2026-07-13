@@ -140,9 +140,17 @@ export function runScenario(args: RunScenarioArgs): ScenarioTrace {
     });
     sessions.set(player.id, {});
   }
+  const playerIds = args.players.map((player) => player.id);
+  const registeredPlayerIds = new Set(playerIds);
+
 
   const inputsByTick = new Map<number, ScenarioInput[]>();
-  for (const input of args.inputs) {
+  for (const [index, input] of args.inputs.entries()) {
+    if (!registeredPlayerIds.has(input.playerId)) {
+      throw new Error(
+        `Scenario input at index ${index} names unregistered Player "${input.playerId}"`,
+      );
+    }
     const scheduled = inputsByTick.get(input.tick);
     if (scheduled) scheduled.push(input);
     else inputsByTick.set(input.tick, [input]);
@@ -151,7 +159,6 @@ export function runScenario(args: RunScenarioArgs): ScenarioTrace {
   const facts: GameplayFact[] = [];
   const transitions: ZoneTransition[] = [];
   const digests: ScenarioTrace["digests"] = [];
-  const playerIds = args.players.map((player) => player.id);
   for (let tick = 1; tick <= args.ticks; tick++) {
     for (const input of inputsByTick.get(tick) ?? []) {
       if (input.intent !== undefined) {

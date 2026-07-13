@@ -110,6 +110,10 @@ export function startServer(
   const saveChains = new Map<string, Promise<void>>();
   const latestSaveSnapshots = new Map<string, PlayerStateRecord>();
   const disconnectedSnapshots = new Map<string, PlayerStateRecord>();
+  const pendingTransitionSaves = new Map<string, {
+    transition: Extract<ZoneTransition, { pending: true }>;
+    socket: Bun.ServerWebSocket<Conn>;
+  }>();
   const cancelDisconnectRetries = new Map<string, () => void>();
   const reportPersistenceError = opts.onPersistenceError
     ?? ((error: unknown, context: PersistenceErrorContext) => {
@@ -147,6 +151,9 @@ export function startServer(
       },
       () => {
         if (saveChains.get(username) === save) saveChains.delete(username);
+        if (latestSaveSnapshots.get(username) === snapshot) {
+          latestSaveSnapshots.delete(username);
+        }
       },
     );
     return save;
@@ -355,12 +362,16 @@ export function startServer(
       close(ws) {
         const { username } = ws.data;
         if (username === null) return;
+        const pendingSave = pendingTransitionSaves.get(username);
+        if (pendingSave?.socket === ws) {
+          zones.rollbackTransition(pendingSave.transition);
+        }
         const state = zones.stateOf(username);
         const snapshot = state
           ? playerStateRecord(state)
           : latestSaveSnapshots.get(username);
         zones.removePlayer(username);
-        sockets.delete(username);
+        if (sockets.get(username) === ws) sockets.delete(username);
         if (snapshot) {
           disconnectedSnapshots.set(username, snapshot);
           persistDisconnected(username);
@@ -406,11 +417,20 @@ export function startServer(
     }
     const pendingState = zones.pendingStateOf(transition);
     if (!pendingState) return;
+    const save = enqueuePlayerSave(
+      transition.id,
+      playerStateRecord(pendingState),
+    );
+    pendingTransitionSaves.set(transition.id, { transition, socket });
     try {
-      await enqueuePlayerSave(
-        transition.id,
-        playerStateRecord(pendingState),
-      );
+      await save;
+      if (sockets.get(transition.id) !== socket) {
+        zones.rollbackTransition(transition);
+        return;
+      }
+      if (!zones.commitTransition(transition)) return;
+      sendZone(socket, transition);
+      flushScenarioChanges();
     } catch (error) {
       const rolledBack = zones.rollbackTransition(transition);
       safelyReportPersistenceError(error, {
@@ -428,15 +448,12 @@ export function startServer(
         }));
         flushScenarioChanges();
       }
-      return;
+    } finally {
+      const current = pendingTransitionSaves.get(transition.id);
+      if (current?.transition === transition) {
+        pendingTransitionSaves.delete(transition.id);
+      }
     }
-    if (sockets.get(transition.id) !== socket) {
-      zones.rollbackTransition(transition);
-      return;
-    }
-    if (!zones.commitTransition(transition)) return;
-    sendZone(socket, transition);
-    flushScenarioChanges();
   };
 
   const interval = setInterval(() => {

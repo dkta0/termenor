@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -292,6 +293,44 @@ os._exit(7)
 
         self.assertEqual(attempted, [second, first])
         terminate_server.assert_called_once_with()
+
+    def test_pump_reports_a_server_that_exits_after_readiness(self) -> None:
+        server_code = """
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import sys
+import time
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ready")
+
+    def log_message(self, *_args):
+        pass
+
+print("server-exit-marker", flush=True)
+server = HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler)
+server.handle_request()
+time.sleep(0.2)
+sys.exit(7)
+"""
+        with tempfile.TemporaryDirectory() as artifact_base:
+            harness = PtyHarness(
+                server_command=[sys.executable, "-u", "-c", server_code, "{port}"],
+                artifact_base=Path(artifact_base),
+                readiness_timeout=1.0,
+            )
+            with patch.object(harness, "_terminate_server"):
+                with harness:
+                    harness.start_server()
+                    time.sleep(0.3)
+                    with self.assertRaisesRegex(
+                        HarnessError,
+                        "server exited unexpectedly with status 7",
+                    ) as raised:
+                        harness.pump()
+                    self.assertIn("server-exit-marker", str(raised.exception))
 
     def test_http_readiness_timeout_keeps_log_and_does_not_mark_server_ready(self) -> None:
         server_code = """
