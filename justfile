@@ -38,15 +38,15 @@ pty-harness-test: playtest-deps
     python3 -m unittest scripts/pty_harness_test.py
 
 # real-terminal render smoke test (hermetic, own temp DB)
-render:
+render: playtest-deps
     bun run verify:render
 
 # real-terminal click-to-move smoke test (hermetic, own temp DB)
-click:
+click: playtest-deps
     bun run verify:click
 
 # real-terminal login → world smoke test (hermetic, own temp DB)
-login:
+login: playtest-deps
     bun run verify:login
 
 # deterministic headless tutorial Scenario
