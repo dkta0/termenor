@@ -143,7 +143,6 @@ export function runScenario(args: RunScenarioArgs): ScenarioTrace {
   const playerIds = args.players.map((player) => player.id);
   const registeredPlayerIds = new Set(playerIds);
 
-
   const inputsByTick = new Map<number, ScenarioInput[]>();
   for (const [index, input] of args.inputs.entries()) {
     if (!registeredPlayerIds.has(input.playerId)) {

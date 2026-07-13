@@ -556,7 +556,6 @@ class PtyHarness:
 
         while True:
             self.pump(0.0)
-            self._raise_if_process_exited()
             if time.monotonic() >= deadline:
                 raise timed_out()
             value = condition()
