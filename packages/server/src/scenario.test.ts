@@ -97,11 +97,39 @@ describe("validateScenario", () => {
     );
   });
 
+  test("excludes an invalid non-stackable stack from the capacity simulation", () => {
+    const broken = {
+      ...valid,
+      initialItems: [
+        ...Array.from({ length: 28 }, () => ({ item: "bronze_axe", qty: 1 })),
+        { item: "bronze_sword", qty: 2 },
+      ],
+    };
+    const errors = validateScenario(broken, zones);
+    expect(errors).toContain(
+      "scenario first_steps initialItems 28: non-stackable Item bronze_sword qty must be 1",
+    );
+    expect(errors).not.toContain("scenario first_steps: initialItems exceed Inventory capacity");
+  });
+
   test("rejects blank objective ids", () => {
     const broken = { ...valid, objectives: [{ ...valid.objectives[0], id: "  " }] };
     expect(validateScenario(broken, zones)).toContain(
       "scenario first_steps objective: id must not be blank",
     );
+  });
+
+  test("does not report blank objective ids as duplicates", () => {
+    const broken = {
+      ...valid,
+      objectives: [
+        { ...valid.objectives[0], id: "" },
+        { ...valid.objectives[0], id: "" },
+      ],
+    };
+    const errors = validateScenario(broken, zones);
+    expect(errors.filter((e) => e === "scenario first_steps objective: id must not be blank")).toHaveLength(2);
+    expect(errors.some((e) => e.startsWith("scenario first_steps: duplicate objective"))).toBe(false);
   });
 
   test("rejects an empty objective list", () => {

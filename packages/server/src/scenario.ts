@@ -117,12 +117,13 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
   for (const [index, stack] of def.initialItems.entries()) {
     const knownItem = hasCatalogKey(ITEM_KINDS, stack.item);
     const validQty = Number.isInteger(stack.qty) && stack.qty >= 1;
+    const badNonStackableQty = knownItem && validQty && !ITEM_KINDS[stack.item].stackable && stack.qty !== 1;
     if (!knownItem) errors.push(`scenario ${def.id} initialItems ${index}: unknown Item ${stack.item}`);
     if (!validQty) errors.push(`scenario ${def.id} initialItems ${index}: qty must be a positive integer`);
-    if (knownItem && validQty && !ITEM_KINDS[stack.item].stackable && stack.qty !== 1) {
+    if (badNonStackableQty) {
       errors.push(`scenario ${def.id} initialItems ${index}: non-stackable Item ${stack.item} qty must be 1`);
     }
-    if (knownItem && validQty && !loadoutOverflow) {
+    if (knownItem && validQty && !badNonStackableQty && !loadoutOverflow) {
       const added = addToInventory(initialInventory, stack);
       loadoutOverflow = added.leftover !== null;
       initialInventory = added.slots;
@@ -136,12 +137,16 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
   if (!start) errors.push(`scenario ${def.id}: unknown start Zone ${def.startZone}`);
 
   for (const objective of def.objectives) {
-    if (objective.id.trim() === "") errors.push(`scenario ${def.id} objective: id must not be blank`);
-    const at = objective.id.trim() === ""
+    const blankId = objective.id.trim() === "";
+    const at = blankId
       ? `scenario ${def.id} objective`
       : `scenario ${def.id} objective ${objective.id}`;
-    if (seen.has(objective.id)) errors.push(`scenario ${def.id}: duplicate objective ${objective.id}`);
-    seen.add(objective.id);
+    if (blankId) {
+      errors.push(`scenario ${def.id} objective: id must not be blank`);
+    } else {
+      if (seen.has(objective.id)) errors.push(`scenario ${def.id}: duplicate objective ${objective.id}`);
+      seen.add(objective.id);
+    }
     if (objective.text.trim() === "") errors.push(`${at}: text must not be blank`);
 
     switch (objective.when.kind) {
