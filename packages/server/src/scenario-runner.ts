@@ -1,7 +1,7 @@
 import type { Intent } from "@termenor/protocol";
 import type { GameplayFact } from "./gameplay-facts";
 import { executeIntent, type IntentSession } from "./intent-executor";
-import type { ScenarioDef, ScenarioProgress } from "./scenario";
+import { validateScenario, type ScenarioDef, type ScenarioProgress } from "./scenario";
 import type { ZoneDef } from "./world";
 import { Zones, type ZoneRestoredState, type ZoneTransition } from "./zones";
 
@@ -43,6 +43,33 @@ interface RunScenarioArgs {
 interface RngState {
   seed: number;
   calls: number;
+}
+
+function validateRunScenarioArgs(args: RunScenarioArgs): void {
+  const scenarioErrors = validateScenario(args.scenario, args.zones);
+  if (scenarioErrors.length > 0) throw new Error(`invalid Scenario:\n${scenarioErrors.join("\n")}`);
+  if (!Number.isSafeInteger(args.seed)) throw new Error("Scenario seed must be a safe integer");
+  if (!Number.isInteger(args.ticks) || args.ticks <= 0) {
+    throw new Error("Scenario ticks must be a positive integer");
+  }
+
+  const playerIds = new Set<string>();
+  for (const [index, player] of args.players.entries()) {
+    if (player.id.trim() === "") throw new Error(`Scenario Player at index ${index} has a blank id`);
+    if (playerIds.has(player.id)) throw new Error(`Scenario Player at index ${index} duplicates id "${player.id}"`);
+    playerIds.add(player.id);
+  }
+
+  for (const [index, input] of args.inputs.entries()) {
+    if (!playerIds.has(input.playerId)) {
+      throw new Error(`Scenario input at index ${index} names unregistered Player "${input.playerId}"`);
+    }
+    if (!Number.isInteger(input.tick) || input.tick < 1 || input.tick > args.ticks) {
+      throw new Error(
+        `Scenario input at index ${index}: Tick ${input.tick} is outside registered range 1..${args.ticks}`,
+      );
+    }
+  }
 }
 
 function seededRng(
@@ -128,6 +155,7 @@ function stateDigest(
 }
 
 export function runScenario(args: RunScenarioArgs): ScenarioTrace {
+  validateRunScenarioArgs(args);
   const rngStates = new Map<string, RngState>();
   const zones = new Zones(args.zones, {
     rngForZone: (zoneId) => seededRng(args.seed, zoneId, rngStates),
@@ -141,15 +169,9 @@ export function runScenario(args: RunScenarioArgs): ScenarioTrace {
     sessions.set(player.id, {});
   }
   const playerIds = args.players.map((player) => player.id);
-  const registeredPlayerIds = new Set(playerIds);
 
   const inputsByTick = new Map<number, ScenarioInput[]>();
-  for (const [index, input] of args.inputs.entries()) {
-    if (!registeredPlayerIds.has(input.playerId)) {
-      throw new Error(
-        `Scenario input at index ${index} names unregistered Player "${input.playerId}"`,
-      );
-    }
+  for (const input of args.inputs) {
     const scheduled = inputsByTick.get(input.tick);
     if (scheduled) scheduled.push(input);
     else inputsByTick.set(input.tick, [input]);

@@ -227,3 +227,33 @@ test("state digests include the deterministic RNG stream before visible divergen
 
   expect(firstSeed.digests).not.toEqual(secondSeed.digests);
 });
+
+test("runScenario validates Scenario and runner boundaries before simulation", () => {
+  expect(() => runScenario({
+    scenario: { ...scenario, startZone: "missing" },
+    zones,
+    seed: 1,
+    players: [{ id: "p" }],
+    inputs: [],
+    ticks: 1,
+  })).toThrow("scenario deterministic_transfer: unknown start Zone missing");
+
+  expect(() => runScenario({ scenario, zones, seed: 1.5, players: [{ id: "p" }], inputs: [], ticks: 1 }))
+    .toThrow("Scenario seed must be a safe integer");
+  expect(() => runScenario({ scenario, zones, seed: 1, players: [{ id: "p" }], inputs: [], ticks: 0 }))
+    .toThrow("Scenario ticks must be a positive integer");
+  expect(() => runScenario({ scenario, zones, seed: 1, players: [{ id: "p" }], inputs: [], ticks: 1.5 }))
+    .toThrow("Scenario ticks must be a positive integer");
+  expect(() => runScenario({ scenario, zones, seed: 1, players: [{ id: " " }], inputs: [], ticks: 1 }))
+    .toThrow('Scenario Player at index 0 has a blank id');
+  expect(() => runScenario({ scenario, zones, seed: 1, players: [{ id: "p" }, { id: "p" }], inputs: [], ticks: 1 }))
+    .toThrow('Scenario Player at index 1 duplicates id "p"');
+  expect(() => runScenario({
+    scenario,
+    zones,
+    seed: 1,
+    players: [{ id: "p" }],
+    inputs: [{ tick: 2, playerId: "p", intent: { kind: "pickup" } }],
+    ticks: 1,
+  })).toThrow("Scenario input at index 0: Tick 2 is outside registered range 1..1");
+});

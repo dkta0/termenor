@@ -80,6 +80,36 @@ describe("validateScenario", () => {
       "scenario first_steps: initialItems exceed Inventory capacity",
     );
   });
+  test.each(["toString", "constructor"])("rejects inherited catalog keys %s", (key) => {
+    const cases: { def: ScenarioDef; error: string }[] = [
+      { def: { ...valid, initialItems: [{ item: key, qty: 1 }] }, error: `scenario first_steps initialItems 0: unknown Item ${key}` },
+      { def: { ...valid, objectives: [{ id: "talk", text: "Talk.", when: { kind: "talkedTo", npcType: key } }] }, error: `scenario first_steps objective talk: unknown NPC ${key}` },
+      { def: { ...valid, objectives: [{ id: "gather", text: "Gather.", when: { kind: "gathered", resourceType: key, item: "logs" } }] }, error: `scenario first_steps objective gather: unknown Resource ${key}` },
+      { def: { ...valid, objectives: [{ id: "produce", text: "Produce.", when: { kind: "produced", source: "recipe", operation: key, item: "logs" } }] }, error: `scenario first_steps objective produce: unknown Recipe ${key}` },
+    ];
+    for (const { def, error } of cases) expect(validateScenario(def, zones)).toContain(error);
+  });
+
+  test("rejects quantity greater than one for non-stackable initial Items", () => {
+    const broken = { ...valid, initialItems: [{ item: "bronze_axe", qty: 2 }] };
+    expect(validateScenario(broken, zones)).toContain(
+      "scenario first_steps initialItems 0: non-stackable Item bronze_axe qty must be 1",
+    );
+  });
+
+  test("rejects blank objective ids", () => {
+    const broken = { ...valid, objectives: [{ ...valid.objectives[0], id: "  " }] };
+    expect(validateScenario(broken, zones)).toContain(
+      "scenario first_steps objective: id must not be blank",
+    );
+  });
+
+  test("rejects an empty objective list", () => {
+    const broken = { ...valid, objectives: [] };
+    expect(validateScenario(broken, zones)).toContain(
+      "scenario first_steps: objectives must not be empty",
+    );
+  });
 });
 
 test("new progress presents the first objective", () => {

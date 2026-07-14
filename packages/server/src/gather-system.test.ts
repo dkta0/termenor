@@ -77,3 +77,37 @@ test("a nonexistent gather target emits no fact", () => {
   w.step(1 / 15);
   expect(w.consumeFacts()).toEqual([]);
 });
+
+test("missing gather tool emits no resource fact or charge consumption", () => {
+  const w = new GameWorld(MAP, { x: 1, y: 1 });
+  w.addPlayer("chopper", {
+    x: 1,
+    y: 1,
+    facing: "south",
+    inventory: new Array(28).fill(null),
+  });
+  const treeId = w.spawnResource("tree", 2, 1);
+  const resource = w.resources.find((entry) => entry.id === treeId)!;
+  const charges = resource.charges;
+  w.gather("chopper", treeId);
+  w.step(1 / 15);
+  expect(w.consumeFacts()).toEqual([]);
+  expect(resource.charges).toBe(charges);
+});
+
+test("full Inventory emits no resource fact or charge consumption", () => {
+  const w = new GameWorld(MAP, { x: 1, y: 1 });
+  w.addPlayer("chopper", {
+    x: 1,
+    y: 1,
+    facing: "south",
+    inventory: [{ item: "bronze_axe", qty: 1 }, ...Array.from({ length: 27 }, () => ({ item: "bronze_sword", qty: 1 }))],
+  });
+  const treeId = w.spawnResource("tree", 2, 1);
+  const resource = w.resources.find((entry) => entry.id === treeId)!;
+  const charges = resource.charges;
+  w.gather("chopper", treeId);
+  w.step(1 / 15);
+  expect(w.consumeFacts()).toEqual([]);
+  expect(resource.charges).toBe(charges);
+});

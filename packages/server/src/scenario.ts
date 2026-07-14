@@ -3,6 +3,10 @@ import type { ZoneDef } from "./world";
 import type { GameplayFact } from "./gameplay-facts";
 import { addToInventory, emptyInventory } from "./inventory";
 
+function hasCatalogKey<T>(catalog: Record<string, T>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(catalog, key);
+}
+
 export type ObjectiveWhen =
   | { kind: "talkedTo"; npcType: string }
   | { kind: "gathered"; resourceType: string; item: string }
@@ -102,17 +106,22 @@ export function advanceScenario(
 
 export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
   const errors: string[] = [];
+  if (def.objectives.length === 0) errors.push(`scenario ${def.id}: objectives must not be empty`);
+
   const byId = new Map(zones.map((zone) => [zone.id, zone]));
   const seen = new Set<string>();
   const start = byId.get(def.startZone);
-
   let initialInventory = emptyInventory();
   let loadoutOverflow = false;
+
   for (const [index, stack] of def.initialItems.entries()) {
-    const knownItem = ITEM_KINDS[stack.item] !== undefined;
+    const knownItem = hasCatalogKey(ITEM_KINDS, stack.item);
     const validQty = Number.isInteger(stack.qty) && stack.qty >= 1;
     if (!knownItem) errors.push(`scenario ${def.id} initialItems ${index}: unknown Item ${stack.item}`);
     if (!validQty) errors.push(`scenario ${def.id} initialItems ${index}: qty must be a positive integer`);
+    if (knownItem && validQty && !ITEM_KINDS[stack.item].stackable && stack.qty !== 1) {
+      errors.push(`scenario ${def.id} initialItems ${index}: non-stackable Item ${stack.item} qty must be 1`);
+    }
     if (knownItem && validQty && !loadoutOverflow) {
       const added = addToInventory(initialInventory, stack);
       loadoutOverflow = added.leftover !== null;
@@ -127,26 +136,29 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
   if (!start) errors.push(`scenario ${def.id}: unknown start Zone ${def.startZone}`);
 
   for (const objective of def.objectives) {
-    const at = `scenario ${def.id} objective ${objective.id}`;
+    if (objective.id.trim() === "") errors.push(`scenario ${def.id} objective: id must not be blank`);
+    const at = objective.id.trim() === ""
+      ? `scenario ${def.id} objective`
+      : `scenario ${def.id} objective ${objective.id}`;
     if (seen.has(objective.id)) errors.push(`scenario ${def.id}: duplicate objective ${objective.id}`);
     seen.add(objective.id);
     if (objective.text.trim() === "") errors.push(`${at}: text must not be blank`);
 
     switch (objective.when.kind) {
       case "talkedTo":
-        if (!NPC_KINDS[objective.when.npcType]) errors.push(`${at}: unknown NPC ${objective.when.npcType}`);
+        if (!hasCatalogKey(NPC_KINDS, objective.when.npcType)) errors.push(`${at}: unknown NPC ${objective.when.npcType}`);
         break;
       case "gathered":
-        if (!RESOURCE_KINDS[objective.when.resourceType]) errors.push(`${at}: unknown Resource ${objective.when.resourceType}`);
-        if (!ITEM_KINDS[objective.when.item]) errors.push(`${at}: unknown Item ${objective.when.item}`);
+        if (!hasCatalogKey(RESOURCE_KINDS, objective.when.resourceType)) errors.push(`${at}: unknown Resource ${objective.when.resourceType}`);
+        if (!hasCatalogKey(ITEM_KINDS, objective.when.item)) errors.push(`${at}: unknown Item ${objective.when.item}`);
         break;
       case "produced":
-        if (objective.when.source === "recipe" && !RECIPES[objective.when.operation]) errors.push(`${at}: unknown Recipe ${objective.when.operation}`);
+        if (objective.when.source === "recipe" && !hasCatalogKey(RECIPES, objective.when.operation)) errors.push(`${at}: unknown Recipe ${objective.when.operation}`);
         if (objective.when.source === "action" && objective.when.operation !== "light" && objective.when.operation !== "cook") errors.push(`${at}: unknown action ${objective.when.operation}`);
-        if (!ITEM_KINDS[objective.when.item]) errors.push(`${at}: unknown Item ${objective.when.item}`);
+        if (!hasCatalogKey(ITEM_KINDS, objective.when.item)) errors.push(`${at}: unknown Item ${objective.when.item}`);
         break;
       case "inventoryAction":
-        if (!ITEM_KINDS[objective.when.item]) errors.push(`${at}: unknown Item ${objective.when.item}`);
+        if (!hasCatalogKey(ITEM_KINDS, objective.when.item)) errors.push(`${at}: unknown Item ${objective.when.item}`);
         break;
       case "gainedSkillXp":
         if (!(SKILLS as readonly string[]).includes(objective.when.skill)) errors.push(`${at}: unknown Skill ${objective.when.skill}`);

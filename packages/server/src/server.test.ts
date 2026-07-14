@@ -753,6 +753,81 @@ test("welcome is immediately followed by authoritative Scenario progress", async
   client.close();
 });
 
+test("Scenario option replacement after startup does not alter emitted definition", async () => {
+  const store = new TestPlayerStore(scenarioPlayerState());
+  const options = {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  };
+  srv = startServer(0, ":memory:", options);
+  options.scenario = {
+    ...serverScenario,
+    id: "replacement",
+    version: 99,
+    objectives: [{
+      id: "replacement_goal",
+      text: "Replacement objective.",
+      when: { kind: "enteredZone", zone: "overworld" },
+    }],
+  };
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const scenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "login", username: "alias", password: "pw" }));
+  const message = await scenarioP;
+  expect(message).toMatchObject({
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "enter_world",
+    objectiveText: "Cross into Termenor.",
+  });
+  client.close();
+});
+test("committed Scenario completion survives disconnect and reconnect", async () => {
+  const disconnectSaved = deferredSignal();
+  let saves = 0;
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 2, y: 2 }),
+    async () => {
+      saves++;
+      if (saves === 2) disconnectSaved.resolve();
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const initialScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "login", username: "persist-complete", password: "pw" }));
+  await welcomeP;
+  await initialScenarioP;
+  const zoneP = client.waitForMessage("zone");
+  const completedP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "moveTo", x: 3, y: 2 }));
+  const [zone, completed] = await Promise.all([zoneP, completedP]);
+  expect(zone).toMatchObject({ zone: "overworld", x: 6, y: 2 });
+  expect(completed).toMatchObject({ completed: ["enter_world"], done: true });
+
+  client.close();
+  await disconnectSaved.promise;
+
+  const restored = wsClient(srv.port);
+  await restored.waitForOpen();
+  const restoredWelcomeP = restored.waitForMessage("welcome");
+  const restoredScenarioP = restored.waitForMessage("scenario");
+  restored.send(JSON.stringify({ t: "login", username: "persist-complete", password: "pw" }));
+  const [restoredWelcome, restoredScenario] = await Promise.all([restoredWelcomeP, restoredScenarioP]);
+  expect(restoredWelcome).toMatchObject({ x: 6, y: 2 });
+  expect(restoredScenario).toMatchObject({ completed: ["enter_world"], done: true });
+  restored.close();
+}, 8_000);
+
+
 test("incompatible persisted Scenario resets progress without discarding Player state", async () => {
   const inventory = emptyInventory();
   inventory[0] = { item: "logs", qty: 3 };

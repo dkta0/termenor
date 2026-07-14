@@ -96,15 +96,16 @@ export function startServer(
 ): RunningServer {
   const AOI_RADIUS = opts.aoiRadius ?? 48;
   const zoneDefs = opts.zoneDefs ?? ZONE_DEFS;
-  if (opts.scenario) {
-    const errors = validateScenario(opts.scenario, zoneDefs);
+  const scenario = opts.scenario;
+  if (scenario) {
+    const errors = validateScenario(scenario, zoneDefs);
     if (errors.length > 0) {
       throw new Error(`invalid Scenario:\n${errors.join("\n")}`);
     }
   }
   const zones = new Zones(zoneDefs, {
-    scenario: opts.scenario,
-    deferTransitions: opts.scenario !== undefined,
+    scenario: scenario,
+    deferTransitions: scenario !== undefined,
   });
   const store: PlayerStore = opts.store ?? new SqliteStore(dbPath);
   const saveChains = new Map<string, Promise<void>>();
@@ -189,7 +190,7 @@ export function startServer(
   // Per-connection AOI baseline lives on each socket's data (`lastView`); no shared state.
 
   const sendScenario = (socket: Bun.ServerWebSocket<Conn>, id: string) => {
-    const definition = opts.scenario;
+    const definition = scenario;
     const progress = zones.progressOf(id);
     if (definition && progress) socket.send(encode(scenarioMessage(definition, progress)));
   };

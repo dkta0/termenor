@@ -280,6 +280,26 @@ test("facts receive one stable outer-Tick sequence across Zones", () => {
   ]);
 });
 
+test("actor-specific Scenario facts only advance that Player and notify that Player", () => {
+  const scenario: ScenarioDef = {
+    ...deferredScenario,
+    objectives: [{
+      id: "meet",
+      text: "Meet the guide.",
+      when: { kind: "talkedTo", npcType: "chef" },
+    }],
+  };
+  const zones = new Zones(transferZones, { scenario });
+  zones.addPlayer("actor", { x: 1, y: 2, facing: "east", zone: "tutorial" }, { newScenarioPlayer: true });
+  zones.addPlayer("observer", { x: 1, y: 2, facing: "east", zone: "tutorial" }, { newScenarioPlayer: true });
+  zones.world("tutorial").emitFact({ kind: "playerTalked", playerId: "actor", npcType: "chef" });
+
+  expect(zones.step(1 / 15).map((fact) => fact.kind)).toEqual(["playerTalked"]);
+  expect(zones.progressOf("actor")?.completed).toEqual(["meet"]);
+  expect(zones.progressOf("observer")?.completed).toEqual([]);
+  expect(zones.consumeScenarioChanges()).toEqual(["actor"]);
+});
+
 test("Zone RNG factories and World iteration preserve definition order", () => {
   const requested: string[] = [];
   const zones = new Zones([...transferZones].reverse(), {
