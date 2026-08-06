@@ -77,7 +77,7 @@ function factMatches(when: ObjectiveWhen, fact: GameplayFact): boolean {
 function factMeetsTemporalConstraint(
   objective: ObjectiveDef,
   currentObjectiveId: string | null,
-  evidence: readonly ScenarioEvidence[],
+  evidencedAtEntry: ReadonlySet<string>,
   qualifyingFacts: ReadonlyMap<string, GameplayFact>,
   fact: GameplayFact,
 ): boolean {
@@ -90,16 +90,17 @@ function factMeetsTemporalConstraint(
     return true;
   }
 
-  const prerequisiteEvidence = evidence.find(
-    (entry) => entry.objectiveId === when.afterObjective,
-  );
-  if (!prerequisiteEvidence || prerequisiteEvidence.tick > fact.tick) return false;
-  if (prerequisiteEvidence.tick < fact.tick) return true;
+  if (evidencedAtEntry.has(when.afterObjective)) return true;
 
   const prerequisiteFact = qualifyingFacts.get(when.afterObjective);
   return prerequisiteFact !== undefined
-    && prerequisiteFact.tick === fact.tick
-    && prerequisiteFact.sequence < fact.sequence;
+    && (
+      prerequisiteFact.tick < fact.tick
+      || (
+        prerequisiteFact.tick === fact.tick
+        && prerequisiteFact.sequence < fact.sequence
+      )
+    );
 }
 
 export function advanceScenario(
@@ -109,6 +110,7 @@ export function advanceScenario(
   playerId: string,
 ): ScenarioProgress {
   const evidenced = new Set(progress.evidence.map((evidence) => evidence.objectiveId));
+  const evidencedAtEntry = new Set(evidenced);
   const evidence = [...progress.evidence];
   const qualifyingFacts = new Map<string, GameplayFact>();
   const currentObjectiveId = currentObjective(def, progress)?.id ?? null;
@@ -122,7 +124,7 @@ export function advanceScenario(
         && factMeetsTemporalConstraint(
           objective,
           currentObjectiveId,
-          evidence,
+          evidencedAtEntry,
           qualifyingFacts,
           fact,
         ),

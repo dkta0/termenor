@@ -279,6 +279,40 @@ test("temporal chains accept a new qualifying fact on each later Tick", () => {
   expect(secondReview.done).toBe(true);
 });
 
+test("entry evidence remains earlier after the simulation Tick restarts", () => {
+  const def: ScenarioDef = {
+    id: "restart_temporal",
+    version: 1,
+    startZone: "tutorial",
+    initialItems: [],
+    objectives: [
+      temporalChain.objectives[0],
+      { id: "examine", text: "Examine.", when: { kind: "inventoryAction", action: "examine", item: "arrow_shafts" } },
+      { id: "review", text: "Review.", when: { kind: "viewedPanel", panel: "skills", afterObjective: "produce" } },
+    ],
+    exit: { fromZone: "tutorial", toZone: "overworld" },
+  };
+  const persisted = {
+    ...initialScenarioProgress(def),
+    completed: ["produce"],
+    evidence: [{ objectiveId: "produce", tick: 10_000 }],
+  };
+
+  const restarted = advanceScenario(
+    def,
+    persisted,
+    [{ kind: "panelViewed", playerId: "p", panel: "skills", tick: 1, sequence: 0 }],
+    "p",
+  );
+
+  expect(currentObjective(def, restarted)?.id).toBe("examine");
+  expect(restarted.completed).toEqual(["produce"]);
+  expect(restarted.evidence).toEqual([
+    { objectiveId: "produce", tick: 10_000 },
+    { objectiveId: "review", tick: 1 },
+  ]);
+});
+
 test("facts from another player do not provide objective evidence", () => {
   const progress = initialScenarioProgress(valid);
   const facts = [
