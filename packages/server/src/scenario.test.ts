@@ -216,39 +216,67 @@ test("early facts are retained and objectives advance once in authored order", (
   expect(advanceScenario(def, next, [...gather], "p")).toBe(next);
 });
 
-test("temporal panel evidence ignores pre-transition views and retains post-transition views", () => {
-  const def: ScenarioDef = {
-    id: "temporal",
-    version: 1,
-    startZone: "tutorial",
-    initialItems: [],
-    objectives: [
-      { id: "fletch", text: "Fletch.", when: { kind: "produced", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts" } },
-      { id: "examine", text: "Examine.", when: { kind: "inventoryAction", action: "examine", item: "arrow_shafts" } },
-      { id: "review", text: "Review.", when: { kind: "viewedPanel", panel: "skills", afterObjective: "fletch" } },
+const temporalChain: ScenarioDef = {
+  id: "temporal",
+  version: 1,
+  startZone: "tutorial",
+  initialItems: [],
+  objectives: [
+    { id: "produce", text: "Produce.", when: { kind: "produced", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts" } },
+    { id: "first_review", text: "Review once.", when: { kind: "viewedPanel", panel: "skills", afterObjective: "produce" } },
+    { id: "second_review", text: "Review twice.", when: { kind: "viewedPanel", panel: "skills", afterObjective: "first_review" } },
+  ],
+  exit: { fromZone: "tutorial", toZone: "overworld" },
+};
+
+test("same-Tick temporal chains use the fact that qualified each prerequisite", () => {
+  const progress = advanceScenario(
+    temporalChain,
+    initialScenarioProgress(temporalChain),
+    [
+      { kind: "panelViewed", playerId: "p", panel: "skills", tick: 1, sequence: 0 },
+      { kind: "itemProduced", playerId: "p", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts", qty: 15, tick: 1, sequence: 1 },
+      { kind: "panelViewed", playerId: "p", panel: "skills", tick: 1, sequence: 2 },
     ],
-    exit: { fromZone: "tutorial", toZone: "overworld" },
-  };
-  const progress = initialScenarioProgress(def);
-  const preTransitionView = {
-    kind: "panelViewed",
-    playerId: "p",
-    panel: "skills",
-    tick: 1,
-    sequence: 0,
-  } as const;
+    "p",
+  );
 
-  expect(advanceScenario(def, progress, [preTransitionView], "p")).toBe(progress);
-
-  const afterTransition = advanceScenario(def, progress, [
-    { kind: "itemProduced", playerId: "p", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts", qty: 15, tick: 2, sequence: 0 },
-    { ...preTransitionView, tick: 2, sequence: 1 },
-  ], "p");
-  expect(afterTransition.completed).toEqual(["fletch"]);
-  expect(afterTransition.evidence).toEqual([
-    { objectiveId: "fletch", tick: 2 },
-    { objectiveId: "review", tick: 2 },
+  expect(progress.completed).toEqual(["produce", "first_review"]);
+  expect(progress.evidence).toEqual([
+    { objectiveId: "produce", tick: 1 },
+    { objectiveId: "first_review", tick: 1 },
   ]);
+  expect(progress.evidence).not.toContainEqual(
+    expect.objectContaining({ objectiveId: "second_review" }),
+  );
+});
+
+test("temporal chains accept a new qualifying fact on each later Tick", () => {
+  const produced = advanceScenario(
+    temporalChain,
+    initialScenarioProgress(temporalChain),
+    [{ kind: "itemProduced", playerId: "p", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts", qty: 15, tick: 1, sequence: 0 }],
+    "p",
+  );
+  const firstReview = advanceScenario(
+    temporalChain,
+    produced,
+    [{ kind: "panelViewed", playerId: "p", panel: "skills", tick: 2, sequence: 0 }],
+    "p",
+  );
+  const secondReview = advanceScenario(
+    temporalChain,
+    firstReview,
+    [{ kind: "panelViewed", playerId: "p", panel: "skills", tick: 3, sequence: 0 }],
+    "p",
+  );
+
+  expect(firstReview.completed).toEqual(["produce", "first_review"]);
+  expect(firstReview.evidence).not.toContainEqual(
+    expect.objectContaining({ objectiveId: "second_review" }),
+  );
+  expect(secondReview.completed).toEqual(["produce", "first_review", "second_review"]);
+  expect(secondReview.done).toBe(true);
 });
 
 test("facts from another player do not provide objective evidence", () => {

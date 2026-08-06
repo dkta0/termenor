@@ -75,13 +75,11 @@ function factMatches(when: ObjectiveWhen, fact: GameplayFact): boolean {
 }
 
 function factMeetsTemporalConstraint(
-  def: ScenarioDef,
   objective: ObjectiveDef,
   currentObjectiveId: string | null,
   evidence: readonly ScenarioEvidence[],
-  facts: readonly GameplayFact[],
+  qualifyingFacts: ReadonlyMap<string, GameplayFact>,
   fact: GameplayFact,
-  playerId: string,
 ): boolean {
   const when = objective.when;
   if (
@@ -98,16 +96,10 @@ function factMeetsTemporalConstraint(
   if (!prerequisiteEvidence || prerequisiteEvidence.tick > fact.tick) return false;
   if (prerequisiteEvidence.tick < fact.tick) return true;
 
-  const prerequisite = def.objectives.find(
-    (candidate) => candidate.id === when.afterObjective,
-  );
-  return prerequisite !== undefined && facts.some(
-    (candidate) =>
-      candidate.playerId === playerId
-      && candidate.tick === fact.tick
-      && candidate.sequence < fact.sequence
-      && factMatches(prerequisite.when, candidate),
-  );
+  const prerequisiteFact = qualifyingFacts.get(when.afterObjective);
+  return prerequisiteFact !== undefined
+    && prerequisiteFact.tick === fact.tick
+    && prerequisiteFact.sequence < fact.sequence;
 }
 
 export function advanceScenario(
@@ -118,6 +110,7 @@ export function advanceScenario(
 ): ScenarioProgress {
   const evidenced = new Set(progress.evidence.map((evidence) => evidence.objectiveId));
   const evidence = [...progress.evidence];
+  const qualifyingFacts = new Map<string, GameplayFact>();
   const currentObjectiveId = currentObjective(def, progress)?.id ?? null;
 
   for (const objective of def.objectives) {
@@ -127,17 +120,16 @@ export function advanceScenario(
         fact.playerId === playerId
         && factMatches(objective.when, fact)
         && factMeetsTemporalConstraint(
-          def,
           objective,
           currentObjectiveId,
           evidence,
-          facts,
+          qualifyingFacts,
           fact,
-          playerId,
         ),
     );
     if (!matchingFact) continue;
     evidence.push({ objectiveId: objective.id, tick: matchingFact.tick });
+    qualifyingFacts.set(objective.id, matchingFact);
     evidenced.add(objective.id);
   }
 
