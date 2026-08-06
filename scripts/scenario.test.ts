@@ -66,7 +66,7 @@ test("parseScenarioArgs parses replay exactly and rejects extra or malformed arg
 test("run completes first_steps and writes a byte-stable explicit trace", () => {
   expect(initialRun.exitCode).toBe(0);
   expect(initialRun.stderr).toBe("");
-  expect(initialRun.stdout).toContain("Completed Scenario: first_steps (version 2)");
+  expect(initialRun.stdout).toContain("Completed Scenario: first_steps (version 3)");
   expect(initialRun.stdout).toContain("Seed: 42");
   expect(initialRun.stdout).toContain("Ticks: 100");
   expect(initialRun.stdout).toMatch(/Final digest: [0-9a-f]{64}/);
@@ -82,7 +82,7 @@ test("run completes first_steps and writes a byte-stable explicit trace", () => 
     "transitions",
     "digests",
   ]);
-  expect(trace).toMatchObject({ scenarioId: "first_steps", version: 2, seed: 42 });
+  expect(trace).toMatchObject({ scenarioId: "first_steps", version: 3, seed: 42 });
   expect(trace.inputs).toHaveLength(6);
   expect(trace.facts.length).toBeGreaterThan(0);
   expect(trace.transitions).toHaveLength(1);
@@ -99,7 +99,7 @@ test("replay accepts matching digests", () => {
 
   expect(replay.exitCode).toBe(0);
   expect(replay.stderr).toBe("");
-  expect(replay.stdout).toContain("Replayed Scenario: first_steps (version 2)");
+  expect(replay.stdout).toContain("Replayed Scenario: first_steps (version 3)");
   expect(replay.stdout).toContain("Seed: 42");
   expect(replay.stdout).toContain("Ticks: 100");
   expect(replay.stdout).toContain(`Final digest: ${trace.digests.at(-1)?.digest}`);
@@ -248,5 +248,5 @@ test("replay rejects a Scenario version mismatch", () => {
 
   const replay = capture(["replay", mismatchPath]);
   expect(replay.exitCode).toBe(2);
-  expect(replay.stderr).toContain("Scenario version mismatch for first_steps: trace 3, registered 2");
+  expect(replay.stderr).toContain("Scenario version mismatch for first_steps: trace 4, registered 3");
 });

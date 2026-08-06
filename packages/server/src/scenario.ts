@@ -17,7 +17,7 @@ export type ObjectiveWhen =
   | { kind: "gathered"; resourceType: string; item: string }
   | { kind: "produced"; source: "recipe" | "action"; operation: string; item: string }
   | { kind: "inventoryAction"; action: "drop" | "equip" | "examine"; item: string }
-  | { kind: "viewedPanel"; panel: "skills" }
+  | { kind: "viewedPanel"; panel: "skills"; afterObjective?: string }
   | { kind: "gainedSkillXp"; skill: string; atLeast: number }
   | { kind: "enteredZone"; zone: string };
 
@@ -74,6 +74,42 @@ function factMatches(when: ObjectiveWhen, fact: GameplayFact): boolean {
   }
 }
 
+function factMeetsTemporalConstraint(
+  def: ScenarioDef,
+  objective: ObjectiveDef,
+  currentObjectiveId: string | null,
+  evidence: readonly ScenarioEvidence[],
+  facts: readonly GameplayFact[],
+  fact: GameplayFact,
+  playerId: string,
+): boolean {
+  const when = objective.when;
+  if (
+    when.kind !== "viewedPanel"
+    || when.afterObjective === undefined
+    || objective.id === currentObjectiveId
+  ) {
+    return true;
+  }
+
+  const prerequisiteEvidence = evidence.find(
+    (entry) => entry.objectiveId === when.afterObjective,
+  );
+  if (!prerequisiteEvidence || prerequisiteEvidence.tick > fact.tick) return false;
+  if (prerequisiteEvidence.tick < fact.tick) return true;
+
+  const prerequisite = def.objectives.find(
+    (candidate) => candidate.id === when.afterObjective,
+  );
+  return prerequisite !== undefined && facts.some(
+    (candidate) =>
+      candidate.playerId === playerId
+      && candidate.tick === fact.tick
+      && candidate.sequence < fact.sequence
+      && factMatches(prerequisite.when, candidate),
+  );
+}
+
 export function advanceScenario(
   def: ScenarioDef,
   progress: ScenarioProgress,
@@ -82,11 +118,23 @@ export function advanceScenario(
 ): ScenarioProgress {
   const evidenced = new Set(progress.evidence.map((evidence) => evidence.objectiveId));
   const evidence = [...progress.evidence];
+  const currentObjectiveId = currentObjective(def, progress)?.id ?? null;
 
   for (const objective of def.objectives) {
     if (evidenced.has(objective.id)) continue;
     const matchingFact = facts.find(
-      (fact) => fact.playerId === playerId && factMatches(objective.when, fact),
+      (fact) =>
+        fact.playerId === playerId
+        && factMatches(objective.when, fact)
+        && factMeetsTemporalConstraint(
+          def,
+          objective,
+          currentObjectiveId,
+          evidence,
+          facts,
+          fact,
+          playerId,
+        ),
     );
     if (!matchingFact) continue;
     evidence.push({ objectiveId: objective.id, tick: matchingFact.tick });
@@ -144,7 +192,7 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
   if (!Number.isInteger(def.version) || def.version < 1) errors.push(`scenario ${def.id}: version must be a positive integer`);
   if (!start) errors.push(`scenario ${def.id}: unknown start Zone ${def.startZone}`);
 
-  for (const objective of def.objectives) {
+  for (const [objectiveIndex, objective] of def.objectives.entries()) {
     const blankId = objective.id.trim() === "";
     const at = blankId
       ? `scenario ${def.id} objective`
@@ -211,9 +259,21 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
       case "inventoryAction":
         if (!hasCatalogKey(ITEM_KINDS, objective.when.item)) errors.push(`${at}: unknown Item ${objective.when.item}`);
         break;
-      case "viewedPanel":
+      case "viewedPanel": {
+        const afterObjective = objective.when.afterObjective;
         if (objective.when.panel !== "skills") errors.push(`${at}: unknown Panel ${objective.when.panel}`);
+        if (
+          afterObjective !== undefined
+          && !def.objectives.some(
+            (candidate, index) =>
+              index < objectiveIndex
+              && candidate.id === afterObjective,
+          )
+        ) {
+          errors.push(`${at}: afterObjective ${afterObjective} must name an earlier objective`);
+        }
         break;
+      }
       case "gainedSkillXp":
         if (!(SKILLS as readonly string[]).includes(objective.when.skill)) errors.push(`${at}: unknown Skill ${objective.when.skill}`);
         if (!Number.isFinite(objective.when.atLeast) || objective.when.atLeast <= 0) errors.push(`${at}: atLeast must be positive`);

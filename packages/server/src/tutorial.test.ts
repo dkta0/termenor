@@ -24,7 +24,7 @@ test("the First Steps content validates against the live Zone and catalogs", () 
   expect(validateScenario(TUTORIAL_SCENARIO, tutorialZones)).toEqual([]);
   expect(TUTORIAL_SCENARIO).toMatchObject({
     id: "first_steps",
-    version: 2,
+    version: 3,
     startZone: "tutorial",
     initialItems: [{ item: "bronze_axe", qty: 1 }],
     exit: { fromZone: "tutorial", toZone: "overworld" },
@@ -34,7 +34,7 @@ test("the First Steps content validates against the live Zone and catalogs", () 
     { id: "gather_logs", text: "Find a tree and gather logs.", when: { kind: "gathered", resourceType: "tree", item: "logs" } },
     { id: "fletch_logs", text: "Select the logs and make arrow shafts.", when: { kind: "produced", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts" } },
     { id: "use_inventory", text: "Examine the arrow shafts in your Inventory.", when: { kind: "inventoryAction", action: "examine", item: "arrow_shafts" } },
-    { id: "review_fletching_xp", text: "Review your new Fletching experience.", when: { kind: "viewedPanel", panel: "skills" } },
+    { id: "review_fletching_xp", text: "Review your new Fletching experience.", when: { kind: "viewedPanel", panel: "skills", afterObjective: "fletch_logs" } },
     { id: "enter_world", text: "Cross into Termenor.", when: { kind: "enteredZone", zone: "overworld" } },
   ]);
 });
@@ -161,10 +161,16 @@ test("the Scenario exit rejects a premature crossing with the current objective"
   ]);
 });
 
-test("finishing the last prerequisite on a suppressed exit crosses without stepping away", () => {
+test("a pre-Fletching Skills view does not satisfy review on a suppressed exit", () => {
   const zones = new Zones(tutorialZones, { scenario: TUTORIAL_SCENARIO });
   zones.addPlayer("learner", restoredEmptyAccount(), { newScenarioPlayer: true });
   const world = zones.worldOf("learner");
+
+  expect(world.viewPanel("learner", "skills")).toBe(true);
+  zones.step(1 / 15);
+  expect(zones.progressOf("learner")?.evidence).not.toContainEqual(
+    expect.objectContaining({ objectiveId: "review_fletching_xp" }),
+  );
 
   world.talk("learner", "npc-1");
   zones.step(1 / 15);

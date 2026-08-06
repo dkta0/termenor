@@ -60,6 +60,19 @@ describe("validateScenario", () => {
     }
   });
 
+  test("requires temporal panel prerequisites to name an earlier objective", () => {
+    const broken: ScenarioDef = {
+      ...valid,
+      objectives: [
+        { id: "review", text: "Review.", when: { kind: "viewedPanel", panel: "skills", afterObjective: "later" } },
+        { id: "later", text: "Later.", when: { kind: "enteredZone", zone: "overworld" } },
+      ],
+    };
+    expect(validateScenario(broken, zones)).toContain(
+      "scenario first_steps objective review: afterObjective later must name an earlier objective",
+    );
+  });
+
   test("rejects duplicate objective ids", () => {
     const broken = { ...valid, objectives: [valid.objectives[0], valid.objectives[0]] };
     expect(validateScenario(broken, zones)).toContain("scenario first_steps: duplicate objective meet_guide");
@@ -201,6 +214,41 @@ test("early facts are retained and objectives advance once in authored order", (
   expect(next.completed).toEqual(["talk", "gather"]);
   expect(next.done).toBe(true);
   expect(advanceScenario(def, next, [...gather], "p")).toBe(next);
+});
+
+test("temporal panel evidence ignores pre-transition views and retains post-transition views", () => {
+  const def: ScenarioDef = {
+    id: "temporal",
+    version: 1,
+    startZone: "tutorial",
+    initialItems: [],
+    objectives: [
+      { id: "fletch", text: "Fletch.", when: { kind: "produced", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts" } },
+      { id: "examine", text: "Examine.", when: { kind: "inventoryAction", action: "examine", item: "arrow_shafts" } },
+      { id: "review", text: "Review.", when: { kind: "viewedPanel", panel: "skills", afterObjective: "fletch" } },
+    ],
+    exit: { fromZone: "tutorial", toZone: "overworld" },
+  };
+  const progress = initialScenarioProgress(def);
+  const preTransitionView = {
+    kind: "panelViewed",
+    playerId: "p",
+    panel: "skills",
+    tick: 1,
+    sequence: 0,
+  } as const;
+
+  expect(advanceScenario(def, progress, [preTransitionView], "p")).toBe(progress);
+
+  const afterTransition = advanceScenario(def, progress, [
+    { kind: "itemProduced", playerId: "p", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts", qty: 15, tick: 2, sequence: 0 },
+    { ...preTransitionView, tick: 2, sequence: 1 },
+  ], "p");
+  expect(afterTransition.completed).toEqual(["fletch"]);
+  expect(afterTransition.evidence).toEqual([
+    { objectiveId: "fletch", tick: 2 },
+    { objectiveId: "review", tick: 2 },
+  ]);
 });
 
 test("facts from another player do not provide objective evidence", () => {
