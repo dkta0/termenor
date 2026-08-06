@@ -50,7 +50,7 @@ export const TUTORIAL_ZONE: ZoneDef = {
 
 export const TUTORIAL_SCENARIO: ScenarioDef = {
   id: "first_steps",
-  version: 1,
+  version: 2,
   startZone: "tutorial",
   initialItems: [{ item: "bronze_axe", qty: 1 }],
   objectives: [
@@ -58,7 +58,7 @@ export const TUTORIAL_SCENARIO: ScenarioDef = {
     { id: "gather_logs", text: "Find a tree and gather logs.", when: { kind: "gathered", resourceType: "tree", item: "logs" } },
     { id: "fletch_logs", text: "Select the logs and make arrow shafts.", when: { kind: "produced", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts" } },
     { id: "use_inventory", text: "Examine the arrow shafts in your Inventory.", when: { kind: "inventoryAction", action: "examine", item: "arrow_shafts" } },
-    { id: "gain_fletching_xp", text: "Review your new Fletching experience.", when: { kind: "gainedSkillXp", skill: "fletching", atLeast: 5 } },
+    { id: "review_fletching_xp", text: "Review your new Fletching experience.", when: { kind: "viewedPanel", panel: "skills" } },
     { id: "enter_world", text: "Cross into Termenor.", when: { kind: "enteredZone", zone: "overworld" } },
   ],
   exit: { fromZone: "tutorial", toZone: "overworld" },

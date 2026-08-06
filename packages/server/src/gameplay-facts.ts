@@ -5,6 +5,7 @@ export type FactDraft =
   | { kind: "resourceGathered"; playerId: string; resourceType: string; item: string; qty: number }
   | { kind: "itemProduced"; playerId: string; source: "recipe" | "action"; operation: string; item: string; qty: number }
   | { kind: "inventoryActionPerformed"; playerId: string; action: "drop" | "equip" | "examine"; item: string }
+  | { kind: "panelViewed"; playerId: string; panel: "skills" }
   | { kind: "skillXpGained"; playerId: string; skill: string; amount: number }
   | { kind: "skillLevelGained"; playerId: string; skill: string; level: number }
   | { kind: "playerEnteredZone"; playerId: string; zone: string }

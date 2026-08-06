@@ -1544,12 +1544,11 @@ test("an existing account retains its saved Zone and Inventory when a Scenario i
   client.close();
 });
 
-test("authenticated Inventory Examine advances from the server-observed slot Item", async () => {
+test("authenticated Examine waits for an authenticated Skills-view action", async () => {
   const inventory = emptyInventory();
   inventory[2] = { item: "arrow_shafts", qty: 1 };
   const completed = TUTORIAL_SCENARIO.objectives.slice(0, 3).map((objective) => objective.id);
   const evidence = completed.map((objectiveId, index) => ({ objectiveId, tick: index + 1 }));
-  evidence.push({ objectiveId: "gain_fletching_xp", tick: 3 });
   const store = new TestPlayerStore(scenarioPlayerState({
     x: TUTORIAL_ZONE.spawn.x,
     y: TUTORIAL_ZONE.spawn.y,
@@ -1584,8 +1583,22 @@ test("authenticated Inventory Examine advances from the server-observed slot Ite
     text: "That Inventory slot changed. Select the item and try Examine again.",
   });
 
-  const advancedScenarioP = client.waitForMessage("scenario");
+  const examinedScenarioP = client.waitForMessage("scenario");
   client.send(JSON.stringify({ t: "inventoryAction", action: "examine", slot: 2 }));
+  const examinedScenario = await examinedScenarioP;
+  expect(examinedScenario).toMatchObject({
+    objectiveId: "review_fletching_xp",
+    completed: [
+      "meet_guide",
+      "gather_logs",
+      "fletch_logs",
+      "use_inventory",
+    ],
+    done: false,
+  });
+
+  const advancedScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "panelAction", panel: "skills" }));
   const advancedScenario = await advancedScenarioP;
   expect(advancedScenario).toMatchObject({
     objectiveId: "enter_world",
@@ -1594,7 +1607,7 @@ test("authenticated Inventory Examine advances from the server-observed slot Ite
       "gather_logs",
       "fletch_logs",
       "use_inventory",
-      "gain_fletching_xp",
+      "review_fletching_xp",
     ],
     done: false,
   });

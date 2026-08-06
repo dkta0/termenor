@@ -13,12 +13,21 @@ export type ScenarioInput =
       playerId: string;
       intent: Intent;
       inventoryAction?: never;
+      panelAction?: never;
     }
   | {
       tick: number;
       playerId: string;
       intent?: never;
       inventoryAction: { action: "examine"; slot: number };
+      panelAction?: never;
+    }
+  | {
+      tick: number;
+      playerId: string;
+      intent?: never;
+      inventoryAction?: never;
+      panelAction: { panel: "skills" };
     };
 
 export interface ScenarioTrace {
@@ -189,9 +198,11 @@ export function runScenario(args: RunScenarioArgs): ScenarioTrace {
           input.intent,
           sessions.get(input.playerId) ?? {},
         );
-      } else {
+      } else if (input.inventoryAction !== undefined) {
         const { action, slot } = input.inventoryAction;
         zones.worldOf(input.playerId).inventoryAction(input.playerId, action, slot);
+      } else {
+        zones.worldOf(input.playerId).viewPanel(input.playerId, input.panelAction.panel);
       }
     }
     facts.push(...zones.step(TICK_SECONDS));

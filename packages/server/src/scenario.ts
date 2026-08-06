@@ -7,11 +7,17 @@ function hasCatalogKey<T>(catalog: Record<string, T>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(catalog, key);
 }
 
+const ACTION_PRODUCTS: Record<string, readonly string[] | null> = {
+  light: null,
+  cook: ["cooked_shrimp"],
+};
+
 export type ObjectiveWhen =
   | { kind: "talkedTo"; npcType: string }
   | { kind: "gathered"; resourceType: string; item: string }
   | { kind: "produced"; source: "recipe" | "action"; operation: string; item: string }
   | { kind: "inventoryAction"; action: "drop" | "equip" | "examine"; item: string }
+  | { kind: "viewedPanel"; panel: "skills" }
   | { kind: "gainedSkillXp"; skill: string; atLeast: number }
   | { kind: "enteredZone"; zone: string };
 
@@ -57,6 +63,8 @@ function factMatches(when: ObjectiveWhen, fact: GameplayFact): boolean {
       return fact.kind === "inventoryActionPerformed"
         && fact.action === when.action
         && fact.item === when.item;
+    case "viewedPanel":
+      return fact.kind === "panelViewed" && fact.panel === when.panel;
     case "gainedSkillXp":
       return fact.kind === "skillXpGained"
         && fact.skill === when.skill
@@ -153,17 +161,58 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
       case "talkedTo":
         if (!hasCatalogKey(NPC_KINDS, objective.when.npcType)) errors.push(`${at}: unknown NPC ${objective.when.npcType}`);
         break;
-      case "gathered":
-        if (!hasCatalogKey(RESOURCE_KINDS, objective.when.resourceType)) errors.push(`${at}: unknown Resource ${objective.when.resourceType}`);
-        if (!hasCatalogKey(ITEM_KINDS, objective.when.item)) errors.push(`${at}: unknown Item ${objective.when.item}`);
+      case "gathered": {
+        const knownResource = hasCatalogKey(RESOURCE_KINDS, objective.when.resourceType);
+        const knownItem = hasCatalogKey(ITEM_KINDS, objective.when.item);
+        if (!knownResource) errors.push(`${at}: unknown Resource ${objective.when.resourceType}`);
+        if (!knownItem) errors.push(`${at}: unknown Item ${objective.when.item}`);
+        if (
+          knownResource
+          && knownItem
+          && (
+            !RESOURCE_KINDS[objective.when.resourceType].gatherable
+            || RESOURCE_KINDS[objective.when.resourceType].yield !== objective.when.item
+          )
+        ) {
+          errors.push(`${at}: Resource ${objective.when.resourceType} does not emit resourceGathered for Item ${objective.when.item}`);
+        }
         break;
-      case "produced":
-        if (objective.when.source === "recipe" && !hasCatalogKey(RECIPES, objective.when.operation)) errors.push(`${at}: unknown Recipe ${objective.when.operation}`);
-        if (objective.when.source === "action" && objective.when.operation !== "light" && objective.when.operation !== "cook") errors.push(`${at}: unknown action ${objective.when.operation}`);
-        if (!hasCatalogKey(ITEM_KINDS, objective.when.item)) errors.push(`${at}: unknown Item ${objective.when.item}`);
+      }
+      case "produced": {
+        const knownItem = hasCatalogKey(ITEM_KINDS, objective.when.item);
+        if (!knownItem) errors.push(`${at}: unknown Item ${objective.when.item}`);
+        if (objective.when.source === "recipe") {
+          const knownRecipe = hasCatalogKey(RECIPES, objective.when.operation);
+          if (!knownRecipe) {
+            errors.push(`${at}: unknown Recipe ${objective.when.operation}`);
+          } else if (
+            knownItem
+            && !RECIPES[objective.when.operation].outputs.some(
+              (output) => output.item === objective.when.item,
+            )
+          ) {
+            errors.push(`${at}: Recipe ${objective.when.operation} does not emit itemProduced for Item ${objective.when.item}`);
+          }
+        } else {
+          const knownAction = hasCatalogKey(ACTION_PRODUCTS, objective.when.operation);
+          if (!knownAction) {
+            errors.push(`${at}: unknown action ${objective.when.operation}`);
+          } else {
+            const products = ACTION_PRODUCTS[objective.when.operation];
+            if (products === null) {
+              errors.push(`${at}: action ${objective.when.operation} does not emit itemProduced`);
+            } else if (knownItem && !products.includes(objective.when.item)) {
+              errors.push(`${at}: action ${objective.when.operation} does not emit itemProduced for Item ${objective.when.item}`);
+            }
+          }
+        }
         break;
+      }
       case "inventoryAction":
         if (!hasCatalogKey(ITEM_KINDS, objective.when.item)) errors.push(`${at}: unknown Item ${objective.when.item}`);
+        break;
+      case "viewedPanel":
+        if (objective.when.panel !== "skills") errors.push(`${at}: unknown Panel ${objective.when.panel}`);
         break;
       case "gainedSkillXp":
         if (!(SKILLS as readonly string[]).includes(objective.when.skill)) errors.push(`${at}: unknown Skill ${objective.when.skill}`);

@@ -202,6 +202,13 @@ test("sendInventoryAction serializes an authenticated Examine request", () => {
   expect(sock.lastDecoded()).toEqual({ t: "inventoryAction", action: "examine", slot: 7 });
 });
 
+test("sendPanelAction serializes an authenticated Skills-view request", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  conn.sendPanelAction("skills");
+  expect(sock.lastDecoded()).toEqual({ t: "panelAction", panel: "skills" });
+});
+
 test("sendAttack sends attack message with targetId", () => {
   const { sock, conn } = setup();
   sock.fireOpen();

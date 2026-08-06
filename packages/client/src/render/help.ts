@@ -23,7 +23,7 @@ export const HELP_LINES: readonly string[] = [
   "Panel     click the tabs: Inv · Skills · Gear · Quest",
   "          Tab key cycles them",
   "Items     click an inventory item, then an action",
-  "          (Equip · Drop · Exm)",
+  "          (Equip · Make · Drop · Examine)",
   "Gear      click an equipped slot to remove it",
   "",
   "Commands  press / then type, e.g.",

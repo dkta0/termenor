@@ -32,6 +32,34 @@ describe("validateScenario", () => {
     expect(validateScenario(broken, zones)).toContain("scenario first_steps objective gather_logs: unknown Resource missing");
   });
 
+  test("rejects objective pairs that their configured emitters cannot produce", () => {
+    const cases: { when: ObjectiveWhen; error: string }[] = [
+      {
+        when: { kind: "gathered", resourceType: "tree", item: "copper_ore" },
+        error: "scenario first_steps objective impossible: Resource tree does not emit resourceGathered for Item copper_ore",
+      },
+      {
+        when: { kind: "produced", source: "recipe", operation: "fletch_arrow_shafts", item: "logs" },
+        error: "scenario first_steps objective impossible: Recipe fletch_arrow_shafts does not emit itemProduced for Item logs",
+      },
+      {
+        when: { kind: "produced", source: "action", operation: "light", item: "cooked_shrimp" },
+        error: "scenario first_steps objective impossible: action light does not emit itemProduced",
+      },
+      {
+        when: { kind: "produced", source: "action", operation: "cook", item: "logs" },
+        error: "scenario first_steps objective impossible: action cook does not emit itemProduced for Item logs",
+      },
+    ];
+    for (const { when, error } of cases) {
+      const broken = {
+        ...valid,
+        objectives: [{ id: "impossible", text: "Do the impossible.", when }],
+      };
+      expect(validateScenario(broken, zones)).toContain(error);
+    }
+  });
+
   test("rejects duplicate objective ids", () => {
     const broken = { ...valid, objectives: [valid.objectives[0], valid.objectives[0]] };
     expect(validateScenario(broken, zones)).toContain("scenario first_steps: duplicate objective meet_guide");
@@ -219,6 +247,12 @@ const matcherCases: {
     when: { kind: "inventoryAction", action: "examine", item: "arrow_shafts" },
     fact: { kind: "inventoryActionPerformed", playerId: "p", action: "examine", item: "arrow_shafts", tick: 2, sequence: 0 },
     nearMiss: { kind: "inventoryActionPerformed", playerId: "p", action: "drop", item: "arrow_shafts", tick: 2, sequence: 0 },
+  },
+  {
+    name: "viewed panel",
+    when: { kind: "viewedPanel", panel: "skills" },
+    fact: { kind: "panelViewed", playerId: "p", panel: "skills", tick: 3, sequence: 0 },
+    nearMiss: { kind: "skillXpGained", playerId: "p", skill: "fletching", amount: 5, tick: 3, sequence: 0 },
   },
   {
     name: "skill XP at the threshold",

@@ -61,6 +61,8 @@ export interface RendererHooks {
   onEquipAction?(action: "equip" | "unequip", slot: number): void;
   /** Observe a client-visible Inventory action through the authenticated connection. */
   onInventoryAction(action: "examine", slot: number): void;
+  /** Observe a client-visible panel selection through the authenticated connection. */
+  onPanelAction(panel: "skills"): void;
   /** Called when the command line resolves a valid intent. */
   onIntent(intent: Intent): void;
 }
@@ -140,10 +142,14 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
   let bankRowRegions: Region<number>[] = [];
   let shopRowRegions: Region<number>[] = [];
 
+  const selectTab = (tab: Tab): void => {
+    activeTab = tab;
+    selectedSlot = null;
+    if (tab === "skills") hooks.onPanelAction("skills");
+  };
   const cycleTab = (): void => {
     const i = TABS.indexOf(activeTab);
-    activeTab = TABS[(i + 1) % TABS.length];
-    selectedSlot = null;
+    selectTab(TABS[(i + 1) % TABS.length]);
   };
 
   // Fire an inventory-slot action chosen from the action row.
@@ -199,7 +205,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     if (input.kind === "chat") { hooks.onChat(input.text); return; }
     const verb = input.command.split(/\s+/)[0]?.toLowerCase() ?? "";
     if ((verb === "equip" || verb === "gear") && !/\s/.test(input.command)) {
-      activeTab = "gear"; selectedSlot = null; log.push("ambient", "» gear"); return;
+      selectTab("gear"); log.push("ambient", "» gear"); return;
     }
     if (input.command.length === 0) { log.push("notable", "type a command, e.g. /mine copper"); return; }
     const result = resolveCommand(input.command, buildResolveContext(state, log));
@@ -522,7 +528,7 @@ export async function startRenderer(state: GameState, chat: ChatState, hooks: Re
     }
     if (cx >= hud.panelCol) {
       const tab = regionAt(cx, cy, tabRegions);
-      if (tab) { activeTab = tab; selectedSlot = null; return; }
+      if (tab) { selectTab(tab); return; }
       const act = regionAt(cx, cy, actionRegions);
       if (act) { fireItemAction(act.action, act.slot); return; }
       const slot = regionAt(cx, cy, slotRegions);

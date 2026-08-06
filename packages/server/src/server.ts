@@ -320,6 +320,8 @@ export function startServer(
               text: "That Inventory slot changed. Select the item and try Examine again.",
             }));
           }
+        } else if (msg.t === "panelAction") {
+          if (msg.panel === "skills") w.viewPanel(u, msg.panel);
         } else if (msg.t === "open") {
           if (msg.what === "bank") {
             if (w.openBank(u, msg.targetId)) {

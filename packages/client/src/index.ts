@@ -46,6 +46,7 @@ const handle = await startRenderer(state, chatState, {
   onShopAction: (action, item, qty) => conn.sendShopAction(action, item, qty),
   onEquipAction: (action, slot) => conn.sendEquipAction(action, slot),
   onInventoryAction: (action, slot) => conn.sendInventoryAction(action, slot),
+  onPanelAction: (panel) => conn.sendPanelAction(panel),
   onIntent: (intent) => conn.sendIntent(intent),
 });
 

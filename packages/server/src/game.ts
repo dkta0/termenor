@@ -193,6 +193,12 @@ export class GameWorld {
     return true;
   }
 
+  viewPanel(id: string, panel: "skills"): boolean {
+    if (!this.players.has(id)) return false;
+    this.emitFact({ kind: "panelViewed", playerId: id, panel });
+    return true;
+  }
+
   spawnResource(type: string, x: number, y: number): string {
     const id = `res-${this.nextResourceId++}`;
     const cfg = RESOURCE_KINDS[type];

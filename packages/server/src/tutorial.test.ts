@@ -24,7 +24,7 @@ test("the First Steps content validates against the live Zone and catalogs", () 
   expect(validateScenario(TUTORIAL_SCENARIO, tutorialZones)).toEqual([]);
   expect(TUTORIAL_SCENARIO).toMatchObject({
     id: "first_steps",
-    version: 1,
+    version: 2,
     startZone: "tutorial",
     initialItems: [{ item: "bronze_axe", qty: 1 }],
     exit: { fromZone: "tutorial", toZone: "overworld" },
@@ -34,7 +34,7 @@ test("the First Steps content validates against the live Zone and catalogs", () 
     { id: "gather_logs", text: "Find a tree and gather logs.", when: { kind: "gathered", resourceType: "tree", item: "logs" } },
     { id: "fletch_logs", text: "Select the logs and make arrow shafts.", when: { kind: "produced", source: "recipe", operation: "fletch_arrow_shafts", item: "arrow_shafts" } },
     { id: "use_inventory", text: "Examine the arrow shafts in your Inventory.", when: { kind: "inventoryAction", action: "examine", item: "arrow_shafts" } },
-    { id: "gain_fletching_xp", text: "Review your new Fletching experience.", when: { kind: "gainedSkillXp", skill: "fletching", atLeast: 5 } },
+    { id: "review_fletching_xp", text: "Review your new Fletching experience.", when: { kind: "viewedPanel", panel: "skills" } },
     { id: "enter_world", text: "Cross into Termenor.", when: { kind: "enteredZone", zone: "overworld" } },
   ]);
 });
@@ -198,6 +198,22 @@ test("finishing the last prerequisite on a suppressed exit crosses without stepp
   expect(world.inventoryAction("learner", "examine", shaftSlot)).toBe(true);
   zones.step(1 / 15);
 
+  expect(zones.zoneOf("learner")).toBe("tutorial");
+  const waitingProgress = zones.progressOf("learner");
+  expect(waitingProgress?.completed).toEqual([
+    "meet_guide",
+    "gather_logs",
+    "fletch_logs",
+    "use_inventory",
+  ]);
+  expect(waitingProgress?.evidence).not.toContainEqual(
+    expect.objectContaining({ objectiveId: "review_fletching_xp" }),
+  );
+  expect(waitingProgress?.done).toBe(false);
+
+  expect(world.viewPanel("learner", "skills")).toBe(true);
+  zones.step(1 / 15);
+
   expect(zones.zoneOf("learner")).toBe("overworld");
   expect(zones.progressOf("learner")?.done).toBe(true);
   expect(zones.consumeTransitions()).toContainEqual({
@@ -275,7 +291,8 @@ test("a deterministic headless trace completes through normal gameplay rules", (
       { tick: 2, playerId: "learner", intent: { kind: "gather", targetId: "res-1" } },
       { tick: 30, playerId: "learner", intent: { kind: "train", recipe: "fletch_arrow_shafts" } },
       { tick: 31, playerId: "learner", inventoryAction: { action: "examine", slot: 2 } },
-      { tick: 32, playerId: "learner", intent: { kind: "move", x: 12, y: 5 } },
+      { tick: 32, playerId: "learner", panelAction: { panel: "skills" } },
+      { tick: 33, playerId: "learner", intent: { kind: "move", x: 12, y: 5 } },
     ],
     ticks: 100,
   });
@@ -285,6 +302,7 @@ test("a deterministic headless trace completes through normal gameplay rules", (
       || fact.kind === "resourceGathered"
       || fact.kind === "itemProduced"
       || fact.kind === "inventoryActionPerformed"
+      || fact.kind === "panelViewed"
       || (fact.kind === "skillXpGained" && fact.skill === "fletching")
       || fact.kind === "playerEnteredZone",
   );
@@ -294,6 +312,7 @@ test("a deterministic headless trace completes through normal gameplay rules", (
     "skillXpGained",
     "itemProduced",
     "inventoryActionPerformed",
+    "panelViewed",
     "playerEnteredZone",
   ]);
   expect(tutorialFacts.find((fact) => fact.kind === "itemProduced")).toMatchObject({
