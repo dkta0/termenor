@@ -1,5 +1,6 @@
 import type { Facing, ItemStack, Equipment, StopCondition } from "@termenor/protocol";
 import type { Point } from "./pathfinding";
+import type { GameplayFact } from "./gameplay-facts";
 
 /** A standing order: an autonomous activity + stop-condition the server runs across ticks (Slice B). */
 export interface ActiveOrder {
@@ -25,6 +26,9 @@ export interface PlayerEntity {
   quests: Record<string, number>;
 }
 
+/** Complete mutable Player state carried between Zone-local GameWorld instances. */
+export interface PlayerTransferState extends Omit<PlayerEntity, "id"> {}
+
 export interface NpcEntity {
   id: string; type: string; x: number; y: number; facing: Facing; path: Point[];
   home: Point; radius: number; nextWanderTick: number;
@@ -46,4 +50,6 @@ export interface GameEvents {
   levelUps: { id: string; skill: string; level: number }[];
   gatherNotices: { id: string; text: string }[];
   orderNotices: { id: string; text: string }[];
+  facts: GameplayFact[];
+  factSequence: number;
 }

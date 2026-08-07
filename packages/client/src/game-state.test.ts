@@ -320,3 +320,19 @@ test("setEquipment stores the equipped items", () => {
   gs.setEquipment({ weapon: "bronze_sword", body: null, shield: "bronze_shield" });
   expect(gs.equipment).toEqual({ weapon: "bronze_sword", body: null, shield: "bronze_shield" });
 });
+
+test("setScenario stores authoritative Scenario state", () => {
+  const gs = new GameState();
+  const scenario = {
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "gather_logs",
+    objectiveText: "Find a tree and gather logs.",
+    completed: ["meet_guide"],
+    done: false,
+  };
+
+  gs.setScenario(scenario);
+
+  expect(gs.scenario).toEqual(scenario);
+});

@@ -41,6 +41,11 @@ B. ✅ **Standing orders / AFK floor** — server-side per-player order supervis
    safe-idle (stop & hold) on completion/cancel. *(merged)* Deferred to later slices: order
    queue / `then` / `repeat`, banking-as-order, richer safe-idle policies, order persistence,
    combat `until level` (needs combat skills), and the event-tier system (Slice C).
+T. ✅ **First Steps tutorial Scenario + playtest substrate** — fresh-account nonlethal
+   guide → gather → Make → Inventory Examine → Skill feedback → real Zone exit;
+   deterministic headless replay and production-client PTY verification with persisted
+   reconnect completion and failure artifacts. Deferred tutorial branches and the full
+   quest slice remain open.
 12. **Quests** — scripting/state-machine system + one real quest.
 13. **World scale** — multiple regions, region streaming.
 

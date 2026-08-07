@@ -130,21 +130,21 @@ function onPlayerHit(
   if (dmg > 0) {
     const style = combatStyle(p);
     if (style === "ranged") {
-      awardXp(w.events, p, "ranged", 4 * dmg);
+      awardXp(w, p, "ranged", 4 * dmg);
     } else if (style === "magic") {
-      awardXp(w.events, p, "magic", 2 * dmg);
+      awardXp(w, p, "magic", 2 * dmg);
     } else {
       const each = Math.max(1, Math.round((4 * dmg) / 3));
-      awardXp(w.events, p, "attack", each);
-      awardXp(w.events, p, "strength", each);
-      awardXp(w.events, p, "defence", each);
+      awardXp(w, p, "attack", each);
+      awardXp(w, p, "strength", each);
+      awardXp(w, p, "defence", each);
     }
-    awardXp(w.events, p, "hitpoints", Math.max(1, Math.round(1.33 * dmg)));
+    awardXp(w, p, "hitpoints", Math.max(1, Math.round(1.33 * dmg)));
   }
   if (killed) {
     const npc = w.npcs.find((n) => n.id === tgt.id);
     if (npc) {
-      awardXp(w.events, p, "slayer", Math.max(1, npc.maxHp * 2));
+      awardXp(w, p, "slayer", Math.max(1, npc.maxHp * 2));
       w.addGroundItem("bones", 1, Math.round(tgt.x), Math.round(tgt.y));
     }
   }

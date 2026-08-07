@@ -1,7 +1,7 @@
 import { test, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { openDb, getOrCreateAccount, savePlayerState } from "./db";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { emptyInventory } from "./inventory";
 import { emptyEquipment } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
@@ -17,6 +17,7 @@ test("new account is created at spawn, hash is not plaintext", async () => {
   const result = await getOrCreateAccount(db, "alice", "s3cr3t", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
+  expect(result.created).toBe(true);
   expect(result.state.x).toBe(SPAWN.x);
   expect(result.state.y).toBe(SPAWN.y);
   expect(result.state.facing).toBe(SPAWN.facing);
@@ -30,6 +31,7 @@ test("correct password is accepted and returns saved state", async () => {
   await getOrCreateAccount(db, "bob", "correct", SPAWN);
   const result = await getOrCreateAccount(db, "bob", "correct", SPAWN);
   expect(result.ok).toBe(true);
+  if (result.ok) expect(result.created).toBe(false);
 });
 
 test("wrong password is rejected", async () => {
@@ -42,7 +44,7 @@ test("wrong password is rejected", async () => {
 
 test("savePlayerState persists and restores position", async () => {
   await getOrCreateAccount(db, "diana", "pw", SPAWN);
-  savePlayerState(db, "diana", 10.5, 15.0, "east", emptyInventory(), {}, [], emptyEquipment(), "overworld", {});
+  savePlayerState(db, "diana", 10.5, 15.0, "east", emptyInventory(), {}, [], emptyEquipment(), "overworld", {}, null);
   const result = await getOrCreateAccount(db, "diana", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -78,7 +80,7 @@ test("new account returns empty inventory", async () => {
 test("savePlayerState persists inventory and restores it", async () => {
   await getOrCreateAccount(db, "inv2", "pw", SPAWN);
   const inv = [{ item: "coins", qty: 10 }, ...new Array(27).fill(null)];
-  savePlayerState(db, "inv2", SPAWN.x, SPAWN.y, SPAWN.facing, inv, {}, [], emptyEquipment(), "overworld", {});
+  savePlayerState(db, "inv2", SPAWN.x, SPAWN.y, SPAWN.facing, inv, {}, [], emptyEquipment(), "overworld", {}, null);
   const result = await getOrCreateAccount(db, "inv2", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -116,7 +118,7 @@ test("new account returns empty skills", async () => {
 test("savePlayerState persists skills and restores them", async () => {
   await getOrCreateAccount(db, "woodcutter", "pw", SPAWN);
   const skills = { woodcutting: 100 };
-  savePlayerState(db, "woodcutter", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), skills, [], emptyEquipment(), "overworld", {});
+  savePlayerState(db, "woodcutter", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), skills, [], emptyEquipment(), "overworld", {}, null);
   const result = await getOrCreateAccount(db, "woodcutter", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -140,9 +142,11 @@ test("register mode fails when the name is already taken", async () => {
   expect(result.reason).toMatch(/taken/i);
 });
 
-test("register mode creates a fresh account", async () => {
+test("register mode marks a genuinely fresh account as created", async () => {
   const result = await getOrCreateAccount(db, "fresh", "pw", SPAWN, "register");
   expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.created).toBe(true);
 });
 
 test("login mode fails when the account does not exist", async () => {
@@ -176,7 +180,7 @@ test("new account returns empty bank", async () => {
 test("savePlayerState persists bank and restores it", async () => {
   await getOrCreateAccount(db, "banker", "pw", SPAWN);
   const bank: ItemStack[] = [{ item: "logs", qty: 50 }];
-  savePlayerState(db, "banker", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), {}, bank, emptyEquipment(), "overworld", {});
+  savePlayerState(db, "banker", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), {}, bank, emptyEquipment(), "overworld", {}, null);
   const result = await getOrCreateAccount(db, "banker", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -201,7 +205,7 @@ test("new account starts with empty equipment", async () => {
 
 test("savePlayerState persists equipment and restores it", async () => {
   await getOrCreateAccount(db, "eq", "pw", SPAWN);
-  savePlayerState(db, "eq", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), {}, [], { weapon: "bronze_sword", body: null, shield: "bronze_shield" }, "overworld", {});
+  savePlayerState(db, "eq", SPAWN.x, SPAWN.y, SPAWN.facing, emptyInventory(), {}, [], { weapon: "bronze_sword", body: null, shield: "bronze_shield" }, "overworld", {}, null);
   const result = await getOrCreateAccount(db, "eq", "pw", SPAWN);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -215,4 +219,102 @@ test("NULL or corrupt equipment column yields empty equipment", async () => {
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(result.state.equipment).toEqual({ weapon: null, body: null, shield: null });
+});
+
+test("savePlayerState persists complete Scenario progress including evidence", async () => {
+  await getOrCreateAccount(db, "scenario-player", "pw", SPAWN);
+  const scenario = {
+    scenarioId: "first_steps",
+    version: 1,
+    completed: ["meet_guide"],
+    evidence: [{ objectiveId: "meet_guide", tick: 17 }],
+    done: false,
+  };
+  savePlayerState(
+    db,
+    "scenario-player",
+    7,
+    8,
+    "east",
+    emptyInventory(),
+    { woodcutting: 25 },
+    [],
+    emptyEquipment(),
+    "tutorial",
+    {},
+    scenario,
+  );
+
+  const result = await getOrCreateAccount(db, "scenario-player", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.scenario).toEqual(scenario);
+});
+
+test("malformed Scenario JSON resets only Scenario progress", async () => {
+  await getOrCreateAccount(db, "malformed-scenario", "pw", SPAWN);
+  savePlayerState(
+    db,
+    "malformed-scenario",
+    7,
+    8,
+    "east",
+    emptyInventory(),
+    { woodcutting: 25 },
+    [],
+    emptyEquipment(),
+    "tutorial",
+    { cooks_assistant: 2 },
+    null,
+  );
+  db.run("UPDATE accounts SET scenario = ? WHERE username = ?", [
+    JSON.stringify({
+      scenarioId: "first_steps",
+      version: 1,
+      completed: ["meet_guide"],
+      evidence: [{ objectiveId: "meet_guide", tick: "not-a-number" }],
+      done: false,
+    }),
+    "malformed-scenario",
+  ]);
+
+  const result = await getOrCreateAccount(db, "malformed-scenario", "pw", SPAWN);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.state.scenario).toBeNull();
+  expect(result.state).toMatchObject({
+    x: 7,
+    y: 8,
+    facing: "east",
+    skills: { woodcutting: 25 },
+    zone: "tutorial",
+    quests: { cooks_assistant: 2 },
+  });
+});
+
+test("openDb migrates an existing database without a Scenario column", () => {
+  const dir = `/tmp/termenor-scenario-migration-${process.pid}`;
+  const path = `${dir}/legacy.db`;
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const legacy = new Database(path, { create: true });
+  legacy.run(`
+    CREATE TABLE accounts (
+      username TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL,
+      x REAL NOT NULL DEFAULT 24,
+      y REAL NOT NULL DEFAULT 24,
+      facing TEXT NOT NULL DEFAULT 'south',
+      last_seen INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  legacy.close();
+
+  const migrated = openDb(path);
+  const columns = migrated
+    .query<{ name: string }, []>("PRAGMA table_info(accounts)")
+    .all();
+  expect(columns.map((column) => column.name)).toContain("scenario");
+  migrated.close();
+  rmSync(dir, { recursive: true, force: true });
 });

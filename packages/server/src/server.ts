@@ -1,11 +1,12 @@
-import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, emptyEquipment, validateAllModels, type InventoryMsg, type SkillsMsg, type BankMsg, type ShopMsg, type EquipmentMsg, type SnapshotMsg, type ZoneMsg, type PlayerState } from "@termenor/protocol";
+import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, emptyEquipment, validateAllModels, type InventoryMsg, type SkillsMsg, type BankMsg, type ShopMsg, type EquipmentMsg, type SnapshotMsg, type ZoneMsg, type PlayerState, type ScenarioMsg } from "@termenor/protocol";
 import { diffSnapshot } from "./delta";
 import { WorldIndex } from "./aoi";
-import { Zones } from "./zones";
-import { SPAWN } from "./world";
-import { SqliteStore, type PlayerStore } from "./store";
+import { Zones, type PersistablePlayerState, type ZoneTransition } from "./zones";
+import { SPAWN, ZONE_DEFS, type ZoneDef } from "./world";
+import { SqliteStore, type PlayerStateRecord, type PlayerStore } from "./store";
 import { emptyInventory } from "./inventory";
 import { executeIntent } from "./intent-executor";
+import { currentObjective, validateScenario, type ScenarioDef, type ScenarioProgress } from "./scenario";
 
 // fail fast at startup if the model catalog is invalid
 const modelErrors = validateAllModels();
@@ -22,11 +23,64 @@ export function sanitizeChat(text: string): string {
 const TICK_RATE = 15;
 const SAVE_INTERVAL_TICKS = TICK_RATE * 5; // save all online players every ~5 seconds
 
+const DISCONNECT_RETRY_MS = 100;
 interface Conn { id: string; username: string | null; shopId: string | null; lastView: SnapshotMsg | null; }
 
 export interface RunningServer {
   port: number;
   stop(): void;
+}
+type PersistenceOperation = "transition" | "disconnect" | "periodic";
+interface PersistenceErrorContext {
+  operation: PersistenceOperation;
+  playerId: string;
+  fromZone?: string;
+  toZone?: string;
+}
+
+interface StartServerOptions {
+  aoiRadius?: number;
+  store?: PlayerStore;
+  hostname?: string;
+  scenario?: ScenarioDef;
+  zoneDefs?: ZoneDef[];
+  onPersistenceError?: (
+    error: unknown,
+    context: PersistenceErrorContext,
+  ) => void | Promise<void>;
+}
+
+function playerStateRecord(
+  state: PersistablePlayerState,
+): PlayerStateRecord {
+  return {
+    x: state.x,
+    y: state.y,
+    facing: state.facing,
+    inventory: state.inventory ?? emptyInventory(),
+    skills: state.skills ?? {},
+    bank: state.bank ?? [],
+    equipment: state.equipment ?? emptyEquipment(),
+    zone: state.zone,
+    quests: state.quests ?? {},
+    scenario: state.scenario,
+  };
+}
+
+function scenarioMessage(
+  definition: ScenarioDef,
+  progress: ScenarioProgress,
+): ScenarioMsg {
+  const objective = currentObjective(definition, progress);
+  return {
+    t: "scenario",
+    scenarioId: progress.scenarioId,
+    version: progress.version,
+    objectiveId: objective?.id ?? null,
+    objectiveText: objective?.text ?? null,
+    completed: progress.completed,
+    done: progress.done,
+  };
 }
 
 /**
@@ -38,16 +92,108 @@ export interface RunningServer {
 export function startServer(
   port: number,
   dbPath = process.env.DB_PATH ?? ":memory:",
-  opts: { aoiRadius?: number; store?: PlayerStore; hostname?: string } = {},
+  opts: StartServerOptions = {},
 ): RunningServer {
   const AOI_RADIUS = opts.aoiRadius ?? 48;
-  const zones = new Zones();
+  const zoneDefs = opts.zoneDefs ?? ZONE_DEFS;
+  const scenario = opts.scenario;
+  if (scenario) {
+    const errors = validateScenario(scenario, zoneDefs);
+    if (errors.length > 0) {
+      throw new Error(`invalid Scenario:\n${errors.join("\n")}`);
+    }
+  }
+  const zones = new Zones(zoneDefs, {
+    scenario: scenario,
+    deferTransitions: scenario !== undefined,
+  });
   const store: PlayerStore = opts.store ?? new SqliteStore(dbPath);
+  const saveChains = new Map<string, Promise<void>>();
+  const latestSaveSnapshots = new Map<string, PlayerStateRecord>();
+  const disconnectedSnapshots = new Map<string, PlayerStateRecord>();
+  const pendingTransitionSaves = new Map<string, {
+    transition: Extract<ZoneTransition, { pending: true }>;
+    socket: Bun.ServerWebSocket<Conn>;
+  }>();
+  const cancelDisconnectRetries = new Map<string, () => void>();
+  const reportPersistenceError = opts.onPersistenceError
+    ?? ((error: unknown, context: PersistenceErrorContext) => {
+      console.error(
+        `Failed ${context.operation} persistence for ${context.playerId}`,
+        error,
+      );
+    });
+  const safelyReportPersistenceError = (
+    error: unknown,
+    context: PersistenceErrorContext,
+  ) => {
+    try {
+      void reportPersistenceError(error, context)?.catch(() => {});
+    } catch {
+      // Observability hooks must never interfere with authoritative recovery.
+    }
+  };
+  const enqueuePlayerSave = (
+    username: string,
+    state: PlayerStateRecord,
+  ): Promise<void> => {
+    const snapshot = structuredClone(state);
+    latestSaveSnapshots.set(username, snapshot);
+    const previous = saveChains.get(username);
+    const ready = previous ? previous.catch(() => {}) : Promise.resolve();
+    const save = ready.then(() => store.savePlayerState(username, snapshot));
+    saveChains.set(username, save);
+    void save.then(
+      () => {
+        if (saveChains.get(username) === save) saveChains.delete(username);
+        if (latestSaveSnapshots.get(username) === snapshot) {
+          latestSaveSnapshots.delete(username);
+        }
+      },
+      () => {
+        if (saveChains.get(username) === save) saveChains.delete(username);
+        if (latestSaveSnapshots.get(username) === snapshot) {
+          latestSaveSnapshots.delete(username);
+        }
+      },
+    );
+    return save;
+  };
   const online = new Set<string>(); // usernames currently connected
   const sockets = new Map<string, Bun.ServerWebSocket<Conn>>(); // username → active socket
+  let stopping = false;
+  const persistDisconnected = (username: string) => {
+    const snapshot = disconnectedSnapshots.get(username);
+    if (!snapshot || stopping) return;
+    void enqueuePlayerSave(username, snapshot).then(
+      () => {
+        if (disconnectedSnapshots.get(username) !== snapshot) return;
+        disconnectedSnapshots.delete(username);
+        online.delete(username);
+      },
+      (error) => {
+        safelyReportPersistenceError(error, {
+          operation: "disconnect",
+          playerId: username,
+        });
+        if (disconnectedSnapshots.get(username) !== snapshot || stopping) return;
+        const timer = setTimeout(() => {
+          cancelDisconnectRetries.delete(username);
+          persistDisconnected(username);
+        }, DISCONNECT_RETRY_MS);
+        cancelDisconnectRetries.set(username, () => { clearTimeout(timer); });
+      },
+    );
+  };
   let nextId = 1;
   let saveTick = 0;
   // Per-connection AOI baseline lives on each socket's data (`lastView`); no shared state.
+
+  const sendScenario = (socket: Bun.ServerWebSocket<Conn>, id: string) => {
+    const definition = scenario;
+    const progress = zones.progressOf(id);
+    if (definition && progress) socket.send(encode(scenarioMessage(definition, progress)));
+  };
 
   const server = Bun.serve<Conn>({
     port,
@@ -101,18 +247,26 @@ export function startServer(
 
           ws.data.username = username;
           sockets.set(username, ws);
-          zones.addPlayer(username, result.state);
+          zones.addPlayer(username, result.state, {
+            newScenarioPlayer: result.created,
+          });
+          const playerState = zones.stateOf(username);
+          if (!playerState) throw new Error(`failed to add Player ${username}`);
           ws.subscribe("world");
           ws.send(encode({
             t: "welcome",
             playerId: username,
             map: zones.mapOf(zones.zoneOf(username)),
             tickRate: TICK_RATE,
-            x: result.state.x,
-            y: result.state.y,
-            facing: result.state.facing,
+            x: playerState.x,
+            y: playerState.y,
+            facing: playerState.facing,
           }));
-          const invMsg: InventoryMsg = { t: "inventory", slots: result.state.inventory };
+          sendScenario(ws, username);
+          const invMsg: InventoryMsg = {
+            t: "inventory",
+            slots: playerState.inventory ?? emptyInventory(),
+          };
           ws.send(encode(invMsg));
           const skillsMsg: SkillsMsg = { t: "skills", skills: zones.worldOf(username).getPlayerSkills(username) };
           ws.send(encode(skillsMsg));
@@ -155,6 +309,19 @@ export function startServer(
           w.gather(u, msg.targetId);
         } else if (msg.t === "use") {
           w.use(u, msg.action, msg.slot);
+        } else if (msg.t === "inventoryAction") {
+          if (
+            msg.action === "examine"
+            && !w.inventoryAction(u, msg.action, msg.slot)
+          ) {
+            ws.send(encode({
+              t: "chatMsg",
+              from: "",
+              text: "That Inventory slot changed. Select the item and try Examine again.",
+            }));
+          }
+        } else if (msg.t === "panelAction") {
+          if (msg.panel === "skills") w.viewPanel(u, msg.panel);
         } else if (msg.t === "open") {
           if (msg.what === "bank") {
             if (w.openBank(u, msg.targetId)) {
@@ -198,27 +365,115 @@ export function startServer(
       close(ws) {
         const { username } = ws.data;
         if (username === null) return;
+        const pendingSave = pendingTransitionSaves.get(username);
+        if (pendingSave?.socket === ws) {
+          zones.rollbackTransition(pendingSave.transition);
+        }
         const state = zones.stateOf(username);
-        if (state) void store.savePlayerState(username, { x: state.x, y: state.y, facing: state.facing, inventory: state.inventory ?? emptyInventory(), skills: state.skills ?? {}, bank: state.bank ?? [], equipment: state.equipment ?? emptyEquipment(), zone: state.zone, quests: state.quests ?? {} }).catch(() => {});
+        const snapshot = state
+          ? playerStateRecord(state)
+          : latestSaveSnapshots.get(username);
         zones.removePlayer(username);
-        online.delete(username);
-        sockets.delete(username);
+        if (sockets.get(username) === ws) sockets.delete(username);
+        if (snapshot) {
+          disconnectedSnapshots.set(username, snapshot);
+          persistDisconnected(username);
+        } else {
+          online.delete(username);
+        }
       },
     },
   });
 
   const dt = 1 / TICK_RATE;
-  const interval = setInterval(() => {
-    zones.step(dt);
+  const sendZone = (
+    socket: Bun.ServerWebSocket<Conn>,
+    transition: ZoneTransition,
+  ) => {
+    socket.send(encode({
+      t: "zone",
+      zone: transition.zone,
+      map: zones.mapOf(transition.zone),
+      x: transition.x,
+      y: transition.y,
+      facing: transition.facing,
+    } satisfies ZoneMsg));
+    socket.data.lastView = null;
+  };
 
-    // Zone transitions: push the new map + reset the AOI baseline so the next delta is a
-    // fresh full spawn for the new zone (old-zone entities simply aren't in that view).
-    for (const tr of zones.consumeTransitions()) {
-      const sock = sockets.get(tr.id);
-      if (!sock) continue;
-      sock.send(encode({ t: "zone", zone: tr.zone, map: zones.mapOf(tr.zone), x: tr.x, y: tr.y, facing: tr.facing } satisfies ZoneMsg));
-      sock.data.lastView = null;
+  const flushScenarioChanges = () => {
+    for (const id of zones.consumeScenarioChanges()) {
+      const socket = sockets.get(id);
+      if (socket) sendScenario(socket, id);
     }
+  };
+
+  const processTransition = async (transition: ZoneTransition) => {
+    const socket = sockets.get(transition.id);
+    if (transition.pending !== true) {
+      if (socket) sendZone(socket, transition);
+      return;
+    }
+    if (!socket) {
+      zones.rollbackTransition(transition);
+      return;
+    }
+    const pendingState = zones.pendingStateOf(transition);
+    if (!pendingState) return;
+    const save = enqueuePlayerSave(
+      transition.id,
+      playerStateRecord(pendingState),
+    );
+    pendingTransitionSaves.set(transition.id, { transition, socket });
+    try {
+      await save;
+      if (sockets.get(transition.id) !== socket) {
+        zones.rollbackTransition(transition);
+        return;
+      }
+      if (!zones.commitTransition(transition)) return;
+      sendZone(socket, transition);
+      flushScenarioChanges();
+    } catch (error) {
+      const rolledBack = zones.rollbackTransition(transition);
+      safelyReportPersistenceError(error, {
+        operation: "transition",
+        playerId: transition.id,
+        fromZone: transition.fromZone,
+        toZone: transition.zone,
+      });
+      if (rolledBack && sockets.get(transition.id) === socket) {
+        socket.data.lastView = null;
+        socket.send(encode({
+          t: "chatMsg",
+          from: "",
+          text: "Could not save your progress, so you remain in the tutorial. Please try crossing the exit again.",
+        }));
+        flushScenarioChanges();
+      }
+    } finally {
+      const current = pendingTransitionSaves.get(transition.id);
+      if (current?.transition === transition) {
+        pendingTransitionSaves.delete(transition.id);
+      }
+    }
+  };
+
+  const interval = setInterval(() => {
+    const facts = zones.step(dt);
+    for (const fact of facts) {
+      if (fact.kind !== "resourceGathered") continue;
+      const socket = sockets.get(fact.playerId);
+      const inventory = zones.worldOf(fact.playerId).getInventory(fact.playerId);
+      if (socket && inventory) {
+        socket.send(encode({ t: "inventory", slots: inventory } satisfies InventoryMsg));
+      }
+    }
+
+    for (const transition of zones.consumeTransitions()) {
+      void processTransition(transition);
+    }
+    flushScenarioChanges();
 
     // Per-zone AOI delta: snapshot each occupied zone once, then send each player only the
     // change within their Area of Interest since their last view.
@@ -270,13 +525,27 @@ export function startServer(
       saveTick = 0;
       for (const username of online) {
         const state = zones.stateOf(username);
-        if (state) void store.savePlayerState(username, { x: state.x, y: state.y, facing: state.facing, inventory: state.inventory ?? emptyInventory(), skills: state.skills ?? {}, bank: state.bank ?? [], equipment: state.equipment ?? emptyEquipment(), zone: state.zone, quests: state.quests ?? {} }).catch(() => {});
+        if (state) {
+          void enqueuePlayerSave(username, playerStateRecord(state)).catch((error) => {
+            safelyReportPersistenceError(error, {
+              operation: "periodic",
+              playerId: username,
+            });
+          });
+        }
       }
     }
   }, 1000 / TICK_RATE);
 
   return {
     port: server.port ?? port,
-    stop() { clearInterval(interval); server.stop(true); void store.close(); },
+    stop() {
+      stopping = true;
+      clearInterval(interval);
+      for (const cancel of cancelDisconnectRetries.values()) cancel();
+      cancelDisconnectRetries.clear();
+      server.stop(true);
+      void store.close();
+    },
   };
 }

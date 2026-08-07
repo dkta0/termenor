@@ -1,5 +1,16 @@
 export interface OverlayCell { col: number; row: number; char: string; }
 
+/** Width reserved by the ADR-0004 side panel at this terminal width. */
+export function panelColumns(cols: number): number {
+  return Math.min(28, Math.max(0, cols - 20));
+}
+
+/** One current-objective line, clipped before the reserved side panel. */
+export function objectiveCells(text: string, cols: number, rows: number): OverlayCell[] {
+  const playColumns = cols - panelColumns(cols);
+  return textCells(`• ${text}`, 1, 0, playColumns, rows);
+}
+
 /**
  * Starting column for a `labelLen`-char label centered on screen-x `screenX`, free of
  * sub-pixel jitter. Round the anchor to its pixel FIRST, then offset by an INTEGER

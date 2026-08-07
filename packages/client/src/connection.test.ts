@@ -195,6 +195,20 @@ test("sendDrop sends drop message with slot", () => {
   expect(JSON.parse(sock.sent[0])).toEqual({ t: "drop", slot: 3 });
 });
 
+test("sendInventoryAction serializes an authenticated Examine request", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  conn.sendInventoryAction("examine", 7);
+  expect(sock.lastDecoded()).toEqual({ t: "inventoryAction", action: "examine", slot: 7 });
+});
+
+test("sendPanelAction serializes an authenticated Skills-view request", () => {
+  const { sock, conn } = setup();
+  sock.fireOpen();
+  conn.sendPanelAction("skills");
+  expect(sock.lastDecoded()).toEqual({ t: "panelAction", panel: "skills" });
+});
+
 test("sendAttack sends attack message with targetId", () => {
   const { sock, conn } = setup();
   sock.fireOpen();
@@ -350,4 +364,27 @@ test("equipment message updates game-state and fires onEquipment", () => {
   sock.fireMessage(encode({ t: "equipment", weapon: "bronze_sword", body: null, shield: null }));
   expect(gs.equipment).toEqual({ weapon: "bronze_sword", body: null, shield: null });
   expect(fired).toBe(true);
+});
+
+test("scenario message updates authoritative GameState progress", () => {
+  const { sock, gs } = setup();
+  sock.fireOpen();
+  sock.fireMessage(encode({
+    t: "scenario",
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "gather_logs",
+    objectiveText: "Find a tree and gather logs.",
+    completed: ["meet_guide"],
+    done: false,
+  }));
+
+  expect(gs.scenario).toEqual({
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "gather_logs",
+    objectiveText: "Find a tree and gather logs.",
+    completed: ["meet_guide"],
+    done: false,
+  });
 });

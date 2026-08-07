@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { textCells, centerCol } from "./overlay";
+import { objectiveCells, panelColumns, textCells, centerCol } from "./overlay";
 
 test("centerCol does not jitter as the anchor drifts sub-pixel (odd or even length)", () => {
   // Regression: the camera-pinned player's screen-x sits at a fixed integer ± a sub-pixel
@@ -58,4 +58,29 @@ test("partial clip when string starts before col 0", () => {
 
 test("empty string produces no cells", () => {
   expect(textCells("", 0, 0, 10, 5)).toEqual([]);
+});
+
+test.each([
+  { cols: 80, rows: 24 },
+  { cols: 100, rows: 40 },
+])("objectiveCells keeps one compact line inside the visible world at $cols×$rows", ({ cols, rows }) => {
+  const cells = objectiveCells("Examine the arrow shafts in your Inventory.", cols, rows);
+  const panelCol = cols - panelColumns(cols);
+
+  expect(cells.map((cell) => cell.char).join("")).toBe("• Examine the arrow shafts in your Inventory.");
+  expect(new Set(cells.map((cell) => cell.row))).toEqual(new Set([0]));
+  expect(cells[0]).toEqual({ col: 1, row: 0, char: "•" });
+  expect(cells.every((cell) => cell.col < panelCol)).toBe(true);
+  expect(cells.some((cell) => cell.col >= panelCol)).toBe(false);
+});
+
+test.each([
+  { cols: 80, rows: 24 },
+  { cols: 100, rows: 40 },
+])("objectiveCells clips long guidance before the side-panel tabs at $cols×$rows", ({ cols, rows }) => {
+  const cells = objectiveCells("x".repeat(100), cols, rows);
+  const panelCol = cols - panelColumns(cols);
+
+  expect(cells.at(-1)?.col).toBe(panelCol - 1);
+  expect(cells.every((cell) => cell.row === 0 && cell.col < panelCol)).toBe(true);
 });

@@ -2,6 +2,7 @@ import { FIRE_LIFETIME_TICKS } from "@termenor/protocol";
 import { addToInventory, removeSlot } from "./inventory";
 import { isAdjacent } from "./combat";
 import { awardXp } from "./skills-system";
+import { emitFact } from "./gameplay-facts";
 import { hasItem } from "./gather-system";
 import type { GameWorld } from "./game";
 
@@ -40,7 +41,7 @@ export function use(w: GameWorld, playerId: string, action: string, slot: number
       p.inventory[slot] = { item: stack.item, qty: stack.qty - 1 };
     }
     spawnFire(w, px, py);
-    awardXp(w.events, p, "firemaking", FIREMAKING_XP);
+    awardXp(w, p, "firemaking", FIREMAKING_XP);
     return;
   }
 
@@ -75,7 +76,15 @@ export function use(w: GameWorld, playerId: string, action: string, slot: number
     } else {
       p.inventory = cookedSlots;
     }
-    awardXp(w.events, p, "cooking", COOKING_XP);
+    awardXp(w, p, "cooking", COOKING_XP);
+    emitFact(w, {
+      kind: "itemProduced",
+      playerId: p.id,
+      source: "action",
+      operation: "cook",
+      item: "cooked_shrimp",
+      qty: 1,
+    });
     return;
   }
   // unknown action: ignore

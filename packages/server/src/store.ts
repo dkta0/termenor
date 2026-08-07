@@ -4,12 +4,12 @@ import type { Facing } from "@termenor/protocol";
 import { emptyEquipment } from "@termenor/protocol";
 import { emptyInventory } from "./inventory";
 import { DEFAULT_ZONE } from "./world";
-import { openDb, getOrCreateAccount, savePlayerState, type PlayerStateRecord } from "./db";
+import { openDb, getOrCreateAccount, parseScenarioProgress, savePlayerState, type PlayerStateRecord } from "./db";
 
 export type { PlayerStateRecord } from "./db";
 
 export type Spawn = { x: number; y: number; facing: Facing };
-export type AccountResult = { ok: true; state: PlayerStateRecord } | { ok: false; reason: string };
+export type AccountResult = { ok: true; created: boolean; state: PlayerStateRecord } | { ok: false; reason: string };
 
 /**
  * The swappable persistence boundary. The game never touches a driver directly — it talks
@@ -32,7 +32,7 @@ export class SqliteStore implements PlayerStore {
   }
 
   async savePlayerState(username: string, rec: PlayerStateRecord): Promise<void> {
-    savePlayerState(this.db, username, rec.x, rec.y, rec.facing, rec.inventory, rec.skills, rec.bank, rec.equipment, rec.zone, rec.quests);
+    savePlayerState(this.db, username, rec.x, rec.y, rec.facing, rec.inventory, rec.skills, rec.bank, rec.equipment, rec.zone, rec.quests, rec.scenario);
   }
 
   async close(): Promise<void> { this.db.close(); }
@@ -70,17 +70,19 @@ export class PostgresStore implements PlayerStore {
         bank          TEXT,
         equipment     TEXT,
         zone          TEXT NOT NULL DEFAULT 'overworld',
-        quests        TEXT
+        quests        TEXT,
+        scenario      TEXT
       )
     `;
+    await this.sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS scenario TEXT`;
   }
 
   async getOrCreateAccount(username: string, password: string, spawn: Spawn, mode?: "login" | "register"): Promise<AccountResult> {
     await this.ensure();
     const rows = await this.sql`
-      SELECT password_hash, x, y, facing, inventory, skills, bank, equipment, zone, quests
+      SELECT password_hash, x, y, facing, inventory, skills, bank, equipment, zone, quests, scenario
       FROM accounts WHERE username = ${username}
-    ` as Array<{ password_hash: string; x: number; y: number; facing: string; inventory: string | null; skills: string | null; bank: string | null; equipment: string | null; zone: string | null; quests: string | null }>;
+    ` as Array<{ password_hash: string; x: number; y: number; facing: string; inventory: string | null; skills: string | null; bank: string | null; equipment: string | null; zone: string | null; quests: string | null; scenario: string | null }>;
 
     if (rows.length === 0) {
       if (mode === "login") return { ok: false, reason: "no such account" };
@@ -89,7 +91,7 @@ export class PostgresStore implements PlayerStore {
         INSERT INTO accounts (username, password_hash, x, y, facing, last_seen)
         VALUES (${username}, ${hash}, ${spawn.x}, ${spawn.y}, ${spawn.facing}, ${Date.now()})
       `;
-      return { ok: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {}, bank: [], equipment: emptyEquipment(), zone: DEFAULT_ZONE, quests: {} } };
+      return { ok: true, created: true, state: { x: spawn.x, y: spawn.y, facing: spawn.facing, inventory: emptyInventory(), skills: {}, bank: [], equipment: emptyEquipment(), zone: DEFAULT_ZONE, quests: {}, scenario: null } };
     }
 
     if (mode === "register") return { ok: false, reason: "that name is taken" };
@@ -98,6 +100,7 @@ export class PostgresStore implements PlayerStore {
     if (!valid) return { ok: false, reason: mode === "login" ? "wrong password" : "bad password" };
 
     return {
+      created: false,
       ok: true,
       state: {
         x: row.x, y: row.y, facing: row.facing as Facing,
@@ -107,6 +110,7 @@ export class PostgresStore implements PlayerStore {
         equipment: parseJson(row.equipment, emptyEquipment()),
         zone: row.zone ?? DEFAULT_ZONE,
         quests: parseJson(row.quests, {} as Record<string, number>),
+        scenario: parseScenarioProgress(row.scenario),
       },
     };
   }
@@ -118,7 +122,9 @@ export class PostgresStore implements PlayerStore {
         x = ${rec.x}, y = ${rec.y}, facing = ${rec.facing},
         inventory = ${JSON.stringify(rec.inventory)}, skills = ${JSON.stringify(rec.skills)},
         bank = ${JSON.stringify(rec.bank)}, equipment = ${JSON.stringify(rec.equipment)},
-        zone = ${rec.zone}, quests = ${JSON.stringify(rec.quests)}, last_seen = ${Date.now()}
+        zone = ${rec.zone}, quests = ${JSON.stringify(rec.quests)},
+        scenario = ${rec.scenario === null ? null : JSON.stringify(rec.scenario)},
+        last_seen = ${Date.now()}
       WHERE username = ${username}
     `;
   }

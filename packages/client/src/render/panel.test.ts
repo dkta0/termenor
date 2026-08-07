@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import {
   TABS, TAB_LABELS, layoutTabs, spanHas, inventoryView, actionsForItem,
-  examineText, skillLines, gearRows, questLines,
+  examineText, skillLines, gearRows, questLines, makeIntentForItem, scenarioLines,
 } from "./panel";
 import type { ItemStack, Equipment } from "@termenor/protocol";
 
@@ -33,9 +33,11 @@ test("inventoryView skips empty slots and keeps the real slot index", () => {
   expect(rows[1].label).not.toContain("x"); // qty 1 has no suffix
 });
 
-test("actionsForItem offers Equip only for wearable items; Drop + Examine always", () => {
+test("actionsForItem offers normal Make, Equip, Drop, and Examine actions when applicable", () => {
   expect(actionsForItem("bronze_sword")).toEqual(["equip", "drop", "examine"]);
-  expect(actionsForItem("logs")).toEqual(["drop", "examine"]);
+  expect(actionsForItem("logs")).toEqual(["make", "drop", "examine"]);
+  expect(makeIntentForItem("logs")).toEqual({ kind: "train", recipe: "fletch_arrow_shafts" });
+  expect(makeIntentForItem("bronze_axe")).toBeNull();
 });
 
 test("examineText distinguishes wearable, stackable, and plain items", () => {
@@ -44,11 +46,15 @@ test("examineText distinguishes wearable, stackable, and plain items", () => {
   expect(examineText("bronze_axe")).toBe("Bronze axe."); // non-stackable, non-wearable tool
 });
 
-test("skillLines has a combat header plus one row per skill, showing levels", () => {
-  const lines = skillLines({ attack: { xp: 1000, level: 8 } });
+test("skillLines has a combat header plus one row per skill, showing levels and XP", () => {
+  const lines = skillLines({
+    attack: { xp: 1000, level: 8 },
+    fletching: { xp: 5, level: 1 },
+  });
   expect(lines[0]).toMatch(/^Combat /);
   expect(lines.length).toBe(1 + 23); // header + every skill
-  expect(lines.some((l) => l.startsWith("Attack") && l.includes("8"))).toBe(true);
+  expect(lines.find((line) => line.startsWith("Attack"))).toBe("Attack        8  1000xp");
+  expect(lines.find((line) => line.startsWith("Fletching"))).toBe("Fletching     1  5xp");
 });
 
 test("gearRows lists the three slots with filled flags and unequip index", () => {
@@ -63,4 +69,26 @@ test("gearRows lists the three slots with filled flags and unequip index", () =>
 test("questLines surfaces the catalog as reference text", () => {
   const lines = questLines();
   expect(lines.some((l) => l.includes("Cook's Assistant"))).toBe(true);
+});
+
+test("scenarioLines shows one current objective under the Scenario title", () => {
+  expect(scenarioLines({
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "gather_logs",
+    objectiveText: "Find a tree and gather logs.",
+    completed: ["meet_guide"],
+    done: false,
+  })).toEqual(["First Steps", "• Find a tree and gather logs."]);
+});
+
+test("scenarioLines replaces the objective with a compact completed state", () => {
+  expect(scenarioLines({
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: null,
+    objectiveText: null,
+    completed: ["meet_guide", "enter_world"],
+    done: true,
+  })).toEqual(["First Steps", "✓ Complete"]);
 });

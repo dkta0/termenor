@@ -13,6 +13,7 @@ export function queueMove(w: GameWorld, id: string, x: number, y: number): void 
   const ty = Math.floor(y);
   const path = findPath(w.map, { x: Math.round(p.x), y: Math.round(p.y) }, { x: tx, y: ty });
   if (path === null) return; // unwalkable / unreachable — ignore
+  p.gatherTarget = null;
   p.path = path;
 }
 

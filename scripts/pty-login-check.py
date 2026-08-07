@@ -1,90 +1,87 @@
 #!/usr/bin/env python3
-"""End-to-end login verification through a real PTY.
+"""End-to-end interactive login verification through the shared PTY harness."""
 
-Spawns the server and ONE OpenTUI client with NO TERMENOR_USER/PASS, so the
-client shows the in-TUI login screen. Types a username, Tab to password, a
-password, then Enter to register — and verifies the world renders afterward
-(half-block glyph + local player color), proving login -> play works.
-"""
-import os, pty, sys, time, fcntl, termios, struct, subprocess, select, signal, tempfile
+from __future__ import annotations
 
-PORT = 3139
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys
+
+from pty_harness import PtyHarness, capture, press, type_text
+
+
+ROWS = 40
+COLS = 100
 HALF_BLOCK = "▀".encode("utf-8")
 LOCAL_COLOR = b"255;210;60"
 
-def set_winsize(fd, rows, cols):
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
-def spawn_client(rows, cols):
-    pid, fd = pty.fork()
-    if pid == 0:
-        env = dict(os.environ)
-        env["SERVER_URL"] = f"ws://localhost:{PORT}"
-        env["TERM"] = "xterm-256color"
-        env["COLORTERM"] = "truecolor"
-        env.pop("TERMENOR_USER", None)   # force the interactive login screen
-        env.pop("TERMENOR_PASS", None)
-        os.chdir(ROOT)
-        os.execvpe("bun", ["bun", "run", "packages/client/src/index.ts"], env)
-        os._exit(127)
-    set_winsize(fd, rows, cols)
-    return pid, fd
-
-def drain(fds, duration):
-    out = {fd: bytearray() for fd in fds}
-    end = time.monotonic() + duration
-    while time.monotonic() < end:
-        r, _, _ = select.select(fds, [], [], 0.1)
-        for fd in r:
-            try:
-                data = os.read(fd, 65536)
-                if data: out[fd].extend(data)
-            except OSError:
-                pass
-    return out
-
-def main():
-    db_dir = tempfile.mkdtemp(prefix="termenor-login-")
-    db_path = os.path.join(db_dir, "login-check.db")
-    server = subprocess.Popen(
-        ["bun", "run", "packages/server/src/index.ts"],
-        cwd=ROOT, env={**os.environ, "PORT": str(PORT), "DB_PATH": db_path},
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    time.sleep(1.5)
-    pid, fd = spawn_client(40, 100)
-    time.sleep(1.0)  # login screen renders
-
-    # Type credentials: username "ptylogin", Tab, password "secret", Enter.
-    for ch in b"ptylogin":
-        os.write(fd, bytes([ch])); time.sleep(0.03)
-    os.write(fd, b"\t"); time.sleep(0.1)            # focus password
-    for ch in b"secret":
-        os.write(fd, bytes([ch])); time.sleep(0.03)
-    os.write(fd, b"\r"); time.sleep(0.1)            # submit (register)
-
-    world = drain([fd], 3.0)  # collect frames after entering the world
-
-    try: os.kill(pid, signal.SIGTERM)
-    except OSError: pass
-    server.send_signal(signal.SIGTERM)
-    time.sleep(0.3)
-    try: server.kill()
-    except Exception: pass
-
-    out = bytes(world[fd])
-    checks = {
-        "client emitted output": len(out) > 0,
-        "world half-block ▀ glyph present (entered game)": HALF_BLOCK in out,
-        "local player color rendered": LOCAL_COLOR in out,
-    }
-    ok = True
+def report_checks(checks: dict[str, bool]) -> bool:
     for name, passed in checks.items():
         print(f"  [{'PASS' if passed else 'FAIL'}] {name}")
-        ok = ok and passed
+    return all(checks.values())
+
+
+def run() -> tuple[PtyHarness, bool]:
+    harness = PtyHarness(rows=ROWS, cols=COLS)
+    try:
+        with harness:
+            harness.start_server()
+            client = harness.spawn_client("login")
+
+            harness.wait_for(
+                lambda: client.screen.contains("Username")
+                and client.screen.contains("Password")
+                and client.screen.contains("Enter to play"),
+                description="interactive login form",
+                timing="login-ready",
+            )
+            capture(client, label="login-form")
+
+            type_text(client, "ptylogin")
+            harness.wait_for_text(client, "ptylogin", timeout=2.0)
+            press(client, "tab")
+            harness.wait_for_text(client, "› Password", timeout=2.0)
+            type_text(client, "secret")
+            harness.wait_for_text(client, "••••••", timeout=2.0)
+            press(client, "enter")
+
+            harness.wait_for(
+                lambda: client.screen.contains("▀")
+                and client.screen.contains("Inv")
+                and not client.screen.contains("Enter to play"),
+                description="successful authentication to replace login with world",
+                timing="auth-ready",
+            )
+            harness.wait_for(
+                lambda: "▀" in client.screen.text(),
+                description="first normalized world frame",
+                timing="first-world-frame",
+            )
+            world = capture(client, label="world")
+            harness.mark_timing("expected-visible")
+            raw = client.raw_bytes
+            checks = {
+                "client emitted output": client.byte_count > 0,
+                "world half-block ▀ glyph present (entered game)": HALF_BLOCK in raw
+                and "▀" in world.text,
+                "local player color rendered": LOCAL_COLOR in raw,
+            }
+            ok = report_checks(checks)
+            if not ok:
+                raise AssertionError("login contract failed")
+        return harness, True
+    except Exception as error:
+        print(f"  [FAIL] harness/scenario: {error}")
+        return harness, False
+
+
+def main() -> int:
+    harness, ok = run()
+    print(harness.timing_report())
+    if harness.failure_artifacts is not None:
+        print(f"failure artifacts: {harness.failure_artifacts}")
     print("PTY LOGIN OK" if ok else "PTY LOGIN FAILED")
-    sys.exit(0 if ok else 1)
+    return 0 if ok else 1
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

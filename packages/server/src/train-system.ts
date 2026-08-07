@@ -1,6 +1,7 @@
 import { RECIPES, levelForXp } from "@termenor/protocol";
 import { addToInventory, countItem, removeItems } from "./inventory";
 import { awardXp } from "./skills-system";
+import { emitFact } from "./gameplay-facts";
 import type { GameWorld } from "./game";
 
 /**
@@ -42,6 +43,16 @@ export function train(w: GameWorld, playerId: string, recipeId: string): void {
   for (const input of recipe.inputs) slots = removeItems(slots, input.item, input.qty);
 
   p.inventory = slots;
-  awardXp(w.events, p, recipe.skill, recipe.xp);
+  awardXp(w, p, recipe.skill, recipe.xp);
   p.trainReadyTick = w.tick + recipe.cooldownTicks;
+  for (const output of recipe.outputs) {
+    emitFact(w, {
+      kind: "itemProduced",
+      playerId: p.id,
+      source: "recipe",
+      operation: recipeId,
+      item: output.item,
+      qty: output.qty,
+    });
+  }
 }

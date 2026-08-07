@@ -1,6 +1,7 @@
 import type { ItemStack, GroundItem } from "./items";
 import type { Scenery } from "./models";
 import type { Intent } from "./intents";
+import type { ScenarioMsg } from "./scenarios";
 export type { ItemStack, GroundItem } from "./items";
 export { ITEM_KINDS, isItem, INV_SIZE } from "./items";
 export type { ItemKind } from "./items";
@@ -48,8 +49,10 @@ export interface OpenMsg { t: "open"; what: "bank" | "shop"; targetId: string; }
 export interface BankActionMsg { t: "bankAction"; action: "deposit" | "withdraw"; slot: number; qty: number; }
 export interface ShopActionMsg { t: "shopAction"; action: "buy" | "sell"; item: string; qty: number; }
 export interface EquipActionMsg { t: "equipAction"; action: "equip" | "unequip"; slot: number; }
+export interface InventoryActionMsg { t: "inventoryAction"; action: "examine"; slot: number; }
+export interface PanelActionMsg { t: "panelAction"; panel: "skills"; }
 export interface IntentMsg { t: "intent"; intent: Intent; }
-export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg | UseMsg | OpenMsg | BankActionMsg | ShopActionMsg | EquipActionMsg | IntentMsg;
+export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | AttackMsg | GatherMsg | UseMsg | OpenMsg | BankActionMsg | ShopActionMsg | EquipActionMsg | InventoryActionMsg | PanelActionMsg | IntentMsg;
 
 export interface WelcomeMsg {
   t: "welcome";
@@ -103,7 +106,7 @@ export interface SkillsMsg { t: "skills"; skills: Record<string, { xp: number; l
 export interface BankMsg { t: "bank"; items: ItemStack[]; open: boolean; }
 export interface ShopMsg { t: "shop"; shopId: string; name: string; entries: ShopEntry[]; open: boolean; }
 export interface EquipmentMsg { t: "equipment"; weapon: string | null; body: string | null; shield: string | null; }
-export type ServerMsg = WelcomeMsg | ZoneMsg | DeltaMsg | LoginErrorMsg | ChatBroadcastMsg | InventoryMsg | SkillsMsg | BankMsg | ShopMsg | EquipmentMsg;
+export type ServerMsg = WelcomeMsg | ZoneMsg | ScenarioMsg | DeltaMsg | LoginErrorMsg | ChatBroadcastMsg | InventoryMsg | SkillsMsg | BankMsg | ShopMsg | EquipmentMsg;
 
 export function encode(msg: ClientMsg | ServerMsg): string {
   return JSON.stringify(msg);
@@ -111,19 +114,62 @@ export function encode(msg: ClientMsg | ServerMsg): string {
 
 export const MAX_CHAT_LEN = 200;
 
-const CLIENT_TYPES = new Set(["login", "moveTo", "chat", "pickup", "drop", "attack", "gather", "use", "open", "bankAction", "shopAction", "equipAction", "intent"]);
-const SERVER_TYPES = new Set(["welcome", "zone", "delta", "loginError", "chatMsg", "inventory", "skills", "bank", "shop", "equipment"]);
+const CLIENT_TYPES: Record<ClientMsg["t"], true> = {
+  login: true,
+  moveTo: true,
+  chat: true,
+  pickup: true,
+  drop: true,
+  attack: true,
+  gather: true,
+  use: true,
+  open: true,
+  bankAction: true,
+  shopAction: true,
+  equipAction: true,
+  inventoryAction: true,
+  panelAction: true,
+  intent: true,
+};
+const SERVER_TYPES: Record<ServerMsg["t"], true> = {
+  welcome: true,
+  zone: true,
+  scenario: true,
+  delta: true,
+  loginError: true,
+  chatMsg: true,
+  inventory: true,
+  skills: true,
+  bank: true,
+  shop: true,
+  equipment: true,
+};
+
+function hasKnownType<T extends string>(
+  value: unknown,
+  types: Record<T, true>,
+): value is { t: T } {
+  return value !== null
+    && typeof value === "object"
+    && "t" in value
+    && typeof value.t === "string"
+    && Object.hasOwn(types, value.t);
+}
 
 export function decodeClient(data: string): ClientMsg {
-  const obj = JSON.parse(data);
-  if (!obj || !CLIENT_TYPES.has(obj.t)) throw new Error(`bad client message: ${data}`);
-  return obj as ClientMsg;
+  const value: unknown = JSON.parse(data);
+  if (!hasKnownType(value, CLIENT_TYPES)) {
+    throw new Error(`bad client message: ${data}`);
+  }
+  return value as ClientMsg;
 }
 
 export function decodeServer(data: string): ServerMsg {
-  const obj = JSON.parse(data);
-  if (!obj || !SERVER_TYPES.has(obj.t)) throw new Error(`bad server message: ${data}`);
-  return obj as ServerMsg;
+  const value: unknown = JSON.parse(data);
+  if (!hasKnownType(value, SERVER_TYPES)) {
+    throw new Error(`bad server message: ${data}`);
+  }
+  return value as ServerMsg;
 }
 export * from "./quests";
 
@@ -135,3 +181,4 @@ export * from "./equipment";
 export * from "./intents";
 export * from "./models";
 export * from "./recipes";
+export * from "./scenarios";

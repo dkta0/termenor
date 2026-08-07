@@ -6,6 +6,8 @@ import { isoCamera } from "./camera";
 import { tileToScreen } from "./iso";
 import { Kind } from "./types";
 import { MODELS } from "@termenor/protocol";
+import { TUTORIAL_ZONE } from "../../../server/src/tutorial";
+import { panelColumns } from "./overlay";
 
 const flatMap: MapData = {
   width: 3, height: 3,
@@ -227,4 +229,46 @@ test("scenery: a block building draws its own pixels and suppresses the grey wal
   };
   expect(countColor(noScenery, 122, 112, 96)).toBeGreaterThan(0);
   expect(countColor(withScenery, 122, 112, 96)).toBeLessThan(countColor(noScenery, 122, 112, 96));
+});
+
+test("the tutorial exit has a clickable pick cell at supported terminal sizes", () => {
+  const exit = TUTORIAL_ZONE.portals.find((portal) => portal.toZone === "overworld");
+  expect(exit).toBeDefined();
+  if (!exit) return;
+
+  const player: RenderPlayer = {
+    id: "learner",
+    x: 8,
+    y: 3,
+    facing: "south",
+    h: 0,
+    hp: 10,
+    maxHp: 10,
+  };
+  const center = tileToScreen(player.x, player.y, player.h);
+  const exitTile = exit.y * TUTORIAL_ZONE.map.width + exit.x;
+
+  for (const { cols, rows } of [{ cols: 80, rows: 24 }, { cols: 100, rows: 40 }]) {
+    const worldCols = cols - panelColumns(cols);
+    const pixelRows = rows * 2;
+    const camera = isoCamera(center.sx, center.sy, worldCols, pixelRows);
+    const frame = rasterizeIso(
+      TUTORIAL_ZONE.map,
+      [player],
+      camera.ox,
+      camera.oy,
+      worldCols,
+      pixelRows,
+      player.id,
+    );
+    const clickableCells = frame.pick.reduce(
+      (count, tile, pixel) =>
+        tile === exitTile && Math.floor(pixel / worldCols) % 2 === 0
+          ? count + 1
+          : count,
+      0,
+    );
+
+    expect(clickableCells).toBeGreaterThan(0);
+  }
 });

@@ -34,12 +34,30 @@ function conformance(name: string, make: () => PlayerStore) {
       } finally { await s.close(); }
     });
 
-    test("savePlayerState round-trips position, skills, inventory, bank, zone", async () => {
+    test("savePlayerState round-trips position, skills, inventory, bank, zone, and Scenario evidence", async () => {
       const s = make();
       try {
         await s.getOrCreateAccount(u("cara"), "pw", SPAWN, "register");
         const inv = emptyInventory(); inv[0] = { item: "logs", qty: 7 };
-        await s.savePlayerState(u("cara"), { x: 5, y: 9, facing: "east", inventory: inv, skills: { mining: 100 }, bank: [{ item: "coins", qty: 50 }], equipment: emptyEquipment(), zone: "cave", quests: { cooks_assistant: 2 } });
+        const scenario = {
+          scenarioId: "first_steps",
+          version: 1,
+          completed: ["meet_guide"],
+          evidence: [{ objectiveId: "meet_guide", tick: 17 }],
+          done: false,
+        };
+        await s.savePlayerState(u("cara"), {
+          x: 5,
+          y: 9,
+          facing: "east",
+          inventory: inv,
+          skills: { mining: 100 },
+          bank: [{ item: "coins", qty: 50 }],
+          equipment: emptyEquipment(),
+          zone: "cave",
+          quests: { cooks_assistant: 2 },
+          scenario,
+        });
         const r = await s.getOrCreateAccount(u("cara"), "pw", SPAWN, "login");
         expect(r.ok).toBe(true);
         if (!r.ok) return;
@@ -51,6 +69,7 @@ function conformance(name: string, make: () => PlayerStore) {
         expect(r.state.inventory[0]).toEqual({ item: "logs", qty: 7 });
         expect(r.state.bank).toEqual([{ item: "coins", qty: 50 }]);
         expect(r.state.quests).toEqual({ cooks_assistant: 2 });
+        expect(r.state.scenario).toEqual(scenario);
       } finally { await s.close(); }
     });
   });

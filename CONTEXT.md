@@ -27,6 +27,18 @@ A Snapshot the client has received and buffered, tagged with its arrival time, u
 interpolate motion. A Frame is a Snapshot at rest on the client.
 _Avoid_: snapshot (when you specifically mean the buffered client-side copy).
 
+**Scenario**:
+A validated authored setup and guided objective sequence run over normal Zones, Systems,
+and catalogs. A Scenario chooses initial conditions and observes authoritative outcomes;
+it does not redefine game rules.
+_Avoid_: quest, level, mode, script, fixture, tutorial engine.
+
+**Gameplay Fact**:
+An immutable record of a successful authoritative transition at one Tick, emitted in
+deterministic order for objective evaluation and diagnostics. It is not World state and
+cannot mutate the World.
+_Avoid_: event, log entry, audit record, history entry, game event.
+
 ### Entities
 
 **Player**:

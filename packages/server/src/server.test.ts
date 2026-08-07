@@ -1,6 +1,12 @@
 import { test, expect, afterEach } from "bun:test";
 import type { RunningServer } from "./server";
 import { startServer } from "./server";
+import { emptyEquipment } from "@termenor/protocol";
+import { emptyInventory } from "./inventory";
+import type { AccountResult, PlayerStateRecord, PlayerStore } from "./store";
+import type { ScenarioDef } from "./scenario";
+import { TUTORIAL_SCENARIO, TUTORIAL_ZONE } from "./tutorial";
+import { ZONE_DEFS, type ZoneDef } from "./world";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -579,3 +585,1031 @@ test("walking onto a portal sends a zone message carrying the new map", async ()
   expect((zone.map as { width: number }).width).toBe(24); // cave map is 24 wide
   c.close();
 }, 12_000);
+
+const scenarioZones: ZoneDef[] = [
+  {
+    id: "tutorial",
+    map: {
+      width: 8,
+      height: 5,
+      tiles: Array(40).fill(0),
+      heights: Array(40).fill(0),
+      scenery: [],
+    },
+    spawn: { x: 1, y: 2 },
+    seedItems: [],
+    npcs: [],
+    resources: [],
+    portals: [{ x: 3, y: 2, toZone: "overworld", toX: 6, toY: 2 }],
+  },
+  {
+    id: "overworld",
+    map: {
+      width: 8,
+      height: 5,
+      tiles: Array(40).fill(0),
+      heights: Array(40).fill(0),
+      scenery: [],
+    },
+    spawn: { x: 6, y: 2 },
+    seedItems: [],
+    npcs: [],
+    resources: [],
+    portals: [],
+  },
+];
+
+const serverScenario: ScenarioDef = {
+  id: "first_steps",
+  version: 1,
+  startZone: "tutorial",
+  initialItems: [],
+  objectives: [
+    {
+      id: "enter_world",
+      text: "Cross into Termenor.",
+      when: { kind: "enteredZone", zone: "overworld" },
+    },
+  ],
+  exit: { fromZone: "tutorial", toZone: "overworld" },
+};
+
+function scenarioPlayerState(
+  overrides: Partial<PlayerStateRecord> = {},
+): PlayerStateRecord {
+  return {
+    x: 1,
+    y: 2,
+    facing: "east",
+    inventory: emptyInventory(),
+    skills: {},
+    bank: [],
+    equipment: emptyEquipment(),
+    zone: "tutorial",
+    quests: {},
+    scenario: {
+      scenarioId: serverScenario.id,
+      version: serverScenario.version,
+      completed: [],
+      evidence: [],
+      done: false,
+    },
+    ...overrides,
+  };
+}
+
+class TestPlayerStore implements PlayerStore {
+  readonly saves: PlayerStateRecord[] = [];
+
+  constructor(
+    private loaded: PlayerStateRecord,
+    private readonly saveEffect: (
+      username: string,
+      state: PlayerStateRecord,
+    ) => Promise<void> = async () => {},
+  ) {}
+
+  async getOrCreateAccount(): Promise<AccountResult> {
+    return { ok: true, created: false, state: structuredClone(this.loaded) };
+  }
+
+  async savePlayerState(username: string, state: PlayerStateRecord): Promise<void> {
+    this.saves.push(structuredClone(state));
+    await this.saveEffect(username, state);
+    this.loaded = structuredClone(state);
+  }
+
+  async close(): Promise<void> {}
+}
+
+interface PersistenceErrorEvent {
+  error: unknown;
+  context: {
+    operation: "transition" | "disconnect" | "periodic";
+    playerId: string;
+    fromZone?: string;
+    toZone?: string;
+  };
+}
+
+function deferredSignal(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function decodedMessages(messages: readonly string[]): Record<string, unknown>[] {
+  return messages.map((raw) => {
+    const value: unknown = JSON.parse(raw);
+    if (!isRecord(value)) throw new Error("expected an object message");
+    return value;
+  });
+}
+
+function isDestinationDelta(message: Record<string, unknown>): boolean {
+  if (message.t !== "delta" || !isRecord(message.players)) return false;
+  for (const field of ["spawns", "updates"]) {
+    const entries = message.players[field];
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (isRecord(entry) && entry.x === 6 && entry.y === 2) return true;
+    }
+  }
+  return false;
+}
+
+test("welcome is immediately followed by authoritative Scenario progress", async () => {
+  const store = new TestPlayerStore(scenarioPlayerState());
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const scenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "login", username: "learner", password: "pw" }));
+
+  const welcome = await welcomeP;
+  const scenario = await scenarioP;
+  expect(welcome.x).toBe(1);
+  expect(scenario).toMatchObject({
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "enter_world",
+    objectiveText: "Cross into Termenor.",
+    completed: [],
+    done: false,
+  });
+  const messages = decodedMessages(client.messages);
+  const welcomeIndex = messages.findIndex((message) => message.t === "welcome");
+  const scenarioIndex = messages.findIndex((message) => message.t === "scenario");
+  expect(scenarioIndex).toBe(welcomeIndex + 1);
+  client.close();
+});
+
+test("Scenario option replacement after startup does not alter emitted definition", async () => {
+  const store = new TestPlayerStore(scenarioPlayerState());
+  const options = {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  };
+  srv = startServer(0, ":memory:", options);
+  options.scenario = {
+    ...serverScenario,
+    id: "replacement",
+    version: 99,
+    objectives: [{
+      id: "replacement_goal",
+      text: "Replacement objective.",
+      when: { kind: "enteredZone", zone: "overworld" },
+    }],
+  };
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const scenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "login", username: "alias", password: "pw" }));
+  const message = await scenarioP;
+  expect(message).toMatchObject({
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "enter_world",
+    objectiveText: "Cross into Termenor.",
+  });
+  client.close();
+});
+test("committed Scenario completion survives disconnect and reconnect", async () => {
+  const disconnectSaved = deferredSignal();
+  let saves = 0;
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 2, y: 2 }),
+    async () => {
+      saves++;
+      if (saves === 2) disconnectSaved.resolve();
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const initialScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "login", username: "persist-complete", password: "pw" }));
+  await welcomeP;
+  await initialScenarioP;
+  const zoneP = client.waitForMessage("zone");
+  const completedP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "moveTo", x: 3, y: 2 }));
+  const [zone, completed] = await Promise.all([zoneP, completedP]);
+  expect(zone).toMatchObject({ zone: "overworld", x: 6, y: 2 });
+  expect(completed).toMatchObject({ completed: ["enter_world"], done: true });
+
+  client.close();
+  await disconnectSaved.promise;
+
+  const restored = wsClient(srv.port);
+  await restored.waitForOpen();
+  const restoredWelcomeP = restored.waitForMessage("welcome");
+  const restoredScenarioP = restored.waitForMessage("scenario");
+  restored.send(JSON.stringify({ t: "login", username: "persist-complete", password: "pw" }));
+  const [restoredWelcome, restoredScenario] = await Promise.all([restoredWelcomeP, restoredScenarioP]);
+  expect(restoredWelcome).toMatchObject({ x: 6, y: 2 });
+  expect(restoredScenario).toMatchObject({ completed: ["enter_world"], done: true });
+  restored.close();
+}, 8_000);
+
+
+test("incompatible persisted Scenario resets progress without discarding Player state", async () => {
+  const inventory = emptyInventory();
+  inventory[0] = { item: "logs", qty: 3 };
+  const store = new TestPlayerStore(scenarioPlayerState({
+    x: 1.5,
+    y: 3,
+    inventory,
+    skills: { woodcutting: 42 },
+    quests: { cooks_assistant: 2 },
+    scenario: {
+      scenarioId: "first_steps",
+      version: 99,
+      completed: ["stale"],
+      evidence: [{ objectiveId: "stale", tick: 2 }],
+      done: true,
+    },
+  }));
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const scenarioP = client.waitForMessage("scenario");
+  const inventoryP = client.waitForMessage("inventory");
+  client.send(JSON.stringify({ t: "login", username: "returner", password: "pw" }));
+
+  const welcome = await welcomeP;
+  const scenario = await scenarioP;
+  const inventoryMessage = await inventoryP;
+  expect(welcome).toMatchObject({ x: 1.5, y: 3 });
+  expect(inventoryMessage.slots).toEqual(inventory);
+  expect(scenario).toMatchObject({
+    scenarioId: "first_steps",
+    version: 1,
+    objectiveId: "enter_world",
+    completed: [],
+    done: false,
+  });
+  client.close();
+});
+
+test("disconnect during a rejected final transition save persists the tutorial rollback snapshot", async () => {
+  const transitionSaveStarted = deferredSignal();
+  const releaseTransitionSave = deferredSignal();
+  const disconnectSaveStarted = deferredSignal();
+  let rejectTransitionSave = false;
+  let saveCount = 0;
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 3, y: 2 }),
+    async () => {
+      saveCount++;
+      if (saveCount === 1) {
+        transitionSaveStarted.resolve();
+        await releaseTransitionSave.promise;
+        if (rejectTransitionSave) throw new Error("destination save rejected");
+      } else if (saveCount === 2) {
+        disconnectSaveStarted.resolve();
+      }
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+    onPersistenceError: () => {},
+  });
+  const first = wsClient(srv.port);
+  await first.waitForOpen();
+  const welcomeP = first.waitForMessage("welcome");
+  const initialScenarioP = first.waitForMessage("scenario");
+  first.send(JSON.stringify({ t: "login", username: "reject-close", password: "pw" }));
+  await welcomeP;
+  await initialScenarioP;
+  await transitionSaveStarted.promise;
+
+  first.close();
+  await sleep(50);
+  rejectTransitionSave = true;
+  releaseTransitionSave.resolve();
+  await disconnectSaveStarted.promise;
+  await sleep(50);
+
+  const restored = wsClient(srv.port);
+  await restored.waitForOpen();
+  const restoredWelcomeP = restored.waitForMessage("welcome");
+  const restoredScenarioP = restored.waitForMessage("scenario");
+  restored.send(JSON.stringify({ t: "login", username: "reject-close", password: "pw" }));
+  const restoredWelcome = await restoredWelcomeP;
+  const restoredScenario = await restoredScenarioP;
+
+  expect(restoredWelcome).toMatchObject({ x: 2, y: 2 });
+  expect(restoredScenario).toMatchObject({
+    scenarioId: "first_steps",
+    completed: [],
+    done: false,
+  });
+  expect(store.saves).toHaveLength(2);
+  expect(store.saves[0]).toMatchObject({
+    zone: "overworld",
+    scenario: { completed: ["enter_world"], done: true },
+  });
+  expect(store.saves[1]).toMatchObject({
+    zone: "tutorial",
+    x: 2,
+    y: 2,
+    scenario: { completed: [], done: false },
+  });
+  restored.close();
+}, 8_000);
+
+test("disconnect during a successful final transition save persists the tutorial rollback snapshot", async () => {
+  const transitionSaveStarted = deferredSignal();
+  const releaseTransitionSave = deferredSignal();
+  const disconnectSaveStarted = deferredSignal();
+  let saveCount = 0;
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 3, y: 2 }),
+    async () => {
+      saveCount++;
+      if (saveCount === 1) {
+        transitionSaveStarted.resolve();
+        await releaseTransitionSave.promise;
+      } else if (saveCount === 2) {
+        disconnectSaveStarted.resolve();
+      }
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const first = wsClient(srv.port);
+  await first.waitForOpen();
+  const welcomeP = first.waitForMessage("welcome");
+  const initialScenarioP = first.waitForMessage("scenario");
+  first.send(JSON.stringify({ t: "login", username: "success-close", password: "pw" }));
+  await welcomeP;
+  await initialScenarioP;
+  await transitionSaveStarted.promise;
+
+  first.close();
+  await sleep(50);
+  releaseTransitionSave.resolve();
+  await disconnectSaveStarted.promise;
+  await sleep(50);
+
+  const restored = wsClient(srv.port);
+  await restored.waitForOpen();
+  const restoredWelcomeP = restored.waitForMessage("welcome");
+  const restoredScenarioP = restored.waitForMessage("scenario");
+  restored.send(JSON.stringify({ t: "login", username: "success-close", password: "pw" }));
+  const restoredWelcome = await restoredWelcomeP;
+  const restoredScenario = await restoredScenarioP;
+
+  expect(restoredWelcome).toMatchObject({ x: 2, y: 2 });
+  expect(restoredScenario).toMatchObject({
+    scenarioId: "first_steps",
+    completed: [],
+    done: false,
+  });
+  expect(store.saves).toHaveLength(2);
+  expect(store.saves[0]).toMatchObject({
+    zone: "overworld",
+    scenario: { completed: ["enter_world"], done: true },
+  });
+  expect(store.saves[1]).toMatchObject({
+    zone: "tutorial",
+    x: 2,
+    y: 2,
+    scenario: { completed: [], done: false },
+  });
+  restored.close();
+}, 8_000);
+
+test("successful final transition is persisted before destination visibility", async () => {
+  const saveStarted = deferredSignal();
+  const releaseSave = deferredSignal();
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 3, y: 2 }),
+    async () => {
+      saveStarted.resolve();
+      await releaseSave.promise;
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const initialScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "login", username: "finisher", password: "pw" }));
+  await welcomeP;
+  await initialScenarioP;
+  await saveStarted.promise;
+  await sleep(150);
+
+  const messagesBeforeSave = decodedMessages(client.messages);
+  expect(messagesBeforeSave.some((message) => message.t === "zone")).toBe(false);
+  expect(messagesBeforeSave.some(
+    (message) => message.t === "scenario" && message.done === true,
+  )).toBe(false);
+  expect(messagesBeforeSave.some(isDestinationDelta)).toBe(false);
+
+  const zoneP = client.waitForMessage("zone");
+  const completedP = client.waitForMessage("scenario");
+  releaseSave.resolve();
+  const zone = await zoneP;
+  const completed = await completedP;
+
+  expect(zone).toMatchObject({ zone: "overworld", x: 6, y: 2 });
+  expect(completed).toMatchObject({
+    scenarioId: "first_steps",
+    completed: ["enter_world"],
+    done: true,
+  });
+  expect(store.saves).toHaveLength(1);
+  expect(store.saves[0]).toMatchObject({
+    zone: "overworld",
+    x: 6,
+    y: 2,
+    scenario: {
+      completed: ["enter_world"],
+      evidence: [{
+        objectiveId: "enter_world",
+        tick: expect.any(Number),
+      }],
+      done: true,
+    },
+  });
+  const messages = decodedMessages(client.messages);
+  const zoneIndex = messages.findIndex((message) => message.t === "zone");
+  const completedIndex = messages.findIndex(
+    (message) => message.t === "scenario" && message.done === true,
+  );
+  const firstDestinationDelta = messages.findIndex(isDestinationDelta);
+  expect(zoneIndex).toBeGreaterThan(-1);
+  expect(completedIndex).toBeGreaterThan(zoneIndex);
+  expect(firstDestinationDelta === -1 || firstDestinationDelta > completedIndex).toBe(true);
+  client.close();
+});
+
+test("rejected final save rolls back once beside the portal and remains playable", async () => {
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 3, y: 2 }),
+    async () => { throw new Error("database unavailable"); },
+  );
+  const persistenceErrors: PersistenceErrorEvent[] = [];
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+    onPersistenceError: (error, context) => {
+      persistenceErrors.push({ error, context });
+    },
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const initialScenarioP = client.waitForMessage("scenario");
+  const feedbackP = client.waitForMessage("chatMsg");
+  client.send(JSON.stringify({ t: "login", username: "blocked", password: "pw" }));
+  await welcomeP;
+  await initialScenarioP;
+  const feedback = await feedbackP;
+
+  expect(feedback.text).toMatch(/could not save.*remain in the tutorial/i);
+  await client.waitForPlayers(
+    (players) => players.some((player) => player.id === "blocked" && player.x === 2 && player.y === 2),
+  );
+  await sleep(350);
+  expect(store.saves).toHaveLength(1);
+  const messagesAfterRollback = decodedMessages(client.messages);
+  expect(messagesAfterRollback.some((message) => message.t === "zone")).toBe(false);
+  expect(messagesAfterRollback.some(
+    (message) => message.t === "scenario" && message.done === true,
+  )).toBe(false);
+  expect(messagesAfterRollback.some(isDestinationDelta)).toBe(false);
+  expect(persistenceErrors).toHaveLength(1);
+  expect(persistenceErrors[0]).toMatchObject({
+    error: expect.any(Error),
+    context: {
+      operation: "transition",
+      playerId: "blocked",
+      fromZone: "tutorial",
+      toZone: "overworld",
+    },
+  });
+
+  client.send(JSON.stringify({ t: "moveTo", x: 1, y: 2 }));
+  await client.waitForPlayers(
+    (players) => players.some((player) => player.id === "blocked" && player.x < 1.2),
+  );
+  expect(store.saves).toHaveLength(1);
+  client.close();
+}, 8_000);
+
+test("an earlier periodic save must finish before the final transition save starts", async () => {
+  const firstSaveStarted = deferredSignal();
+  const releaseFirstSave = deferredSignal();
+  const secondSaveStarted = deferredSignal();
+  const releaseSecondSave = deferredSignal();
+  const completedWrites: PlayerStateRecord[] = [];
+  let invocation = 0;
+  const store = new TestPlayerStore(
+    scenarioPlayerState(),
+    async (_username, state) => {
+      invocation++;
+      if (invocation === 1) {
+        firstSaveStarted.resolve();
+        await releaseFirstSave.promise;
+      } else if (invocation === 2) {
+        secondSaveStarted.resolve();
+        await releaseSecondSave.promise;
+      }
+      completedWrites.push(structuredClone(state));
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const initialScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "login", username: "ordered", password: "pw" }));
+  await welcomeP;
+  await initialScenarioP;
+  await firstSaveStarted.promise;
+
+  client.send(JSON.stringify({ t: "moveTo", x: 3, y: 2 }));
+  await sleep(700);
+  expect(store.saves).toHaveLength(1);
+  expect(decodedMessages(client.messages).some((message) => message.t === "zone")).toBe(false);
+
+  releaseFirstSave.resolve();
+  await secondSaveStarted.promise;
+  expect(store.saves).toHaveLength(2);
+  expect(decodedMessages(client.messages).some((message) => message.t === "zone")).toBe(false);
+
+  const zoneP = client.waitForMessage("zone");
+  const completedP = client.waitForMessage("scenario");
+  releaseSecondSave.resolve();
+  await zoneP;
+  await completedP;
+
+  expect(completedWrites.map((state) => state.zone)).toEqual([
+    "tutorial",
+    "overworld",
+  ]);
+  expect(completedWrites[1].scenario?.done).toBe(true);
+  client.close();
+}, 15_000);
+
+test("a reconnect stays blocked until disconnect persistence settles", async () => {
+  const saveStarted = deferredSignal();
+  const releaseSave = deferredSignal();
+  const store = new TestPlayerStore(
+    scenarioPlayerState(),
+    async () => {
+      saveStarted.resolve();
+      await releaseSave.promise;
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const first = wsClient(srv.port);
+  await first.waitForOpen();
+  const firstWelcomeP = first.waitForMessage("welcome");
+  first.send(JSON.stringify({ t: "login", username: "reconnecting", password: "pw" }));
+  await firstWelcomeP;
+  first.close();
+  await saveStarted.promise;
+
+  const blocked = wsClient(srv.port);
+  await blocked.waitForOpen();
+  blocked.send(JSON.stringify({ t: "login", username: "reconnecting", password: "pw" }));
+  await sleep(150);
+  const blockedMessages = decodedMessages(blocked.messages);
+  releaseSave.resolve();
+  expect(blockedMessages).toContainEqual({
+    t: "loginError",
+    reason: "already online",
+  });
+
+  await sleep(100);
+  const restored = wsClient(srv.port);
+  await restored.waitForOpen();
+  const restoredWelcomeP = restored.waitForMessage("welcome");
+  restored.send(JSON.stringify({ t: "login", username: "reconnecting", password: "pw" }));
+  await restoredWelcomeP;
+  restored.close();
+});
+
+test("one pending transition save does not prevent another Player save from starting", async () => {
+  const releaseFirst = deferredSignal();
+  const firstStarted = deferredSignal();
+  const secondStarted = deferredSignal();
+  const store = new TestPlayerStore(
+    scenarioPlayerState(),
+    async (username) => {
+      if (username === "first") {
+        firstStarted.resolve();
+        await releaseFirst.promise;
+      } else if (username === "second") {
+        secondStarted.resolve();
+      }
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+  });
+  const first = wsClient(srv.port);
+  const second = wsClient(srv.port);
+  await Promise.all([first.waitForOpen(), second.waitForOpen()]);
+  const firstWelcomeP = first.waitForMessage("welcome");
+  const secondWelcomeP = second.waitForMessage("welcome");
+  first.send(JSON.stringify({ t: "login", username: "first", password: "pw" }));
+  second.send(JSON.stringify({ t: "login", username: "second", password: "pw" }));
+  await Promise.all([firstWelcomeP, secondWelcomeP]);
+
+  first.send(JSON.stringify({ t: "moveTo", x: 3, y: 2 }));
+  second.send(JSON.stringify({ t: "moveTo", x: 3, y: 2 }));
+  await firstStarted.promise;
+  await secondStarted.promise;
+
+  expect(store.saves).toHaveLength(2);
+  releaseFirst.resolve();
+  await Promise.all([
+    first.waitForMessage("zone"),
+    second.waitForMessage("zone"),
+  ]);
+  first.close();
+  second.close();
+}, 8_000);
+
+test("rollback remains safe when the persistence reporter throws", async () => {
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 3, y: 2 }),
+    async () => { throw new Error("database unavailable"); },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+    onPersistenceError: () => { throw new Error("reporter failed"); },
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const feedbackP = client.waitForMessage("chatMsg");
+  client.send(JSON.stringify({ t: "login", username: "safe-report", password: "pw" }));
+  await welcomeP;
+  const feedback = await feedbackP;
+
+  expect(feedback.text).toMatch(/remain in the tutorial/i);
+  await client.waitForPlayers(
+    (players) => players.some(
+      (player) => player.id === "safe-report" && player.x === 2 && player.y === 2,
+    ),
+  );
+  expect(decodedMessages(client.messages).some((message) => message.t === "zone")).toBe(false);
+
+  client.send(JSON.stringify({ t: "moveTo", x: 1, y: 2 }));
+  await client.waitForPlayers(
+    (players) => players.some((player) => player.id === "safe-report" && player.x < 1.2),
+  );
+  client.close();
+}, 8_000);
+
+test("a rejected disconnect save retains state and blocks reconnect until retry succeeds", async () => {
+  const firstSaveFailed = deferredSignal();
+  const retryStarted = deferredSignal();
+  const releaseRetry = deferredSignal();
+  const persistenceErrors: PersistenceErrorEvent[] = [];
+  let attempts = 0;
+  const store = new TestPlayerStore(
+    scenarioPlayerState(),
+    async () => {
+      attempts++;
+      if (attempts === 1) {
+        firstSaveFailed.resolve();
+        throw new Error("temporary disconnect failure");
+      }
+      retryStarted.resolve();
+      await releaseRetry.promise;
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+    onPersistenceError: (error, context) => {
+      persistenceErrors.push({ error, context });
+    },
+  });
+  const first = wsClient(srv.port);
+  await first.waitForOpen();
+  const welcomeP = first.waitForMessage("welcome");
+  first.send(JSON.stringify({ t: "login", username: "retrying-close", password: "pw" }));
+  await welcomeP;
+  first.send(JSON.stringify({ t: "moveTo", x: 2, y: 2 }));
+  await first.waitForPlayers(
+    (players) => players.some((player) => player.id === "retrying-close" && player.x === 2),
+  );
+  first.close();
+  await firstSaveFailed.promise;
+  await sleep(50);
+
+  const blocked = wsClient(srv.port);
+  await blocked.waitForOpen();
+  blocked.send(JSON.stringify({ t: "login", username: "retrying-close", password: "pw" }));
+  await sleep(100);
+  expect(decodedMessages(blocked.messages)).toContainEqual({
+    t: "loginError",
+    reason: "already online",
+  });
+
+  await retryStarted.promise;
+  releaseRetry.resolve();
+  await sleep(100);
+  const restored = wsClient(srv.port);
+  await restored.waitForOpen();
+  const restoredWelcomeP = restored.waitForMessage("welcome");
+  restored.send(JSON.stringify({ t: "login", username: "retrying-close", password: "pw" }));
+  const restoredWelcome = await restoredWelcomeP;
+  expect(restoredWelcome.x).toBe(2);
+  expect(persistenceErrors).toContainEqual({
+    error: expect.any(Error),
+    context: {
+      operation: "disconnect",
+      playerId: "retrying-close",
+    },
+  });
+  restored.close();
+}, 8_000);
+
+test("periodic save rejection stays safe when its reporter rejects asynchronously", async () => {
+  const persistenceErrors: PersistenceErrorEvent[] = [];
+  const periodicReported = deferredSignal();
+  let attempts = 0;
+  const store = new TestPlayerStore(
+    scenarioPlayerState(),
+    async () => {
+      attempts++;
+      if (attempts === 1) throw new Error("temporary periodic failure");
+    },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+    onPersistenceError: async (error, context) => {
+      persistenceErrors.push({ error, context });
+      if (context.operation === "periodic") periodicReported.resolve();
+      throw new Error("async periodic reporter failed");
+    },
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  client.send(JSON.stringify({ t: "login", username: "periodic", password: "pw" }));
+  await welcomeP;
+  await periodicReported.promise;
+
+  expect(persistenceErrors).toContainEqual({
+    error: expect.any(Error),
+    context: {
+      operation: "periodic",
+      playerId: "periodic",
+    },
+  });
+  client.send(JSON.stringify({ t: "moveTo", x: 2, y: 2 }));
+  await client.waitForPlayers(
+    (players) => players.some((player) => player.id === "periodic" && player.x === 2),
+  );
+  client.close();
+}, 8_000);
+
+test("rollback contains an asynchronously rejecting persistence reporter", async () => {
+  const store = new TestPlayerStore(
+    scenarioPlayerState({ x: 3, y: 2 }),
+    async () => { throw new Error("database unavailable"); },
+  );
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: serverScenario,
+    zoneDefs: scenarioZones,
+    onPersistenceError: async () => {
+      throw new Error("async reporter failed");
+    },
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const feedbackP = client.waitForMessage("chatMsg");
+  client.send(JSON.stringify({ t: "login", username: "safe-async-report", password: "pw" }));
+  await welcomeP;
+  const feedback = await feedbackP;
+
+  expect(feedback.text).toMatch(/remain in the tutorial/i);
+  await client.waitForPlayers(
+    (players) => players.some(
+      (player) => player.id === "safe-async-report" && player.x === 2 && player.y === 2,
+    ),
+  );
+  await sleep(0);
+  expect(decodedMessages(client.messages).some((message) => message.t === "zone")).toBe(false);
+  client.close();
+}, 8_000);
+
+test("a genuinely new registered account starts in the tutorial with its own Scenario loadout", async () => {
+  srv = startServer(0, ":memory:", {
+    scenario: TUTORIAL_SCENARIO,
+    zoneDefs: [TUTORIAL_ZONE, ...ZONE_DEFS],
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const scenarioP = client.waitForMessage("scenario");
+  const inventoryP = client.waitForMessage("inventory");
+  client.send(JSON.stringify({
+    t: "login",
+    mode: "register",
+    username: "fresh-learner",
+    password: "pw",
+  }));
+
+  const [welcome, scenario, inventory] = await Promise.all([welcomeP, scenarioP, inventoryP]);
+  expect(welcome).toMatchObject({
+    x: TUTORIAL_ZONE.spawn.x,
+    y: TUTORIAL_ZONE.spawn.y,
+  });
+  expect(isRecord(welcome.map) && welcome.map.width).toBe(TUTORIAL_ZONE.map.width);
+  expect(scenario).toMatchObject({
+    scenarioId: "first_steps",
+    objectiveId: "meet_guide",
+    done: false,
+  });
+  expect(Array.isArray(inventory.slots)).toBe(true);
+  if (!Array.isArray(inventory.slots)) throw new Error("inventory slots missing");
+  expect(inventory.slots).toContainEqual({ item: "bronze_axe", qty: 1 });
+  client.close();
+});
+
+test("a successful tutorial Gather pushes the changed Inventory to the client", async () => {
+  srv = startServer(0, ":memory:", {
+    scenario: TUTORIAL_SCENARIO,
+    zoneDefs: [TUTORIAL_ZONE, ...ZONE_DEFS],
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const initialInventoryP = client.waitForMessage("inventory");
+  client.send(JSON.stringify({
+    t: "login",
+    mode: "register",
+    username: "gathering-learner",
+    password: "pw",
+  }));
+  await Promise.all([welcomeP, initialInventoryP]);
+
+  const changedInventoryP = client.waitForMessage("inventory");
+  client.send(JSON.stringify({ t: "gather", targetId: "res-1" }));
+  const changedInventory = await changedInventoryP;
+  expect(Array.isArray(changedInventory.slots)).toBe(true);
+  if (!Array.isArray(changedInventory.slots)) throw new Error("inventory slots missing");
+  expect(changedInventory.slots).toContainEqual({ item: "logs", qty: 1 });
+  client.close();
+});
+
+test("an existing account retains its saved Zone and Inventory when a Scenario is active", async () => {
+  const inventory = emptyInventory();
+  inventory[4] = { item: "logs", qty: 3 };
+  const store = new TestPlayerStore(scenarioPlayerState({
+    x: 25,
+    y: 24,
+    zone: "overworld",
+    inventory,
+    scenario: null,
+  }));
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: TUTORIAL_SCENARIO,
+    zoneDefs: [TUTORIAL_ZONE, ...ZONE_DEFS],
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const inventoryP = client.waitForMessage("inventory");
+  client.send(JSON.stringify({ t: "login", mode: "login", username: "returner", password: "pw" }));
+
+  const [welcome, inventoryMessage] = await Promise.all([welcomeP, inventoryP]);
+  expect(welcome).toMatchObject({ x: 25, y: 24 });
+  expect(isRecord(welcome.map) && welcome.map.width).toBe(ZONE_DEFS[0].map.width);
+  expect(Array.isArray(inventoryMessage.slots)).toBe(true);
+  if (!Array.isArray(inventoryMessage.slots)) throw new Error("inventory slots missing");
+  expect(inventoryMessage.slots[4]).toEqual({ item: "logs", qty: 3 });
+  expect(inventoryMessage.slots).not.toContainEqual({ item: "bronze_axe", qty: 1 });
+  expect(decodedMessages(client.messages).some((message) => message.t === "scenario")).toBe(false);
+  client.close();
+});
+
+test("authenticated Examine waits for an authenticated Skills-view action", async () => {
+  const inventory = emptyInventory();
+  inventory[2] = { item: "arrow_shafts", qty: 1 };
+  const completed = TUTORIAL_SCENARIO.objectives.slice(0, 3).map((objective) => objective.id);
+  const evidence = completed.map((objectiveId, index) => ({ objectiveId, tick: index + 1 }));
+  const store = new TestPlayerStore(scenarioPlayerState({
+    x: TUTORIAL_ZONE.spawn.x,
+    y: TUTORIAL_ZONE.spawn.y,
+    zone: "tutorial",
+    inventory,
+    scenario: {
+      scenarioId: TUTORIAL_SCENARIO.id,
+      version: TUTORIAL_SCENARIO.version,
+      completed,
+      evidence,
+      done: false,
+    },
+  }));
+  srv = startServer(0, ":memory:", {
+    store,
+    scenario: TUTORIAL_SCENARIO,
+    zoneDefs: [TUTORIAL_ZONE, ...ZONE_DEFS],
+  });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const welcomeP = client.waitForMessage("welcome");
+  const initialScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "login", username: "examiner", password: "pw" }));
+  await welcomeP;
+  const initialScenario = await initialScenarioP;
+  expect(initialScenario.objectiveId).toBe("use_inventory");
+
+  const staleFeedbackP = client.waitForMessage("chatMsg");
+  client.send(JSON.stringify({ t: "inventoryAction", action: "examine", slot: 3 }));
+  expect(await staleFeedbackP).toMatchObject({
+    from: "",
+    text: "That Inventory slot changed. Select the item and try Examine again.",
+  });
+
+  const examinedScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "inventoryAction", action: "examine", slot: 2 }));
+  const examinedScenario = await examinedScenarioP;
+  expect(examinedScenario).toMatchObject({
+    objectiveId: "review_fletching_xp",
+    completed: [
+      "meet_guide",
+      "gather_logs",
+      "fletch_logs",
+      "use_inventory",
+    ],
+    done: false,
+  });
+
+  const advancedScenarioP = client.waitForMessage("scenario");
+  client.send(JSON.stringify({ t: "panelAction", panel: "skills" }));
+  const advancedScenario = await advancedScenarioP;
+  expect(advancedScenario).toMatchObject({
+    objectiveId: "enter_world",
+    completed: [
+      "meet_guide",
+      "gather_logs",
+      "fletch_logs",
+      "use_inventory",
+      "review_fletching_xp",
+    ],
+    done: false,
+  });
+  client.close();
+});

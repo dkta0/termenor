@@ -11,7 +11,7 @@ test("first-run hint points at movement, the panel, and help", () => {
 test("help overlay covers the core interactions", () => {
   expect(HELP_TITLE).toContain("?");
   const body = HELP_LINES.join("\n").toLowerCase();
-  for (const concept of ["move", "click", "panel", "command", "gear"]) {
+  for (const concept of ["move", "click", "panel", "command", "gear", "make", "examine"]) {
     expect(body).toContain(concept);
   }
 });
