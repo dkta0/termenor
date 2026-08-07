@@ -221,8 +221,9 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
         break;
       }
       case "produced": {
-        const knownItem = hasCatalogKey(ITEM_KINDS, objective.when.item);
-        if (!knownItem) errors.push(`${at}: unknown Item ${objective.when.item}`);
+        const producedItem = objective.when.item;
+        const knownItem = hasCatalogKey(ITEM_KINDS, producedItem);
+        if (!knownItem) errors.push(`${at}: unknown Item ${producedItem}`);
         if (objective.when.source === "recipe") {
           const knownRecipe = hasCatalogKey(RECIPES, objective.when.operation);
           if (!knownRecipe) {
@@ -230,10 +231,10 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
           } else if (
             knownItem
             && !RECIPES[objective.when.operation].outputs.some(
-              (output) => output.item === objective.when.item,
+              (output) => output.item === producedItem,
             )
           ) {
-            errors.push(`${at}: Recipe ${objective.when.operation} does not emit itemProduced for Item ${objective.when.item}`);
+            errors.push(`${at}: Recipe ${objective.when.operation} does not emit itemProduced for Item ${producedItem}`);
           }
         } else {
           const knownAction = hasCatalogKey(ACTION_PRODUCTS, objective.when.operation);
@@ -243,8 +244,8 @@ export function validateScenario(def: ScenarioDef, zones: ZoneDef[]): string[] {
             const products = ACTION_PRODUCTS[objective.when.operation];
             if (products === null) {
               errors.push(`${at}: action ${objective.when.operation} does not emit itemProduced`);
-            } else if (knownItem && !products.includes(objective.when.item)) {
-              errors.push(`${at}: action ${objective.when.operation} does not emit itemProduced for Item ${objective.when.item}`);
+            } else if (knownItem && !products.includes(producedItem)) {
+              errors.push(`${at}: action ${objective.when.operation} does not emit itemProduced for Item ${producedItem}`);
             }
           }
         }
