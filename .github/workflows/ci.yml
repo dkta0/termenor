@@ -38,10 +38,11 @@ jobs:
           cache: false
 
       - name: Build pinned capsule controller
+        working-directory: .ci-tools/capsulectl
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/bin"
-          go build -trimpath -o "$RUNNER_TEMP/bin/capsulectl" ./.ci-tools/capsulectl/cmd/capsulectl
+          go build -trimpath -o "$RUNNER_TEMP/bin/capsulectl" ./cmd/capsulectl
           printf '%s\n' "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Stage symlink-free reviewed capsule source

@@ -49,10 +49,11 @@ jobs:
           test "$(jq -r .version package.json)" = "${RELEASE_TAG#v}"
 
       - name: Build pinned capsule controller
+        working-directory: .release-tools/capsulectl
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/bin"
-          go build -trimpath -o "$RUNNER_TEMP/bin/capsulectl" ./.release-tools/capsulectl/cmd/capsulectl
+          go build -trimpath -o "$RUNNER_TEMP/bin/capsulectl" ./cmd/capsulectl
           printf '%s\n' "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Stage symlink-free reviewed capsule source
