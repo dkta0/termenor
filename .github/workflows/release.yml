@@ -1,38 +1,164 @@
 name: release
 
-# Tag a version (e.g. `git tag v0.1.0 && git push --tags`) to build the client + server
-# binaries for each platform and attach them to the GitHub release.
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "v*"
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   build:
-    name: build ${{ matrix.os }}-${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: ubuntu-latest, os: linux,  arch: x64 }
-          - { runner: macos-13,      os: darwin, arch: x64 }
-          - { runner: macos-latest,  os: darwin, arch: arm64 }
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - name: Build binaries
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          bun build --compile --minify packages/client/src/index.ts --outfile "termenor-${{ matrix.os }}-${{ matrix.arch }}"
-          bun build --compile --minify packages/server/src/index.ts --outfile "termenor-server-${{ matrix.os }}-${{ matrix.arch }}"
-      - name: Attach to release
-        uses: softprops/action-gh-release@v2
+          set -eu
+          printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          files: |
-            termenor-${{ matrix.os }}-${{ matrix.arch }}
-            termenor-server-${{ matrix.os }}-${{ matrix.arch }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check out pinned dependency capsule tool
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: dkta-labs/capsulectl
+          ref: 65f68432e968ae52281e9a0bf615f3d7801e2fc6
+          path: .release-tools/capsulectl
+          persist-credentials: false
+
+      - name: Install pinned Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .release-tools/capsulectl/go.mod
+          cache: false
+
+      - name: Validate source version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          test "$(jq -r .version package.json)" = "${RELEASE_TAG#v}"
+
+      - name: Build pinned capsule controller
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/bin"
+          go build -trimpath -o "$RUNNER_TEMP/bin/capsulectl" ./.release-tools/capsulectl/cmd/capsulectl
+          printf '%s\n' "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Stage symlink-free reviewed capsule source
+        run: |
+          set -eu
+          staged="$RUNNER_TEMP/termenor-capsule-source"
+          mkdir -p "$staged"
+          tar --dereference \
+            --exclude='./.git' \
+            --exclude='./.release-tools' \
+            --exclude='./.capsule/state.json' \
+            --exclude='./.capsule/intake.cdx.json' \
+            -cf - . | tar -xf - -C "$staged"
+          printf 'CAPSULE_SPEC=%s\n' "$staged/.capsule/capsule.json" >> "$GITHUB_ENV"
+
+      - name: Intake and compile Bun artifacts in dependency capsule
+        run: capsulectl intake --spec "$CAPSULE_SPEC"
+
+      - name: Test Bun source offline in credential-blind capsule
+        run: capsulectl run --spec "$CAPSULE_SPEC"
+
+      - name: Typecheck Bun source offline in credential-blind capsule
+        run: capsulectl run --spec "$CAPSULE_SPEC" -- bun run typecheck
+
+      - name: Extract capsule-built release artifacts
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          capsule_dir=$(dirname "$CAPSULE_SPEC")
+          image=$(jq -r .image "$capsule_dir/state.json")
+          input_sha=$(jq -r .inputSHA256 "$capsule_dir/state.json")
+          test -n "$image"
+          test -n "$input_sha"
+          container=$(docker create "$image")
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          mkdir -p release-input
+          docker cp "$container:/capsule-output/." release-input/
+          docker rm "$container"
+          trap - EXIT
+          cp "$capsule_dir/intake.cdx.json" release-input/dependency-sbom.cdx.json
+          jq -n \
+            --arg schema "1" \
+            --arg sourceRevision "$SOURCE_SHA" \
+            --arg capsuleImage "$image" \
+            --arg inputSHA256 "$input_sha" \
+            --arg baseImage "$(jq -r .resolver.image "$CAPSULE_SPEC")" \
+            '{schema: ($schema | tonumber), sourceRevision: $sourceRevision, capsuleImage: $capsuleImage, inputSHA256: $inputSHA256, baseImage: $baseImage}' \
+            > release-input/capsule-provenance.json
+
+      - name: Test and compile restricted SSH gateway
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          CGO_ENABLED: "0"
+        working-directory: packages/gateway
+        run: |
+          set -eu
+          go test ./...
+          version=${RELEASE_TAG#v}
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=true -ldflags "-s -w -X main.gatewayVersion=$version" -o ../../release-input/termenor-ssh-gateway-linux-x64 .
+          GOOS=linux GOARCH=arm64 go build -trimpath -buildvcs=true -ldflags "-s -w -X main.gatewayVersion=$version" -o ../../release-input/termenor-ssh-gateway-linux-arm64 .
+
+      - name: Smoke freshly built Linux client
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          test "$(release-input/termenor-linux-x64 --version)" = "${RELEASE_TAG#v}"
+          test -x release-input/termenor-server-linux-x64
+          test -x release-input/termenor-ssh-gateway-linux-x64
+          python3 scripts/release-smoke.py --server release-input/termenor-server-linux-x64 --client release-input/termenor-linux-x64
+
+      - name: Upload reviewed build outputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: termenor-release
+          path: release-input/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Download reviewed build outputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: termenor-release
+          path: release-input
+
+      - name: Create checksums
+        run: sha256sum release-input/* > release-input/SHA256SUMS
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: release-input/*
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release-input/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes

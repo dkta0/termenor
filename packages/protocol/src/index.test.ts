@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { encode, decodeClient, decodeServer, type ClientMsg, type ServerMsg } from "./index";
+import { CONTENT_VERSION, PROTOCOL_VERSION, encode, decodeClient, decodeServer, type ClientMsg, type ServerMsg } from "./index";
 
 test("client message round-trips", () => {
   const msg: ClientMsg = { t: "moveTo", x: 3, y: 7 };
@@ -35,7 +35,13 @@ test("MAX_CLIMB is 1 (one height unit per step)", () => {
 });
 
 test("login message round-trips", () => {
-  const msg: ClientMsg = { t: "login", username: "alice", password: "s3cr3t" };
+  const msg: ClientMsg = {
+    t: "login",
+    protocolVersion: PROTOCOL_VERSION,
+    contentVersion: CONTENT_VERSION,
+    username: "alice",
+    password: "s3cr3t",
+  };
   expect(decodeClient(encode(msg))).toEqual(msg);
 });
 
@@ -46,7 +52,8 @@ test("loginError message round-trips", () => {
 
 test("welcome includes restored x, y, facing", () => {
   const msg: ServerMsg = {
-    t: "welcome", playerId: "alice", tickRate: 15,
+    t: "welcome", protocolVersion: PROTOCOL_VERSION, contentVersion: CONTENT_VERSION,
+    playerId: "alice", tickRate: 15,
     x: 12.5, y: 7.0, facing: "east",
     map: { width: 2, height: 1, tiles: [0, 0], heights: [0, 0] },
   };
@@ -239,7 +246,14 @@ test("delta round-trips rock and fire resource spawns", () => {
 });
 
 test("decodeClient accepts a login message carrying an explicit mode", () => {
-  const wire = encode({ t: "login", mode: "register", username: "alice", password: "pw" });
+  const wire = encode({
+    t: "login",
+    protocolVersion: PROTOCOL_VERSION,
+    contentVersion: CONTENT_VERSION,
+    mode: "register",
+    username: "alice",
+    password: "pw",
+  });
   const msg = decodeClient(wire);
   expect(msg.t).toBe("login");
   if (msg.t !== "login") return;
@@ -247,8 +261,14 @@ test("decodeClient accepts a login message carrying an explicit mode", () => {
   expect(msg.username).toBe("alice");
 });
 
-test("decodeClient still accepts a login message with no mode (legacy)", () => {
-  const msg = decodeClient(encode({ t: "login", username: "bob", password: "pw" }));
+test("decodeClient accepts a versioned login message with no mode", () => {
+  const msg = decodeClient(encode({
+    t: "login",
+    protocolVersion: PROTOCOL_VERSION,
+    contentVersion: CONTENT_VERSION,
+    username: "bob",
+    password: "pw",
+  }));
   expect(msg.t).toBe("login");
   if (msg.t !== "login") return;
   expect(msg.mode).toBeUndefined();

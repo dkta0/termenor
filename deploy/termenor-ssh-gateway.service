@@ -1,0 +1,62 @@
+[Unit]
+Description=Restricted Termenor SSH game gateway
+Requires=termenor-server.service
+After=network-online.target termenor-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dkta-termenor
+Group=dkta-termenor
+WorkingDirectory=/var/lib/termenor
+Environment=HOME=/nonexistent
+EnvironmentFile=/etc/dkta/termenor.env
+ExecStart=/opt/termenor/bin/termenor-ssh-gateway \
+  --listen-address ${TERMENOR_SSH_LISTEN} \
+  --health-address 127.0.0.1:3001 \
+  --host-key /etc/dkta/termenor/ssh_host_ed25519_key \
+  --client /opt/termenor/bin/termenor \
+  --server ws://127.0.0.1:3000 \
+  --max-connections 16 \
+  --max-connections-per-ip 3 \
+  --max-sessions 8 \
+  --max-sessions-per-ip 2 \
+  --attempts-per-minute 10 \
+  --handshake-timeout 10s \
+  --session-timeout 6h \
+  --shutdown-grace 3s
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+KillMode=control-group
+StateDirectory=termenor
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+DevicePolicy=closed
+DeviceAllow=/dev/ptmx rw
+DeviceAllow=char-pts rw
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+MemoryHigh=1536M
+MemoryMax=2G
+CPUQuota=150%
+TasksMax=96
+LimitNPROC=96
+LimitNOFILE=512
+
+[Install]
+WantedBy=multi-user.target

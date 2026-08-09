@@ -4,9 +4,9 @@
  * `--server ws://localhost:3000`, the `TERMENOR_SERVER`/`SERVER_URL` env vars, or a positional
  * URL. Set `TERMENOR_DEFAULT_SERVER` at build/runtime to rebrand the hosted default.
  */
-export const DEFAULT_SERVER_URL = process.env.TERMENOR_DEFAULT_SERVER ?? "wss://play.termenor.io";
+export const DEFAULT_SERVER_URL = process.env.TERMENOR_DEFAULT_SERVER ?? "wss://termenor.dkta.dev";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 /**
  * Resolve the server URL from CLI args + env, in priority order:

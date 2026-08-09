@@ -14,6 +14,9 @@ import type { ResourceState } from "./resources";
 import type { ShopEntry } from "./shops";
 
 export type Facing = "north" | "south" | "east" | "west";
+export const PROTOCOL_VERSION = 1;
+export const CONTENT_VERSION = "first-steps-v1";
+
 
 /** Row-major grid. 0 = walkable, 1 = blocked. `heights` is per-tile ground elevation. */
 export interface MapData {
@@ -37,7 +40,14 @@ export interface PlayerState {
   maxHp: number;
 }
 
-export interface LoginMsg { t: "login"; mode?: "login" | "register"; username: string; password: string; }
+export interface LoginMsg {
+  t: "login";
+  protocolVersion: number;
+  contentVersion: string;
+  mode?: "login" | "register";
+  username: string;
+  password: string;
+}
 export interface MoveToMsg { t: "moveTo"; x: number; y: number; }
 export interface ChatMsg { t: "chat"; text: string; }
 export interface PickupMsg { t: "pickup"; }
@@ -56,6 +66,8 @@ export type ClientMsg = LoginMsg | MoveToMsg | ChatMsg | PickupMsg | DropMsg | A
 
 export interface WelcomeMsg {
   t: "welcome";
+  protocolVersion: number;
+  contentVersion: string;
   playerId: string;
   map: MapData;
   tickRate: number;

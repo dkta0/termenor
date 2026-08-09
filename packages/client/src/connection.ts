@@ -1,4 +1,4 @@
-import { decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type OpenMsg, type BankActionMsg, type ShopActionMsg, type EquipActionMsg, type InventoryActionMsg, type PanelActionMsg, type Intent, type IntentMsg } from "@termenor/protocol";
+import { CONTENT_VERSION, PROTOCOL_VERSION, decodeServer, encode, PLAYER_MAX_HP, type LoginMsg, type MoveToMsg, type ChatMsg, type PickupMsg, type DropMsg, type AttackMsg, type GatherMsg, type UseMsg, type OpenMsg, type BankActionMsg, type ShopActionMsg, type EquipActionMsg, type InventoryActionMsg, type PanelActionMsg, type Intent, type IntentMsg } from "@termenor/protocol";
 import type { ItemStack } from "@termenor/protocol";
 import type { GameState } from "./game-state";
 
@@ -87,9 +87,14 @@ export class Connection {
     const sock = this.factory(this.url);
     this.sock = sock;
     sock.onopen = () => {
-      const frame: LoginMsg = this.mode
-        ? { t: "login", mode: this.mode, username: this.username, password: this.password }
-        : { t: "login", username: this.username, password: this.password };
+      const frame: LoginMsg = {
+        t: "login",
+        protocolVersion: PROTOCOL_VERSION,
+        contentVersion: CONTENT_VERSION,
+        ...(this.mode ? { mode: this.mode } : {}),
+        username: this.username,
+        password: this.password,
+      };
       sock.send(encode(frame));
     };
     sock.onmessage = (data) => this.handle(data);
@@ -207,6 +212,19 @@ export class Connection {
         this.onLoginError(msg.reason);
       }
     } else if (msg.t === "welcome") {
+      if (
+        msg.protocolVersion !== PROTOCOL_VERSION
+        || msg.contentVersion !== CONTENT_VERSION
+      ) {
+        const reason = "Client/server version mismatch. Install the latest Termenor release.";
+        const pending = this.pendingAuth;
+        this.suppressReconnect = true;
+        this.pendingAuth = null;
+        this.sock?.close();
+        if (pending) pending({ ok: false, reason });
+        else this.onLoginError(reason);
+        return;
+      }
       this.mode = "login"; // any later reconnect logs into the now-existing account
       const pending = this.pendingAuth;
       this.pendingAuth = null;
