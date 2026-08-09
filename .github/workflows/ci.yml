@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: dkta-labs/capsulectl
-          ref: 65f68432e968ae52281e9a0bf615f3d7801e2fc6
+          ref: 65f68432e968ae52281e9a0bfb15f3d7801e2fc6
           path: .ci-tools/capsulectl
           persist-credentials: false
 
