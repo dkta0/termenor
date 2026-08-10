@@ -1,5 +1,10 @@
 import { test, expect } from "bun:test";
-import { resolveServerUrl, DEFAULT_SERVER_URL } from "./config";
+import { resolveServerUrl, DEFAULT_SERVER_URL, VERSION } from "./config";
+
+test("compiled client version matches root release metadata", async () => {
+  const manifest = await Bun.file(new URL("../../../package.json", import.meta.url)).json();
+  expect(VERSION).toBe(manifest.version);
+});
 
 test("--server flag (space or =) wins over env and positional", () => {
   expect(resolveServerUrl(["--server", "ws://a"], { SERVER_URL: "ws://b" })).toBe("ws://a");

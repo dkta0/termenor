@@ -6,7 +6,7 @@
  */
 export const DEFAULT_SERVER_URL = process.env.TERMENOR_DEFAULT_SERVER ?? "wss://termenor.dkta.dev";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.2.1";
 
 /**
  * Resolve the server URL from CLI args + env, in priority order:
