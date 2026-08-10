@@ -145,6 +145,8 @@ jobs:
     timeout-minutes: 10
     environment: release
     permissions:
+      attestations: write
+      id-token: write
       contents: write
     steps:
       - name: Download reviewed build outputs
@@ -155,6 +157,11 @@ jobs:
 
       - name: Create checksums
         run: sha256sum release-input/* > release-input/SHA256SUMS
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: release-input/*
+
 
 
       - name: Publish GitHub release
