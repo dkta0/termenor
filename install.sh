@@ -38,7 +38,9 @@ fi
 
 expected=""
 while read -r digest name; do
-  if [ "$name" = "$asset" ]; then expected="$digest"; break; fi
+  case "$name" in
+    "$asset"|*/"$asset") expected="$digest"; break ;;
+  esac
 done < "${tmp}/SHA256SUMS"
 [ -n "$expected" ] || { echo "Release checksum is missing ${asset}" >&2; exit 1; }
 if command -v sha256sum >/dev/null 2>&1; then
