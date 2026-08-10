@@ -16,7 +16,9 @@ export type Palette = Record<string, PaletteEntry>;
  *    (e.g. player local/other). anim "bob" = walk/idle; "flicker" + flickerAlt = 2-frame.
  *  - block: a volumetric structure. `footprint` rows are a tile grid (row = +dy, col =
  *    +dx). Each non-"." glyph maps via `cells` to {height, color, solid}. height is in
- *    ELEV_PX units (a normal wall = 3). solid:true stamps collision.
+ *    ELEV_PX units (a normal wall = 3). solid:true stamps collision. An optional
+ *    `activated` style switches color and may pulse only when the placed Scenery has
+ *    `activated:true`.
  * Then place it in the world via Scenery {model, x, y} in packages/server/src/world.ts.
  * Validation runs at server start (validateAllModels) — a bad model fails fast.
  */
@@ -30,7 +32,26 @@ export interface BillboardModel {
   flickerMs?: number; // flicker half-period (default 150; fishing spot uses 300)
 }
 
-export interface BlockCell { height: number; color: RGB; solid: boolean }
+export interface BlockActivationStyle {
+  color: RGB;
+  pulse?: RGB;
+  periodMs?: number;
+}
+export interface BlockGlyphStyle {
+  color: RGB;
+  highlight: RGB;
+  count: number;
+  periodMs?: number;
+}
+
+
+export interface BlockCell {
+  height: number;
+  color: RGB;
+  solid: boolean;
+  activated?: BlockActivationStyle;
+  activatedGlyphs?: BlockGlyphStyle;
+}
 
 export interface BlockModel {
   kind: "block";
@@ -41,8 +62,9 @@ export interface BlockModel {
 export type Model = BillboardModel | BlockModel;
 
 /** A placed instance of a Model in the world. `facing` is honored for billboards;
- *  block models ignore it in v1 (rotation deferred — field kept as a seam). */
-export interface Scenery { model: string; x: number; y: number; facing?: Facing }
+ *  block models ignore it in v1 (rotation deferred — field kept as a seam).
+ *  `activated` selects authored activated visuals; activation gameplay owns the state. */
+export interface Scenery { model: string; x: number; y: number; facing?: Facing; activated?: boolean }
 
 // ---- named colors (shared palette vocabulary) ----
 const C = {
@@ -186,6 +208,17 @@ export function validateModel(key: string, m: Model): string[] {
         const cell = m.cells[g];
         if (!cell) { errs.push(`${key}: footprint glyph '${g}' has no cell`); continue; }
         if (cell.height < 0) errs.push(`${key}: cell '${g}' has negative height`);
+        if (cell.activated?.periodMs !== undefined && cell.activated.periodMs <= 0) {
+          errs.push(`${key}: cell '${g}' activated period must be positive`);
+        }
+        if (cell.activatedGlyphs) {
+          if (!Number.isInteger(cell.activatedGlyphs.count) || cell.activatedGlyphs.count < 1 || cell.activatedGlyphs.count > cell.height) {
+            errs.push(`${key}: cell '${g}' activated glyph count must fit its height`);
+          }
+          if (cell.activatedGlyphs.periodMs !== undefined && cell.activatedGlyphs.periodMs <= 0) {
+            errs.push(`${key}: cell '${g}' activated glyph period must be positive`);
+          }
+        }
       }
     }
   }

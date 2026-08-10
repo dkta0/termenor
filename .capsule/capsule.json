@@ -166,6 +166,8 @@
       "packages/server/src/world.ts",
       "packages/server/src/zones.test.ts",
       "packages/server/src/zones.ts",
+      "scripts/asset-candidate.test.ts",
+      "scripts/asset-candidate.ts",
       "scripts/render-png.ts",
       "scripts/render-smoke.ts",
       "scripts/scenario.test.ts",

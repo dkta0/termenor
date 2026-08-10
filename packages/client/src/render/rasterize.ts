@@ -253,7 +253,7 @@ export function rasterizeIso(
     const model = MODELS[sc.model];
     if (!model) continue;
     if (model.kind === "block") {
-      drawBlockModel(f, model, sc.x, sc.y, map, camOx, camOy);
+      drawBlockModel(f, model, sc.x, sc.y, map, camOx, camOy, sc.activated ?? false, now);
     } else {
       const h = map.heights[sc.y * map.width + sc.x] ?? 0;
       const s = tileToScreen(sc.x, sc.y, h);
