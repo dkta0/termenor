@@ -106,9 +106,13 @@ function buildResolveContext(state: GameState, _log: LogState): ResolveContext {
  * world actions or panel controls. Returns a handle. Requires a real terminal.
  */
 export async function startRenderer(state: GameState, chat: ChatState, hooks: RendererHooks): Promise<RendererHandle> {
-  // 30 fps: the server ticks at 15 Hz, so this still renders two frames per tick
-  // for smooth interpolation while halving client CPU and the truecolor bytes/sec.
-  const renderer: CliRenderer = await createCliRenderer({ targetFps: 30, useMouse: true });
+  // We only consume button events. Any-motion tracking (`CSI ? 1003 h`) floods
+  // nested/remote PTYs and can bury the click that follows the pointer movement.
+  const renderer: CliRenderer = await createCliRenderer({
+    targetFps: 30,
+    useMouse: true,
+    enableMouseMovement: false,
+  });
   const tier: Tier = selectTier((renderer.capabilities as CapsLike | null) ?? null);
 
   let lastFrame: IsoFrame | null = null;

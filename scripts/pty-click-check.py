@@ -65,9 +65,11 @@ def run() -> tuple[PtyHarness, bool]:
             before_positions = color_positions(observer_before, OTHER_COLOR_HEX)
             current_positions = before_positions
 
-            center_col = COLS // 2
+            panel_cols = min(28, max(0, COLS - 20))
+            panel_col = COLS - panel_cols
+            center_col = panel_col // 2
             center_row = ROWS // 2
-            for dx, dy in ((12, 6), (14, 7), (16, 8), (12, 6), (14, 7)):
+            for dx, dy in ((8, 0), (10, 2), (12, 4), (8, 0), (10, 2)):
                 click(mover, center_col + dx - 1, center_row + dy - 1)
                 current_positions = harness.wait_for(
                     lambda previous=current_positions: (
@@ -87,8 +89,6 @@ def run() -> tuple[PtyHarness, bool]:
             observer_after = capture(observer, label="after-clicks")
             mover_after = capture(mover, label="after-clicks")
 
-            panel_cols = min(28, max(0, COLS - 20))
-            panel_col = COLS - panel_cols
             skills_col = panel_col + 1 + len("Inv") + 2 + 2
             click(mover, skills_col, 0)
             skills = harness.wait_for_text(

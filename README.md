@@ -21,8 +21,8 @@ termenor          # connects to wss://termenor.dkta.dev
 
 This verifies and installs the latest prebuilt client from `dkta0/termenor` to
 `~/.local/bin/termenor`. Launch it, register a name, and enter the shared world.
-No install needed: `ssh termenor@termenor.dkta.dev` launches the same client and
-shows the same in-client register/login flow.
+No install needed: `ssh termenor.dkta.dev` launches the same client and shows the
+same in-client register/login flow. The SSH username is transport-only and ignored.
 
 **From source (development, or to run your own server):**
 
