@@ -4,5 +4,7 @@ dist/
 .DS_Store
 data/
 .worktrees/
+.termenor/candidates/
+.termenor/previews/
 .capsule/state.json
 .capsule/intake.cdx.json

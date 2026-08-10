@@ -20,6 +20,38 @@ describe("MODELS catalog", () => {
     const m: BlockModel = { kind: "block", cells: { W: { height: 3, color: [1, 1, 1], solid: true } }, footprint: ["WX"] };
     expect(validateModel("bad", m).length).toBeGreaterThan(0);
   });
+
+  test("validateModel rejects a non-positive activated pulse period", () => {
+    const m: BlockModel = {
+      kind: "block",
+      cells: {
+        S: {
+          height: 0,
+          color: [20, 30, 40],
+          solid: false,
+          activated: { color: [40, 80, 160], pulse: [80, 180, 255], periodMs: 0 },
+        },
+      },
+      footprint: ["S"],
+    };
+    expect(validateModel("bad", m)).toContain("bad: cell 'S' activated period must be positive");
+  });
+
+  test("validateModel rejects activated glyphs that do not fit the cell", () => {
+    const m: BlockModel = {
+      kind: "block",
+      cells: {
+        O: {
+          height: 3,
+          color: [20, 30, 40],
+          solid: true,
+          activatedGlyphs: { color: [30, 80, 180], highlight: [90, 210, 255], count: 4 },
+        },
+      },
+      footprint: ["O"],
+    };
+    expect(validateModel("bad", m)).toContain("bad: cell 'O' activated glyph count must fit its height");
+  });
 });
 
 describe("solidFootprint", () => {

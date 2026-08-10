@@ -1,4 +1,5 @@
 {
+
   "bin": {
     "termenor": "packages/client/src/index.ts",
     "termenor-server": "packages/server/src/index.ts"

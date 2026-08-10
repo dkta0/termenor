@@ -66,4 +66,60 @@ describe("drawBlockModel", () => {
     for (const d of f.depth) if (d > maxDepth) maxDepth = d;
     expect(maxDepth).toBe(12);
   });
+
+  test("activated cells pulse only while their Scenery is activated", () => {
+    const m: BlockModel = {
+      kind: "block",
+      cells: {
+        S: {
+          height: 0,
+          color: [20, 30, 40],
+          solid: false,
+          activated: { color: [40, 80, 160], pulse: [80, 180, 255], periodMs: 1_200 },
+        },
+      },
+      footprint: ["S"],
+    };
+    const map = flatMap(16, 16);
+    const inactiveStart = newIsoFrame(64, 64);
+    const inactiveLater = newIsoFrame(64, 64);
+    const activeStart = newIsoFrame(64, 64);
+    const activePeak = newIsoFrame(64, 64);
+    drawBlockModel(inactiveStart, m, 4, 4, map, -32, -8, false, 0);
+    drawBlockModel(inactiveLater, m, 4, 4, map, -32, -8, false, 600);
+    drawBlockModel(activeStart, m, 4, 4, map, -32, -8, true, 0);
+    drawBlockModel(activePeak, m, 4, 4, map, -32, -8, true, 600);
+    expect(inactiveLater.buf.rgb).toEqual(inactiveStart.buf.rgb);
+    expect(activeStart.buf.rgb).not.toEqual(inactiveStart.buf.rgb);
+    expect(activePeak.buf.rgb).not.toEqual(activeStart.buf.rgb);
+  });
+
+  test("activated glyphs travel upward on a block face", () => {
+    const m: BlockModel = {
+      kind: "block",
+      cells: {
+        O: {
+          height: 5,
+          color: [42, 38, 34],
+          solid: true,
+          activatedGlyphs: {
+            color: [22, 62, 142],
+            highlight: [92, 226, 255],
+            count: 4,
+            periodMs: 1_200,
+          },
+        },
+      },
+      footprint: ["O"],
+    };
+    const map = flatMap(16, 16);
+    const inactive = newIsoFrame(64, 64);
+    const activeLow = newIsoFrame(64, 64);
+    const activeHigh = newIsoFrame(64, 64);
+    drawBlockModel(inactive, m, 4, 4, map, -32, -8, false, 0);
+    drawBlockModel(activeLow, m, 4, 4, map, -32, -8, true, 0);
+    drawBlockModel(activeHigh, m, 4, 4, map, -32, -8, true, 600);
+    expect(activeLow.buf.rgb).not.toEqual(inactive.buf.rgb);
+    expect(activeHigh.buf.rgb).not.toEqual(activeLow.buf.rgb);
+  });
 });
