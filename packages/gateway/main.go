@@ -359,9 +359,6 @@ func (g *gateway) serveConnection(parent context.Context, raw net.Conn, ip strin
 	}
 	_ = raw.SetDeadline(time.Time{})
 	defer connection.Close()
-	if connection.User() != "termenor" {
-		return
-	}
 	connectionContext, cancelConnection := context.WithCancel(parent)
 	defer cancelConnection()
 	go func() {

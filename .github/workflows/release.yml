@@ -129,7 +129,7 @@ jobs:
           test "$(jq -r .sourceRevision release-input/capsule-provenance.json)" = "$(git rev-parse HEAD)"
           test -x release-input/termenor-server-linux-x64
           test -x release-input/termenor-ssh-gateway-linux-x64
-          python3 scripts/release-smoke.py --server release-input/termenor-server-linux-x64 --client release-input/termenor-linux-x64
+          python3 scripts/release-smoke.py --server release-input/termenor-server-linux-x64 --client release-input/termenor-linux-x64 --gateway release-input/termenor-ssh-gateway-linux-x64
 
       - name: Upload reviewed build outputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

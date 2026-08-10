@@ -101,7 +101,7 @@ func stopTestGateway(t *testing.T, cancel context.CancelFunc, done <-chan error)
 	}
 }
 
-func TestGatewayRunsOnlyPTYGameShellAndPropagatesBoundedResize(t *testing.T) {
+func TestGatewayRunsOnlyPTYGameShellForAnyTransportUserAndPropagatesInputAndResize(t *testing.T) {
 	app, cancel, done := testGateway(t, `
 trap 'stty size' WINCH
 printf 'READY\r\n'
@@ -112,7 +112,7 @@ done
 `, "unused")
 	defer stopTestGateway(t, cancel, done)
 
-	client := dialGateway(t, app.listener.Addr().String(), "termenor")
+	client := dialGateway(t, app.listener.Addr().String(), "local-account-name")
 	defer client.Close()
 	session, err := client.NewSession()
 	if err != nil {
@@ -165,9 +165,22 @@ done
 			break
 		}
 	}
+	mouse := "\x1b[<0;81;1M\x1b[<0;81;1m"
+	if _, err := fmt.Fprintln(input, mouse); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(line, "ECHO:"+mouse) {
+			break
+		}
+	}
 }
 
-func TestGatewayRejectsExecSubsystemForwardingAgentsAndWrongUser(t *testing.T) {
+func TestGatewayRejectsExecSubsystemForwardingAndAgents(t *testing.T) {
 	app, cancel, done := testGateway(t, "exec cat\n", "unused")
 	defer stopTestGateway(t, cancel, done)
 	address := app.listener.Addr().String()
@@ -206,12 +219,6 @@ func TestGatewayRejectsExecSubsystemForwardingAgentsAndWrongUser(t *testing.T) {
 		t.Fatal("TCP forwarding channel was accepted")
 	}
 
-	wrongUser := dialGateway(t, address, "root")
-	defer wrongUser.Close()
-	if session, err := wrongUser.NewSession(); err == nil {
-		_ = session.Close()
-		t.Fatal("non-termenor transport identity opened a session")
-	}
 }
 
 func TestGatewayReapsClientProcessGroupOnDisconnect(t *testing.T) {

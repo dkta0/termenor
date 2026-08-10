@@ -73,3 +73,25 @@ jobs:
       - name: Test restricted SSH gateway
         working-directory: packages/gateway
         run: go test ./...
+
+      - name: Smoke compiled client through username-free stock SSH
+        run: |
+          set -eu
+          smoke_dir="$RUNNER_TEMP/termenor-release-smoke"
+          mkdir -p "$smoke_dir"
+          capsule_dir=$(dirname "$CAPSULE_SPEC")
+          image=$(jq -r .image "$capsule_dir/state.json")
+          container=$(docker create "$image")
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          docker cp "$container:/capsule-output/termenor-linux-x64" "$smoke_dir/client"
+          docker cp "$container:/capsule-output/termenor-server-linux-x64" "$smoke_dir/server"
+          docker rm "$container"
+          trap - EXIT
+          (
+            cd packages/gateway
+            CGO_ENABLED=0 go build -trimpath -o "$smoke_dir/gateway" .
+          )
+          python3 scripts/release-smoke.py \
+            --server "$smoke_dir/server" \
+            --client "$smoke_dir/client" \
+            --gateway "$smoke_dir/gateway"
