@@ -87,13 +87,12 @@ jobs:
         run: capsulectl run --spec "$CAPSULE_SPEC" -- bun run typecheck
 
       - name: Extract capsule-built release artifacts
-        env:
-          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -eu
           capsule_dir=$(dirname "$CAPSULE_SPEC")
           image=$(jq -r .image "$capsule_dir/state.json")
           input_sha=$(jq -r .inputSHA256 "$capsule_dir/state.json")
+          source_sha=$(git rev-parse HEAD)
           test -n "$image"
           test -n "$input_sha"
           container=$(docker create "$image")
@@ -105,7 +104,7 @@ jobs:
           cp "$capsule_dir/intake.cdx.json" release-input/dependency-sbom.cdx.json
           jq -n \
             --arg schema "1" \
-            --arg sourceRevision "$SOURCE_SHA" \
+            --arg sourceRevision "$source_sha" \
             --arg capsuleImage "$image" \
             --arg inputSHA256 "$input_sha" \
             --arg baseImage "$(jq -r .resolver.image "$CAPSULE_SPEC")" \
@@ -127,6 +126,7 @@ jobs:
         run: |
           set -eu
           test "$(release-input/termenor-linux-x64 --version)" = "${RELEASE_TAG#v}"
+          test "$(jq -r .sourceRevision release-input/capsule-provenance.json)" = "$(git rev-parse HEAD)"
           test -x release-input/termenor-server-linux-x64
           test -x release-input/termenor-ssh-gateway-linux-x64
           python3 scripts/release-smoke.py --server release-input/termenor-server-linux-x64 --client release-input/termenor-linux-x64
