@@ -4,10 +4,9 @@
 renders with truecolor half-blocks over a WebSocket — click to walk, chop trees,
 fight goblins, and watch other players move around you, all from a terminal tab.
 
-> **Status: early alpha, actively built.** The engine and the first skills are
-> playable today. Banking, quests, equipment, and a hosted public server are on
-> the way — see the [roadmap](docs/ROADMAP.md). For now you run your own server
-> (one command); it's fully playable solo or with friends on your network.
+> **Status: early alpha, actively built.** The engine and first skills are playable
+> in the shared authoritative world at `termenor.dkta.dev`; see the
+> [roadmap](docs/ROADMAP.md) for upcoming slices.
 
 ---
 
@@ -16,17 +15,19 @@ fight goblins, and watch other players move around you, all from a terminal tab.
 **Players — one line:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dakota/termenor/main/install.sh | bash
-termenor          # connects to the official server by default
+curl -fsSL https://raw.githubusercontent.com/dkta0/termenor/main/install.sh | bash
+termenor          # connects to wss://termenor.dkta.dev
 ```
 
-This downloads the prebuilt binary for your platform from the latest GitHub release and
-installs `termenor` to `~/.local/bin`. Launch it, register a name, and you're in.
+This verifies and installs the latest prebuilt client from `dkta0/termenor` to
+`~/.local/bin/termenor`. Launch it, register a name, and enter the shared world.
+No install needed: `ssh termenor@termenor.dkta.dev` launches the same client and
+shows the same in-client register/login flow.
 
 **From source (development, or to run your own server):**
 
 ```bash
-git clone https://github.com/dakota/termenor
+git clone https://github.com/dkta0/termenor
 cd termenor && bun install
 
 bun run server                                  # terminal 1 — local server (ws://localhost:3000)

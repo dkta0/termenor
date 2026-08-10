@@ -18,8 +18,9 @@ test("a positional URL is used when no flag or env is present", () => {
   expect(resolveServerUrl(["ws://pos"], {})).toBe("ws://pos");
 });
 
-test("falls back to the hosted default with no args/env", () => {
-  expect(resolveServerUrl([], {})).toBe(DEFAULT_SERVER_URL);
+test("falls back to the canonical hosted endpoint with no args or environment", () => {
+  expect(DEFAULT_SERVER_URL).toBe("wss://termenor.dkta.dev");
+  expect(resolveServerUrl([], {})).toBe("wss://termenor.dkta.dev");
 });
 
 test("dashed flags are never mistaken for a positional URL", () => {

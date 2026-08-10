@@ -1,0 +1,6 @@
+[install]
+registry = "https://registry.npmjs.org/"
+minimumReleaseAge = 259200
+
+[install.lockfile]
+save = true

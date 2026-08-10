@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { encode, type ClientMsg, type ItemStack } from "@termenor/protocol";
+import { CONTENT_VERSION, PROTOCOL_VERSION, encode, type ClientMsg, type ItemStack } from "@termenor/protocol";
 import { GameState } from "./game-state";
 import { Connection, type SocketLike, type SocketFactory } from "./connection";
 
@@ -34,7 +34,13 @@ function setup(overrides: { username?: string; password?: string } = {}) {
 test("sends login on open", () => {
   const { sock } = setup({ username: "alice", password: "s3cr3t" });
   sock.fireOpen();
-  expect(sock.lastDecoded()).toEqual({ t: "login", username: "alice", password: "s3cr3t" });
+  expect(sock.lastDecoded()).toEqual({
+    t: "login",
+    protocolVersion: PROTOCOL_VERSION,
+    contentVersion: CONTENT_VERSION,
+    username: "alice",
+    password: "s3cr3t",
+  });
 });
 
 test("sendMoveTo serializes a moveTo message", () => {
@@ -48,7 +54,8 @@ test("welcome populates map and local id", () => {
   const { sock, gs } = setup();
   sock.fireOpen();
   sock.fireMessage(encode({
-    t: "welcome", playerId: "me", tickRate: 15,
+    t: "welcome", protocolVersion: PROTOCOL_VERSION, contentVersion: CONTENT_VERSION,
+    playerId: "me", tickRate: 15,
     x: 3, y: 1, facing: "south",
     map: { width: 3, height: 1, tiles: [0, 0, 0], heights: [0, 0, 0] },
   }));
@@ -144,6 +151,8 @@ test("welcome message seeds local position in GameState", () => {
   mockSock.onopen?.();
   mockSock.onmessage?.(JSON.stringify({
     t: "welcome",
+    protocolVersion: PROTOCOL_VERSION,
+    contentVersion: CONTENT_VERSION,
     playerId: "alice",
     tickRate: 15,
     x: 10,
@@ -222,7 +231,8 @@ test("inventory message updates GameState", () => {
   sock.fireOpen();
   // simulate welcome first
   sock.fireMessage(encode({
-    t: "welcome", playerId: "alice", map: { width: 2, height: 1, tiles: [0, 0], heights: [0, 0] },
+    t: "welcome", protocolVersion: PROTOCOL_VERSION, contentVersion: CONTENT_VERSION,
+    playerId: "alice", map: { width: 2, height: 1, tiles: [0, 0], heights: [0, 0] },
     tickRate: 15, x: 0, y: 0, facing: "south",
   }));
   const slots: (ItemStack | null)[] = [{ item: "coins", qty: 5 }, null];
@@ -235,12 +245,42 @@ test("authenticate resolves ok when welcome arrives, and sends mode", async () =
   const conn = new Connection("ws://x", new GameState(), { socketFactory: () => sock, now: () => 0 });
   const p = conn.authenticate("register", "newbie", "pw");
   sock.fireOpen();
-  expect(sock.lastDecoded()).toEqual({ t: "login", mode: "register", username: "newbie", password: "pw" });
+  expect(sock.lastDecoded()).toEqual({
+    t: "login",
+    protocolVersion: PROTOCOL_VERSION,
+    contentVersion: CONTENT_VERSION,
+    mode: "register",
+    username: "newbie",
+    password: "pw",
+  });
   sock.fireMessage(encode({
-    t: "welcome", playerId: "newbie", tickRate: 15, x: 0, y: 0, facing: "south",
+    t: "welcome", protocolVersion: PROTOCOL_VERSION, contentVersion: CONTENT_VERSION,
+    playerId: "newbie", tickRate: 15, x: 0, y: 0, facing: "south",
     map: { width: 2, height: 1, tiles: [0, 0], heights: [0, 0] },
   }));
   await expect(p).resolves.toEqual({ ok: true });
+});
+
+test("authenticate rejects an incompatible server welcome", async () => {
+  const sock = new MockSocket();
+  const conn = new Connection("ws://x", new GameState(), { socketFactory: () => sock, now: () => 0 });
+  const auth = conn.authenticate("login", "alice", "pw");
+  sock.fireOpen();
+  sock.fireMessage(encode({
+    t: "welcome",
+    protocolVersion: PROTOCOL_VERSION + 1,
+    contentVersion: CONTENT_VERSION,
+    playerId: "alice",
+    tickRate: 15,
+    x: 0,
+    y: 0,
+    facing: "south",
+    map: { width: 2, height: 1, tiles: [0, 0], heights: [0, 0] },
+  }));
+  await expect(auth).resolves.toEqual({
+    ok: false,
+    reason: "Client/server version mismatch. Install the latest Termenor release.",
+  });
 });
 
 test("authenticate resolves with the error reason on loginError and does NOT reconnect", async () => {
@@ -257,10 +297,16 @@ test("authenticate resolves with the error reason on loginError and does NOT rec
   expect(sockets).toHaveLength(1); // suppressed: no auto-reconnect on auth failure
 });
 
-test("legacy connect() still sends a login frame without a mode key", () => {
+test("connect() sends a versioned login frame without a mode key", () => {
   const { sock } = setup({ username: "alice", password: "s3cr3t" });
   sock.fireOpen();
-  expect(sock.lastDecoded()).toEqual({ t: "login", username: "alice", password: "s3cr3t" });
+  expect(sock.lastDecoded()).toEqual({
+    t: "login",
+    protocolVersion: PROTOCOL_VERSION,
+    contentVersion: CONTENT_VERSION,
+    username: "alice",
+    password: "s3cr3t",
+  });
 });
 
 test("a superseded socket closing after a failed-auth retry does NOT spawn a stray reconnect", async () => {

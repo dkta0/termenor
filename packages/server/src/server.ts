@@ -1,4 +1,5 @@
-import { encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, emptyEquipment, validateAllModels, type InventoryMsg, type SkillsMsg, type BankMsg, type ShopMsg, type EquipmentMsg, type SnapshotMsg, type ZoneMsg, type PlayerState, type ScenarioMsg } from "@termenor/protocol";
+import { CONTENT_VERSION, PROTOCOL_VERSION, encode, decodeClient, MAX_CHAT_LEN, INV_SIZE, emptyEquipment, validateAllModels, type InventoryMsg, type SkillsMsg, type BankMsg, type ShopMsg, type EquipmentMsg, type SnapshotMsg, type ZoneMsg, type PlayerState, type ScenarioMsg } from "@termenor/protocol";
+import { isIP } from "node:net";
 import { diffSnapshot } from "./delta";
 import { WorldIndex } from "./aoi";
 import { Zones, type PersistablePlayerState, type ZoneTransition } from "./zones";
@@ -19,12 +20,27 @@ if (modelErrors.length > 0) {
 export function sanitizeChat(text: string): string {
   return text.trim().slice(0, MAX_CHAT_LEN);
 }
+export function trustedClientAddress(directAddress: string, forwardedFor: string | null): string {
+  const direct = directAddress.replace(/^::ffff:/, "");
+  const loopback = direct === "127.0.0.1" || direct === "::1";
+  if (!loopback || !forwardedFor) return direct;
+  const forwarded = forwardedFor.split(",", 1)[0]?.trim() ?? "";
+  return isIP(forwarded) ? forwarded : direct;
+}
+
 
 const TICK_RATE = 15;
 const SAVE_INTERVAL_TICKS = TICK_RATE * 5; // save all online players every ~5 seconds
 
 const DISCONNECT_RETRY_MS = 100;
-interface Conn { id: string; username: string | null; shopId: string | null; lastView: SnapshotMsg | null; }
+interface Conn {
+  id: string;
+  ip: string;
+  username: string | null;
+  reservedUsername: string | null;
+  shopId: string | null;
+  lastView: SnapshotMsg | null;
+}
 
 export interface RunningServer {
   port: number;
@@ -44,6 +60,11 @@ interface StartServerOptions {
   hostname?: string;
   scenario?: ScenarioDef;
   zoneDefs?: ZoneDef[];
+  maxConnections?: number;
+  maxConnectionsPerIp?: number;
+  attemptsPerMinute?: number;
+  authenticationTimeoutMs?: number;
+  maxTrackedAdmissionIps?: number;
   onPersistenceError?: (
     error: unknown,
     context: PersistenceErrorContext,
@@ -95,6 +116,50 @@ export function startServer(
   opts: StartServerOptions = {},
 ): RunningServer {
   const AOI_RADIUS = opts.aoiRadius ?? 48;
+  const maxConnections = opts.maxConnections ?? 128;
+  const maxConnectionsPerIp = opts.maxConnectionsPerIp ?? 4;
+  const attemptsPerMinute = opts.attemptsPerMinute ?? 10;
+  const authenticationTimeoutMs = opts.authenticationTimeoutMs ?? 15_000;
+  const maxTrackedAdmissionIps = opts.maxTrackedAdmissionIps ?? 4096;
+  const activeByIp = new Map<string, number>();
+  const attemptsByIp = new Map<string, number[]>();
+  let activeConnections = 0;
+  const admitConnection = (ip: string): boolean => {
+    const now = Date.now();
+    const cutoff = now - 60_000;
+    if (!attemptsByIp.has(ip) && attemptsByIp.size >= maxTrackedAdmissionIps) {
+      for (const [trackedIp, trackedAttempts] of attemptsByIp) {
+        if (
+          !activeByIp.has(trackedIp)
+          && (trackedAttempts.at(-1) ?? 0) <= cutoff
+        ) {
+          attemptsByIp.delete(trackedIp);
+        }
+      }
+      if (attemptsByIp.size >= maxTrackedAdmissionIps) return false;
+    }
+    const attempts = (attemptsByIp.get(ip) ?? []).filter((attempt) => attempt > cutoff);
+    if (attempts.length >= attemptsPerMinute) {
+      attemptsByIp.set(ip, attempts);
+      return false;
+    }
+    attempts.push(now);
+    attemptsByIp.set(ip, attempts);
+    if (
+      activeConnections >= maxConnections
+      || (activeByIp.get(ip) ?? 0) >= maxConnectionsPerIp
+    ) return false;
+    activeConnections++;
+    activeByIp.set(ip, (activeByIp.get(ip) ?? 0) + 1);
+    return true;
+  };
+  const releaseConnection = (ip: string) => {
+    const active = activeByIp.get(ip) ?? 0;
+    if (active <= 0) return;
+    activeConnections--;
+    if (active === 1) activeByIp.delete(ip);
+    else activeByIp.set(ip, active - 1);
+  };
   const zoneDefs = opts.zoneDefs ?? ZONE_DEFS;
   const scenario = opts.scenario;
   if (scenario) {
@@ -199,12 +264,41 @@ export function startServer(
     port,
     hostname: opts.hostname, // undefined → Bun binds 0.0.0.0 (all interfaces) for internet play
     fetch(req, srv) {
-      if (srv.upgrade(req, { data: { id: `p${nextId++}`, username: null, shopId: null, lastView: null } })) return;
-      return new Response("termenor server", { status: 200 });
+      const url = new URL(req.url);
+      if (url.pathname === "/health") {
+        return Response.json({
+          status: "ok",
+          connections: activeConnections,
+          maxConnections,
+        });
+      }
+      if (url.pathname !== "/") return new Response("not found", { status: 404 });
+      const direct = srv.requestIP(req)?.address ?? "unknown";
+      const ip = trustedClientAddress(direct, req.headers.get("x-forwarded-for"));
+      if (!admitConnection(ip)) {
+        return new Response("connection limit exceeded", {
+          status: 429,
+          headers: { "Retry-After": "60" },
+        });
+      }
+      if (srv.upgrade(req, {
+        data: {
+          id: `p${nextId++}`,
+          ip,
+          username: null,
+          reservedUsername: null,
+          shopId: null,
+          lastView: null,
+        },
+      })) return;
+      releaseConnection(ip);
+      return new Response("WebSocket required", { status: 426 });
     },
     websocket: {
-      open(_ws) {
-        // do nothing — wait for login message
+      open(ws) {
+        setTimeout(() => {
+          if (ws.data.username === null) ws.close(1008, "authentication timeout");
+        }, authenticationTimeoutMs);
       },
       async message(ws, raw) {
         let msg;
@@ -214,12 +308,23 @@ export function startServer(
           // unauthenticated — only accept login
           if (msg.t !== "login") return;
 
-          const { username, password, mode } = msg;
-
-          // validate non-empty, length-bounded credentials before touching the DB
+          const { username, password, mode, protocolVersion, contentVersion } = msg;
           if (
-            typeof username !== "string" || username.length < 1 || username.length > 32 ||
-            typeof password !== "string" || password.length < 1
+            protocolVersion !== PROTOCOL_VERSION
+            || contentVersion !== CONTENT_VERSION
+          ) {
+            ws.send(encode({ t: "loginError", reason: "client update required" }));
+            ws.close();
+            return;
+          }
+
+          // Validate bounded credentials before touching persistence or password hashing.
+          if (
+            typeof username !== "string"
+            || !/^[\x20-\x7E]{1,24}$/.test(username)
+            || typeof password !== "string"
+            || password.length < 1
+            || password.length > 128
           ) {
             ws.send(encode({ t: "loginError", reason: "invalid credentials" }));
             ws.close();
@@ -234,17 +339,25 @@ export function startServer(
           // reserve the username synchronously (before the await) so a concurrent
           // login for the same account can't slip past the check above (TOCTOU race)
           online.add(username);
+          ws.data.reservedUsername = username;
 
           const spawn = { x: SPAWN.x, y: SPAWN.y, facing: "south" as const };
           const result = await store.getOrCreateAccount(username, password, spawn, mode);
+          if (ws.readyState !== WebSocket.OPEN) {
+            online.delete(username);
+            ws.data.reservedUsername = null;
+            return;
+          }
 
           if (!result.ok) {
             online.delete(username); // release the reservation on auth failure
+            ws.data.reservedUsername = null;
             ws.send(encode({ t: "loginError", reason: result.reason }));
             ws.close();
             return;
           }
 
+          ws.data.reservedUsername = null;
           ws.data.username = username;
           sockets.set(username, ws);
           zones.addPlayer(username, result.state, {
@@ -255,6 +368,8 @@ export function startServer(
           ws.subscribe("world");
           ws.send(encode({
             t: "welcome",
+            protocolVersion: PROTOCOL_VERSION,
+            contentVersion: CONTENT_VERSION,
             playerId: username,
             map: zones.mapOf(zones.zoneOf(username)),
             tickRate: TICK_RATE,
@@ -362,9 +477,18 @@ export function startServer(
           if (inv) ws.send(encode({ t: "inventory", slots: inv } satisfies InventoryMsg));
         }
       },
+      maxPayloadLength: 16 * 1024,
+      backpressureLimit: 1024 * 1024,
+      closeOnBackpressureLimit: true,
+      idleTimeout: 120,
+      sendPings: true,
       close(ws) {
-        const { username } = ws.data;
-        if (username === null) return;
+        releaseConnection(ws.data.ip);
+        const { username, reservedUsername } = ws.data;
+        if (username === null) {
+          if (reservedUsername) online.delete(reservedUsername);
+          return;
+        }
         const pendingSave = pendingTransitionSaves.get(username);
         if (pendingSave?.socket === ws) {
           zones.rollbackTransition(pendingSave.transition);

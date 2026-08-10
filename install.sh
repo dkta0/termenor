@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Termenor — classic one-line installer.
-#   curl -fsSL https://raw.githubusercontent.com/dakota/termenor/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/dkta0/termenor/main/install.sh | bash
 #
 # Downloads the prebuilt client binary for your platform from the latest GitHub release
 # and installs it to ~/.local/bin/termenor. Override the source repo with TERMENOR_REPO
 # and the install dir with TERMENOR_BIN_DIR.
 set -euo pipefail
 
-REPO="${TERMENOR_REPO:-dakota/termenor}"
+REPO="${TERMENOR_REPO:-dkta0/termenor}"
 BIN_DIR="${TERMENOR_BIN_DIR:-$HOME/.local/bin}"
 
 os="$(uname -s)"
@@ -24,16 +24,32 @@ case "$arch" in
 esac
 
 asset="termenor-${os}-${arch}"
-url="https://github.com/${REPO}/releases/latest/download/${asset}"
+base_url="https://github.com/${REPO}/releases/latest/download"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 
 echo "Installing termenor (${os}-${arch}) from ${REPO}…"
-mkdir -p "$BIN_DIR"
-if ! curl -fSL --progress-bar "$url" -o "$BIN_DIR/termenor"; then
-  echo "Download failed: $url" >&2
+if ! curl -fSL --progress-bar "${base_url}/${asset}" -o "${tmp}/${asset}" \
+  || ! curl -fSL --progress-bar "${base_url}/SHA256SUMS" -o "${tmp}/SHA256SUMS"; then
+  echo "Download failed from ${base_url}" >&2
   echo "No prebuilt binary for ${os}-${arch}? Run from source: git clone https://github.com/${REPO} && cd termenor && bun run play" >&2
   exit 1
 fi
-chmod +x "$BIN_DIR/termenor"
+
+expected=""
+while read -r digest name; do
+  if [ "$name" = "$asset" ]; then expected="$digest"; break; fi
+done < "${tmp}/SHA256SUMS"
+[ -n "$expected" ] || { echo "Release checksum is missing ${asset}" >&2; exit 1; }
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "${tmp}/${asset}")"; actual="${actual%% *}"
+else
+  actual="$(shasum -a 256 "${tmp}/${asset}")"; actual="${actual%% *}"
+fi
+[ "$actual" = "$expected" ] || { echo "Checksum verification failed for ${asset}" >&2; exit 1; }
+
+mkdir -p "$BIN_DIR"
+install -m 0755 "${tmp}/${asset}" "$BIN_DIR/termenor"
 
 echo "Installed: $BIN_DIR/termenor"
 case ":$PATH:" in

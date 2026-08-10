@@ -4,3 +4,5 @@ dist/
 .DS_Store
 data/
 .worktrees/
+.capsule/state.json
+.capsule/intake.cdx.json

@@ -1,7 +1,7 @@
 import { test, expect, afterEach } from "bun:test";
 import type { RunningServer } from "./server";
-import { startServer } from "./server";
-import { emptyEquipment } from "@termenor/protocol";
+import { startServer, trustedClientAddress } from "./server";
+import { CONTENT_VERSION, PROTOCOL_VERSION, emptyEquipment } from "@termenor/protocol";
 import { emptyInventory } from "./inventory";
 import type { AccountResult, PlayerStateRecord, PlayerStore } from "./store";
 import type { ScenarioDef } from "./scenario";
@@ -80,7 +80,14 @@ function wsClient(port: number): {
   });
 
   return {
-    send: (d) => ws.send(d),
+    send: (data) => {
+      const message = JSON.parse(data) as Record<string, unknown>;
+      if (message.t === "login") {
+        message.protocolVersion ??= PROTOCOL_VERSION;
+        message.contentVersion ??= CONTENT_VERSION;
+      }
+      ws.send(JSON.stringify(message));
+    },
     messages,
     groundItems: (): Ground[] => [...ground.values()],
     waitForGround(pred: (g: Ground[]) => boolean, timeoutMs = 3000): Promise<Ground[]> {
@@ -145,9 +152,54 @@ test("new login returns welcome at spawn (24, 24)", async () => {
   const welcome = await welcomeP;
 
   expect(welcome.playerId).toBe("alice");
+  expect(welcome.protocolVersion).toBe(PROTOCOL_VERSION);
+  expect(welcome.contentVersion).toBe(CONTENT_VERSION);
   expect(Number(welcome.x)).toBeCloseTo(24, 5);
   expect(Number(welcome.y)).toBeCloseTo(24, 5);
   client.close();
+});
+
+test("rejects incompatible clients before account access", async () => {
+  srv = startServer(0, ":memory:");
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const errorP = client.waitForMessage("loginError");
+  client.send(JSON.stringify({
+    t: "login",
+    protocolVersion: PROTOCOL_VERSION + 1,
+    contentVersion: CONTENT_VERSION,
+    username: "outdated",
+    password: "pw",
+  }));
+  await expect(errorP).resolves.toMatchObject({ reason: "client update required" });
+  client.close();
+});
+
+test("health reports bounded live connection count", async () => {
+  srv = startServer(0, ":memory:", { maxConnections: 2, maxConnectionsPerIp: 1 });
+  const client = wsClient(srv.port);
+  await client.waitForOpen();
+  const health = await fetch(`http://localhost:${srv.port}/health`);
+  expect(health.status).toBe(200);
+  expect(await health.json()).toEqual({
+    status: "ok",
+    connections: 1,
+    maxConnections: 2,
+  });
+
+  const rejected = new WebSocket(`ws://localhost:${srv.port}`);
+  const outcome = await new Promise<"open" | "error">((resolve) => {
+    rejected.addEventListener("open", () => resolve("open"));
+    rejected.addEventListener("error", () => resolve("error"));
+  });
+  expect(outcome).toBe("error");
+  client.close();
+});
+
+test("trusts forwarded client IP only from loopback Caddy", () => {
+  expect(trustedClientAddress("127.0.0.1", "203.0.113.8, 127.0.0.1")).toBe("203.0.113.8");
+  expect(trustedClientAddress("198.51.100.2", "203.0.113.8")).toBe("198.51.100.2");
+  expect(trustedClientAddress("::ffff:127.0.0.1", "not-an-ip")).toBe("127.0.0.1");
 });
 
 test("wrong password returns loginError with no welcome", async () => {
