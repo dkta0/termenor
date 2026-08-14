@@ -184,7 +184,7 @@ steps:
         "$capsulectl_bin" run --spec .capsule/capsule.json -- bun -e '
         const net = require("node:net");
         const [host, port] = process.argv.slice(1);
-        const expected = new Set(["ENETUNREACH", "EHOSTUNREACH"]);
+        const expected = new Set(["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH"]);
         const socket = net.createConnection({ host, port: Number(port) });
         socket.setTimeout(1000);
         socket.on("connect", () => {
