@@ -35,7 +35,6 @@ steps:
       - |
         set -eu
         source_dir="$PWD"
-        staged="/woodpecker/src/.termenor-capsule-source-${CI_PIPELINE_NUMBER}"
         host_canary="/woodpecker/src/.termenor-host-only-canary"
         lockfile_backup="/tmp/termenor-bun.lock"
         socket_dir="/woodpecker/src/.capsule-engine-${CI_PIPELINE_NUMBER}"
@@ -44,17 +43,46 @@ steps:
         listener_port="43127"
         capsule_image=""
         capsulectl_bin="$source_dir/.capsule/ci/capsulectl"
+        play_target="scripts/play.sh"
+        play_materialized=0
         git_marker="$source_dir/.git/termenor-woodpecker-git-marker"
+        assert_play_symlink() {
+          test -L "$source_dir/play"
+          test "$(readlink "$source_dir/play")" = "$play_target"
+          case "$(stat -c '%f' "$source_dir/play")" in
+            a*) ;;
+            *) echo 'play symlink mode is not 120000' >&2; return 1 ;;
+          esac
+        }
+        restore_play() {
+          if [ "$play_materialized" -eq 1 ]; then
+            rm -f "$source_dir/play"
+            ln -s "$play_target" "$source_dir/play"
+            assert_play_symlink
+            play_materialized=0
+          fi
+        }
         cleanup() {
+          restore_play
           rm -f "$host_canary" "$git_marker"
           if [ -f "$lockfile_backup" ]; then
-            cp "$lockfile_backup" "$staged/bun.lock"
+            cp "$lockfile_backup" "$source_dir/bun.lock"
             rm -f "$lockfile_backup"
           fi
           docker rm --force "$listener_container" >/dev/null 2>&1 || true
-          rm -rf "$socket_dir" "$staged" 2>/dev/null || true
+          rm -rf "$socket_dir" 2>/dev/null || true
         }
         trap cleanup EXIT
+        assert_play_symlink
+        rm "$source_dir/play"
+        play_materialized=1
+        cat > "$source_dir/play" <<'EOF'
+        #!/bin/sh
+        exec "$(dirname "$0")/scripts/play.sh" "$@"
+        EOF
+        chmod 755 "$source_dir/play"
+        test ! -L "$source_dir/play"
+        test -x "$source_dir/play"
         printf '%s\n' 'capsule-host-only' > "$host_canary"
         printf '%s\n' 'capsule-git-marker' > "$git_marker"
         export TERMENOR_CAPSULE_SECRET_CANARY='synthetic-capsule-sentinel'
@@ -72,15 +100,6 @@ steps:
           exit 1
         fi
         test "$(docker info --format '{{.Driver}}')" = overlay2
-        mkdir -p "$staged"
-        (cd "$source_dir" && tar --dereference \
-          --exclude='./.git' \
-          --exclude='./.capsule/ci' \
-          --exclude='./.capsule/state.json' \
-          --exclude='./.capsule/intake.cdx.json' \
-          -cf - .) | tar -xf - -C "$staged"
-        test -z "$(find "$staged" -type l -print -quit)"
-        cd "$staged"
         docker run --rm \
           --mount "type=bind,src=$source_dir,dst=/checkout,readonly" \
           docker.io/library/docker:29.1.5-cli@sha256:05dfa31f4afd64888ef4cc0cbb1ab4d07a4828ef01cd29baa891fecbe50faf49 \
