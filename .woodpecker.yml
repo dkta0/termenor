@@ -1,0 +1,215 @@
+when:
+  - event: pull_request
+  - event: push
+    branch: main
+
+labels:
+  location: daimon
+
+clone:
+  git:
+    image: docker.io/woodpeckerci/plugin-git:2.9.2@sha256:a36586dfe77e9c5d9b5bff3ad37f18158eb12036aa9e9908e2e813ee6029573e
+    settings:
+      partial: false
+      depth: 50
+
+steps:
+  - name: build-capsulectl
+    image: docker.io/library/golang:1.24.0@sha256:3f7444391c51a11a039bf0359ee81cc64e663c17d787ad0e637a4de1a3f62a71
+    commands:
+      - |
+        set -eu
+        mkdir -p .capsule/ci /tmp/go-modcache /tmp/go-cache /tmp/go
+        GOMODCACHE=/tmp/go-modcache GOCACHE=/tmp/go-cache GOPATH=/tmp/go \
+          CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN="$PWD/.capsule/ci" \
+          go install -trimpath -buildvcs=false \
+            github.com/dkta-labs/capsulectl/cmd/capsulectl@db24ace52f202d622cd2ad7f7ed24c54e79fd379
+        test -x .capsule/ci/capsulectl
+
+  - name: capsule-validation
+    image: docker.io/library/docker:29.1.5-cli@sha256:05dfa31f4afd64888ef4cc0cbb1ab4d07a4828ef01cd29baa891fecbe50faf49
+    environment:
+      CAPSULECTL_EPHEMERAL_CI: "1"
+      DOCKER_TLS_CERTDIR: ""
+    commands:
+      - |
+        set -eu
+        host_canary="/woodpecker/src/.termenor-host-only-canary"
+        lockfile_backup="/tmp/termenor-bun.lock"
+        socket_dir="/woodpecker/src/.capsule-engine-${CI_PIPELINE_NUMBER}"
+        socket_path="$socket_dir/docker.sock"
+        listener_container="termenor-capsule-listener-${CI_PIPELINE_NUMBER}"
+        listener_port="43127"
+        capsule_image=""
+        git_marker="$PWD/.git/termenor-woodpecker-git-marker"
+        cleanup() {
+          rm -f "$host_canary" "$git_marker"
+          if [ -f "$lockfile_backup" ]; then
+            cp "$lockfile_backup" bun.lock
+            rm -f "$lockfile_backup"
+          fi
+          docker rm --force "$listener_container" >/dev/null 2>&1 || true
+          rm -rf "$socket_dir" 2>/dev/null || true
+        }
+        trap cleanup EXIT
+        printf '%s\n' 'capsule-host-only' > "$host_canary"
+        printf '%s\n' 'capsule-git-marker' > "$git_marker"
+        export TERMENOR_CAPSULE_SECRET_CANARY='synthetic-capsule-sentinel'
+        export DOCKER_HOST="unix://$socket_path"
+        ready=0
+        for attempt in $(seq 1 60); do
+          if docker info >/dev/null 2>&1; then
+            ready=1
+            break
+          fi
+          sleep 1
+        done
+        if [ "$ready" -ne 1 ]; then
+          echo 'Docker-in-Docker service did not become ready' >&2
+          exit 1
+        fi
+        test "$(docker info --format '{{.Driver}}')" = overlay2
+        docker run --rm \
+          --mount "type=bind,src=$PWD,dst=/checkout,readonly" \
+          docker.io/library/docker:29.1.5-cli@sha256:05dfa31f4afd64888ef4cc0cbb1ab4d07a4828ef01cd29baa891fecbe50faf49 \
+          sh -eu -c '
+          test -f /checkout/package.json
+          test ! -e /checkout/.git/termenor-woodpecker-git-marker
+          test -z "$(ls -A /checkout/.git 2>/dev/null)"
+          '
+        docker run --rm \
+          --mount "type=bind,src=$host_canary,dst=/canary,readonly" \
+          docker.io/library/docker:29.1.5-cli@sha256:05dfa31f4afd64888ef4cc0cbb1ab4d07a4828ef01cd29baa891fecbe50faf49 \
+          sh -eu -c 'test "$(cat /canary)" = capsule-host-only'
+        intake_result="$(./.capsule/ci/capsulectl intake --spec .capsule/capsule.json)"
+        capsule_image="$(printf '%s\n' "$intake_result" | sed -n 's/^  "image": "\(sha256:[0-9a-f]*\)",$/\1/p')"
+        test -n "$capsule_image"
+        ./.capsule/ci/capsulectl check --spec .capsule/capsule.json
+        ./.capsule/ci/capsulectl plan --spec .capsule/capsule.json >/tmp/termenor-capsule-plan.json
+        test -s /tmp/termenor-capsule-plan.json
+        docker run --detach --name "$listener_container" "$capsule_image" bun -e '
+        const net = require("node:net");
+        const server = net.createServer((socket) => socket.end("capsule-net-listener"));
+        server.listen(Number(process.argv[1]), "0.0.0.0");
+        ' "$listener_port"
+        listener_ip=""
+        for attempt in $(seq 1 30); do
+          listener_ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$listener_container" 2>/dev/null || true)"
+          if [ -n "$listener_ip" ]; then
+            break
+          fi
+          sleep 1
+        done
+        test -n "$listener_ip"
+        docker run --rm --network bridge "$capsule_image" bun -e '
+        const net = require("node:net");
+        const [host, port] = process.argv.slice(1);
+        const socket = net.createConnection({ host, port: Number(port) });
+        socket.setTimeout(2000);
+        socket.on("connect", () => {
+          socket.end();
+          process.exit(0);
+        });
+        socket.on("error", () => process.exit(1));
+        socket.on("timeout", () => {
+          socket.destroy();
+          process.exit(1);
+        });
+        ' "$listener_ip" "$listener_port"
+        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun -e '
+        const fs = require("node:fs");
+        for (const path of [
+          "/woodpecker/src/.termenor-host-only-canary",
+          "/source/.termenor-host-only-canary",
+          "/tmp/.termenor-host-only-canary",
+        ]) {
+          if (fs.existsSync(path)) {
+            throw new Error("host-only canary leaked into capsule");
+          }
+        }
+        if (process.env.TERMENOR_CAPSULE_SECRET_CANARY !== undefined) {
+          throw new Error("credential-like sentinel leaked into capsule");
+        }
+        function requireWriteFailure(path) {
+          let failed = false;
+          try {
+            fs.writeFileSync(path, "blocked");
+          } catch (_) {
+            failed = true;
+          }
+          if (!failed) {
+            throw new Error(path + " unexpectedly writable");
+          }
+        }
+        requireWriteFailure("/source/.capsule-ci-repo-write");
+        requireWriteFailure("/source/.git/.capsule-ci-git-write");
+        requireWriteFailure("/capsule-root-write");
+        fs.writeFileSync("/workspace/.capsule-ephemeral-canary", "ephemeral");
+        fs.writeFileSync("/capsule-tmp/termenor-writable", "allowed");
+        fs.unlinkSync("/capsule-tmp/termenor-writable");
+        requireWriteFailure("/workspace/node_modules/termenor-writable");
+        requireWriteFailure("/capsule-deps/termenor-writable");
+        '
+        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun -e '
+        const net = require("node:net");
+        const [host, port] = process.argv.slice(1);
+        const expected = new Set(["ENETUNREACH", "EHOSTUNREACH"]);
+        const socket = net.createConnection({ host, port: Number(port) });
+        socket.setTimeout(1000);
+        socket.on("connect", () => {
+          socket.destroy();
+          console.error("network-none connection unexpectedly succeeded");
+          process.exit(1);
+        });
+        socket.on("error", (error) => {
+          if (!expected.has(error.code)) {
+            console.error("ambiguous network-none error: " + error.code);
+            process.exit(1);
+          }
+          process.exit(0);
+        });
+        socket.on("timeout", () => {
+          socket.destroy();
+          console.error("network-none connection timed out");
+          process.exit(1);
+        });
+        ' "$listener_ip" "$listener_port"
+        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun -e '
+        const fs = require("node:fs");
+        if (fs.existsSync("/workspace/.capsule-ephemeral-canary")) {
+          throw new Error("capsule workspace persisted across runs");
+        }
+        '
+        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun test
+        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun run typecheck
+        cp bun.lock "$lockfile_backup"
+        printf '\n' >> bun.lock
+        if ./.capsule/ci/capsulectl check --spec .capsule/capsule.json; then
+          echo 'capsule check accepted a modified lockfile' >&2
+          exit 1
+        fi
+        cp "$lockfile_backup" bun.lock
+        cmp -s "$lockfile_backup" bun.lock
+        rm -f "$lockfile_backup"
+        ./.capsule/ci/capsulectl check --spec .capsule/capsule.json
+
+services:
+  - name: docker
+    image: docker.io/library/docker:29.1.5-dind@sha256:0ff14e6a992f2fdb7bef46123cd7fe61a58df0494e8df8bb6f9a5dac7486e1cb
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    commands:
+      - |
+        set -eu
+        git_dir="/woodpecker/src/github.com/dkta0/termenor/.git"
+        test -d "$git_dir"
+        mount -t tmpfs -o size=64k,mode=0700,nosuid,nodev,noexec tmpfs "$git_dir"
+        umask 077
+        socket_dir="/woodpecker/src/.capsule-engine-${CI_PIPELINE_NUMBER}"
+        mkdir -p "$socket_dir"
+        chmod 700 "$socket_dir"
+        exec dockerd-entrypoint.sh \
+          --storage-driver=overlay2 \
+          --tls=false \
+          --host="unix://$socket_dir/docker.sock"
+    privileged: true
