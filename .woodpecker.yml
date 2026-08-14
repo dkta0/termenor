@@ -34,6 +34,8 @@ steps:
     commands:
       - |
         set -eu
+        source_dir="$PWD"
+        staged="/woodpecker/src/.termenor-capsule-source-${CI_PIPELINE_NUMBER}"
         host_canary="/woodpecker/src/.termenor-host-only-canary"
         lockfile_backup="/tmp/termenor-bun.lock"
         socket_dir="/woodpecker/src/.capsule-engine-${CI_PIPELINE_NUMBER}"
@@ -41,15 +43,16 @@ steps:
         listener_container="termenor-capsule-listener-${CI_PIPELINE_NUMBER}"
         listener_port="43127"
         capsule_image=""
-        git_marker="$PWD/.git/termenor-woodpecker-git-marker"
+        capsulectl_bin="$source_dir/.capsule/ci/capsulectl"
+        git_marker="$source_dir/.git/termenor-woodpecker-git-marker"
         cleanup() {
           rm -f "$host_canary" "$git_marker"
           if [ -f "$lockfile_backup" ]; then
-            cp "$lockfile_backup" bun.lock
+            cp "$lockfile_backup" "$staged/bun.lock"
             rm -f "$lockfile_backup"
           fi
           docker rm --force "$listener_container" >/dev/null 2>&1 || true
-          rm -rf "$socket_dir" 2>/dev/null || true
+          rm -rf "$socket_dir" "$staged" 2>/dev/null || true
         }
         trap cleanup EXIT
         printf '%s\n' 'capsule-host-only' > "$host_canary"
@@ -69,8 +72,17 @@ steps:
           exit 1
         fi
         test "$(docker info --format '{{.Driver}}')" = overlay2
+        mkdir -p "$staged"
+        (cd "$source_dir" && tar --dereference \
+          --exclude='./.git' \
+          --exclude='./.capsule/ci' \
+          --exclude='./.capsule/state.json' \
+          --exclude='./.capsule/intake.cdx.json' \
+          -cf - .) | tar -xf - -C "$staged"
+        test -z "$(find "$staged" -type l -print -quit)"
+        cd "$staged"
         docker run --rm \
-          --mount "type=bind,src=$PWD,dst=/checkout,readonly" \
+          --mount "type=bind,src=$source_dir,dst=/checkout,readonly" \
           docker.io/library/docker:29.1.5-cli@sha256:05dfa31f4afd64888ef4cc0cbb1ab4d07a4828ef01cd29baa891fecbe50faf49 \
           sh -eu -c '
           test -f /checkout/package.json
@@ -81,11 +93,11 @@ steps:
           --mount "type=bind,src=$host_canary,dst=/canary,readonly" \
           docker.io/library/docker:29.1.5-cli@sha256:05dfa31f4afd64888ef4cc0cbb1ab4d07a4828ef01cd29baa891fecbe50faf49 \
           sh -eu -c 'test "$(cat /canary)" = capsule-host-only'
-        intake_result="$(./.capsule/ci/capsulectl intake --spec .capsule/capsule.json)"
+        intake_result="$("$capsulectl_bin" intake --spec .capsule/capsule.json)"
         capsule_image="$(printf '%s\n' "$intake_result" | sed -n 's/^  "image": "\(sha256:[0-9a-f]*\)",$/\1/p')"
         test -n "$capsule_image"
-        ./.capsule/ci/capsulectl check --spec .capsule/capsule.json
-        ./.capsule/ci/capsulectl plan --spec .capsule/capsule.json >/tmp/termenor-capsule-plan.json
+        "$capsulectl_bin" check --spec .capsule/capsule.json
+        "$capsulectl_bin" plan --spec .capsule/capsule.json >/tmp/termenor-capsule-plan.json
         test -s /tmp/termenor-capsule-plan.json
         docker run --detach --name "$listener_container" "$capsule_image" bun -e '
         const net = require("node:net");
@@ -116,7 +128,7 @@ steps:
           process.exit(1);
         });
         ' "$listener_ip" "$listener_port"
-        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun -e '
+        "$capsulectl_bin" run --spec .capsule/capsule.json -- bun -e '
         const fs = require("node:fs");
         for (const path of [
           "/woodpecker/src/.termenor-host-only-canary",
@@ -150,7 +162,7 @@ steps:
         requireWriteFailure("/workspace/node_modules/termenor-writable");
         requireWriteFailure("/capsule-deps/termenor-writable");
         '
-        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun -e '
+        "$capsulectl_bin" run --spec .capsule/capsule.json -- bun -e '
         const net = require("node:net");
         const [host, port] = process.argv.slice(1);
         const expected = new Set(["ENETUNREACH", "EHOSTUNREACH"]);
@@ -174,24 +186,24 @@ steps:
           process.exit(1);
         });
         ' "$listener_ip" "$listener_port"
-        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun -e '
+        "$capsulectl_bin" run --spec .capsule/capsule.json -- bun -e '
         const fs = require("node:fs");
         if (fs.existsSync("/workspace/.capsule-ephemeral-canary")) {
           throw new Error("capsule workspace persisted across runs");
         }
         '
-        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun test
-        ./.capsule/ci/capsulectl run --spec .capsule/capsule.json -- bun run typecheck
+        "$capsulectl_bin" run --spec .capsule/capsule.json -- bun test
+        "$capsulectl_bin" run --spec .capsule/capsule.json -- bun run typecheck
         cp bun.lock "$lockfile_backup"
         printf '\n' >> bun.lock
-        if ./.capsule/ci/capsulectl check --spec .capsule/capsule.json; then
+        if "$capsulectl_bin" check --spec .capsule/capsule.json; then
           echo 'capsule check accepted a modified lockfile' >&2
           exit 1
         fi
         cp "$lockfile_backup" bun.lock
         cmp -s "$lockfile_backup" bun.lock
         rm -f "$lockfile_backup"
-        ./.capsule/ci/capsulectl check --spec .capsule/capsule.json
+        "$capsulectl_bin" check --spec .capsule/capsule.json
 
 services:
   - name: docker
